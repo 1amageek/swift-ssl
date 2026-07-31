@@ -1,9 +1,13 @@
 import SwiftSSLCore
 
 public protocol AuthenticatedCipher: ~Copyable {
-    static var keyByteCount: Int { get }
+    static var supportedKeyByteCounts: [Int] { get }
     static var nonceByteCount: Int { get }
     static var tagByteCount: Int { get }
+
+    /// Inputs and output may use one exact starting address for in-place GCTR.
+    /// Authenticated data must not overlap output. Partial overlaps are typed
+    /// failures and are rejected before output mutation.
 
     mutating func seal(
         plaintext: Span<UInt8>,

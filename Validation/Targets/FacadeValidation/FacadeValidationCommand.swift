@@ -3,6 +3,7 @@ import SwiftSSL
 @main
 enum FacadeValidationCommand {
   enum Failure: Error {
+    case aesGCM
     case sha256
     case hmacSHA256
     case hkdfSHA256
@@ -10,11 +11,54 @@ enum FacadeValidationCommand {
   }
 
   static func main() throws {
+    try validateAESGCM()
     try validateSHA256()
     try validateHMACSHA256()
     try validateHKDFSHA256()
     try validateFailureContracts()
     print("swift-ssl facade validation: ok")
+  }
+
+  private static func validateAESGCM() throws {
+    let key: ContiguousArray<UInt8> = [
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    let nonce: ContiguousArray<UInt8> = [
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    let plaintext: ContiguousArray<UInt8> = [
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+    let expected: ContiguousArray<UInt8> = [
+      0x03, 0x88, 0xDA, 0xCE, 0x60, 0xB6, 0xA3, 0x92,
+      0xF3, 0x28, 0xC2, 0xB9, 0x71, 0xB2, 0xFE, 0x78,
+      0xAB, 0x6E, 0x47, 0xD4, 0x2C, 0xEC, 0x13, 0xBD,
+      0xF5, 0x3A, 0x67, 0xB2, 0x12, 0x57, 0xBD, 0xDF,
+    ]
+    var sealed = ContiguousArray<UInt8>(repeating: 0, count: expected.count)
+    var cipher = try AESGCM(key: key.span)
+    var sealedSpan = sealed.mutableSpan
+    try cipher.seal(
+      plaintext: plaintext.span,
+      authenticatedData: Span(_unsafeElements: UnsafeBufferPointer<UInt8>(start: nil, count: 0)),
+      nonce: nonce.span,
+      into: &sealedSpan
+    )
+    guard sealed == expected else {
+      throw Failure.aesGCM
+    }
+
+    var recovered = ContiguousArray<UInt8>(repeating: 0xA5, count: plaintext.count)
+    var recoveredSpan = recovered.mutableSpan
+    try cipher.open(
+      ciphertextAndTag: sealed.span,
+      authenticatedData: Span(_unsafeElements: UnsafeBufferPointer<UInt8>(start: nil, count: 0)),
+      nonce: nonce.span,
+      into: &recoveredSpan
+    )
+    guard recovered == plaintext else {
+      throw Failure.aesGCM
+    }
   }
 
   private static func validateSHA256() throws {
