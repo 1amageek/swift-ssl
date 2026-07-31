@@ -124,6 +124,94 @@ final class X509CertificateTests: XCTestCase {
         XCTAssertNoThrow(try X509Certificate(der: sha512.span).verifySignature())
     }
 
+    func testVerifiesP384ECDSACertificateSignature() throws {
+        let certificate = try X509Certificate(der: makeP384ECDSACertificate().span)
+        XCTAssertNoThrow(try certificate.verifySignature())
+        XCTAssertEqual(certificate.subjectPublicKeyInfo.algorithm, .ecPublicKey(curve: .secp384r1))
+    }
+
+    func testVerifiesP521ECDSACertificateSignature() throws {
+        let certificate = try X509Certificate(der: makeP521ECDSACertificate().span)
+        XCTAssertNoThrow(try certificate.verifySignature())
+        XCTAssertEqual(certificate.subjectPublicKeyInfo.algorithm, .ecPublicKey(curve: .secp521r1))
+    }
+
+    func testValidatesP256LeafAgainstTrustAnchorAndSAN() throws {
+        let root = try X509Certificate(der: makePathRootCertificate().span)
+        let leaf = try X509Certificate(der: makePathLeafCertificate().span)
+        let validator = try X509PathValidator(trustAnchors: ContiguousArray([root]))
+
+        XCTAssertNoThrow(try validator.validate(
+            leaf: leaf,
+            at: try VerificationInstant(secondsSinceUnixEpoch: 1_735_689_600, nanoseconds: 0),
+            hostname: ContiguousArray("swift-ssl-leaf.example".utf8).span
+        ))
+    }
+
+    func testPathValidatorRejectsModifiedLeafSignature() throws {
+        let root = try X509Certificate(der: makePathRootCertificate().span)
+        var leafDER = makePathLeafCertificate()
+        leafDER[leafDER.count - 1] ^= 0x01
+        let leaf = try X509Certificate(der: leafDER.span)
+        let validator = try X509PathValidator(trustAnchors: ContiguousArray([root]))
+
+        do {
+            try validator.validate(
+                leaf: leaf,
+                at: try VerificationInstant(secondsSinceUnixEpoch: 1_735_689_600, nanoseconds: 0)
+            )
+            XCTFail("modified leaf signature was accepted")
+        } catch let error as X509PathError {
+            guard case .signature(.signatureVerificationFailed) = error else {
+                XCTFail("unexpected path validation error: \(error)")
+                return
+            }
+        }
+    }
+
+    func testPathValidatorRejectsIssuerWithoutCAConstraint() throws {
+        var rootDER = makePathRootCertificate()
+        let nestedBasicConstraints: [UInt8] = [0x30, 0x06, 0x01, 0x01, 0xFF, 0x02, 0x01, 0x02]
+        guard let booleanOffset = find(nestedBasicConstraints, in: rootDER) else {
+            XCTFail("root BasicConstraints fixture was not found")
+            return
+        }
+        rootDER[booleanOffset + 4] = 0
+        let root = try X509Certificate(der: rootDER.span)
+        let leaf = try X509Certificate(der: makePathLeafCertificate().span)
+        let validator = try X509PathValidator(trustAnchors: ContiguousArray([root]))
+
+        do {
+            try validator.validate(
+                leaf: leaf,
+                at: try VerificationInstant(secondsSinceUnixEpoch: 1_735_689_600, nanoseconds: 0)
+            )
+            XCTFail("non-CA issuer was accepted")
+        } catch let error as X509PathError {
+            XCTAssertEqual(error, .issuerNotCA)
+        }
+    }
+
+    func testPathValidatorRejectsHostnameMismatch() throws {
+        let root = try X509Certificate(der: makePathRootCertificate().span)
+        let leaf = try X509Certificate(der: makePathLeafCertificate().span)
+        let validator = try X509PathValidator(trustAnchors: ContiguousArray([root]))
+
+        do {
+            try validator.validate(
+                leaf: leaf,
+                at: try VerificationInstant(secondsSinceUnixEpoch: 1_735_689_600, nanoseconds: 0),
+                hostname: ContiguousArray("wrong.example".utf8).span
+            )
+            XCTFail("hostname mismatch was accepted")
+        } catch let error as X509PathError {
+            guard case .identity(.noMatchingSubjectAlternativeName) = error else {
+                XCTFail("unexpected path error: \(error)")
+                return
+            }
+        }
+    }
+
     func testParsesV3ExtensionsAndOwnsExtensionValue() throws {
         let certificate = makeCertificateWithExtensions()
         let parsed = try X509Certificate(der: certificate.span)
@@ -260,6 +348,49 @@ final class X509CertificateTests: XCTestCase {
             "6578616d706c65300a06082a8648ce3d040302034700304402207d64b4f0d8d41a49" +
             "720e591dc1844556462cd8beb44558fa9f63156a76f2c6cc022063756eb89655ab0b" +
             "0b04032d184382dd99e0be5ce5cacc66374a36dc83f7ac23"
+        )
+    }
+
+    private func makeP384ECDSACertificate() -> ContiguousArray<UInt8> {
+        bytes(
+            "308201833082010aa003020102020101300a06082a8648ce3d0403033021311f301d06035504030c1673776966742d73736c2d703338342e6578616d706c65301e170d3235303130313030303030305a170d3335303130313030303030305a3021311f301d06035504030c1673776966742d73736c2d703338342e6578616d706c653076301006072a8648ce3d020106052b8104002203620004aa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab73617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7e819d7a431d7c90ea0e5fa316301430120603551d130101ff040830060101ff020101300a06082a8648ce3d040303036700306402302c8f2d979504b245044527bfeebf34bf0feb065599f5ec0243572bf6481d03487106199aa6ddf1f000b77d6f2718e0a302302efccfa841e832e46c38ec9a2f0268a7274421f49b4db42ceee560ad53d689ad24bb41d443964c77492b2f874012763c"
+        )
+    }
+
+    private func makeP521ECDSACertificate() -> ContiguousArray<UInt8> {
+        bytes(
+            "308201ce30820130a003020102020101300a06082a8648ce3d0403043021311f301d06035504030c1673776966742d73736c2d703532312e6578616d706c65301e170d3235303130313030303030305a170d3335303130313030303030305a3021311f301d06035504030c1673776966742d73736c2d703532312e6578616d706c6530819b301006072a8648ce3d020106052b81040023038186000400c6858e06b70404e9cd9e3ecb662395b4429c648139053fb521f828af606b4d3dbaa14b5e77efe75928fe1dc127a2ffa8de3348b3c1856a429bf97e7e31c2e5bd66011839296a789a3bc0045c8a5fb42c7d1bd998f54449579b446817afbd17273e662c97ee72995ef42640c550b9013fad0761353c7086a272c24088be94769fd16650a316301430120603551d130101ff040830060101ff020101300a06082a8648ce3d04030403818b00308187024200a71f81d5d29a1241748dc7717dcd56ee91e0869eb6f0e69eefd14ee9cda2f558f3841871e5fba2c035472632c8d5f3f42e02357822b8f85f5d9d5630264b465ccb02412bf9dcec5c8c46299209130519814a6a23def11dc84f5cca92c6eb641a5f47d28d940d1f90aa1d37c0ca934aec75066346b4060b19688e35e476329bdfca289ea0"
+        )
+    }
+
+    private func makePathRootCertificate() -> ContiguousArray<UInt8> {
+        bytes(
+            "308201363081dda003020102020101300a06082a8648ce3d040302301931173015" +
+            "06035504030c0e73776966742d73736c2d726f6f74301e170d323530313031303030" +
+            "3030305a170d3335303130313030303030305a30193117301506035504030c0e7377" +
+            "6966742d73736c2d726f6f743059301306072a8648ce3d020106082a8648ce3d030107" +
+            "034200046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c" +
+            "2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5a3" +
+            "16301430120603551d130101ff040830060101ff020102300a06082a8648ce3d040302" +
+            "034800304502204e426efc04664694b4d14b24ff041320c4f08c4676966203db940db70" +
+            "ac42ef3022100e2cee6a4742c6dca4bb5e84e95f0ad4c7af2d2920c7a2021a2419d1750" +
+            "ebd51b"
+        )
+    }
+
+    private func makePathLeafCertificate() -> ContiguousArray<UInt8> {
+        bytes(
+            "3082015d30820102a003020102020102300a06082a8648ce3d040302301931173015" +
+            "06035504030c0e73776966742d73736c2d726f6f74301e170d323530313031303030" +
+            "3030305a170d3335303130313030303030305a3021311f301d06035504030c167377" +
+            "6966742d73736c2d6c6561662e6578616d706c653059301306072a8648ce3d02010608" +
+            "2a8648ce3d030107034200047cf27b188d034f7e8a52380304b51ac3c08969e277f21b" +
+            "35a60b48fc4766997807775510db8ed040293d9ac69f7430dbba7dade63ce982299e04" +
+            "b79d227873d1a3333031300c0603551d130101ff0402300030210603551d11041a3018" +
+            "821673776966742d73736c2d6c6561662e6578616d706c65300a06082a8648ce3d040302" +
+            "0349003046022100b50cf4bb68570659313890767901e1e7fa6d6b5dc82967a520e66c42" +
+            "ee22f80b022100c2b20993ca673a271ec34fc291a1d27e208640a9d84395833e27d40d7e" +
+            "a2cc76"
         )
     }
 

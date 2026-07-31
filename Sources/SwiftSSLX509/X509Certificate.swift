@@ -6,6 +6,8 @@ public struct X509Certificate: Sendable, Hashable {
     public let version: UInt64
     public let serialNumber: OwnedBytes
     public let signatureAlgorithm: DERAlgorithmIdentifier
+    public let issuerName: OwnedBytes
+    public let subjectName: OwnedBytes
     public let validity: X509Validity
     public let subjectPublicKeyInfo: SubjectPublicKeyInfo
     public let extensions: ContiguousArray<X509Extension>
@@ -98,8 +100,11 @@ public struct X509Certificate: Sendable, Hashable {
         let validityElement = try Self.tryReadElement(&tbs, budget: &budget)
         let subjectElement = try Self.tryReadElement(&tbs, budget: &budget)
         let spkiElement = try Self.tryReadElement(&tbs, budget: &budget)
-        _ = issuerElement
-        _ = subjectElement
+        guard issuerElement.tag == sequenceTag, subjectElement.tag == sequenceTag else {
+            throw .invalidStructure
+        }
+        let issuerName = OwnedBytes(copying: issuerElement.encodedBytes)
+        let subjectName = OwnedBytes(copying: subjectElement.encodedBytes)
 
         let serial: OwnedBytes
         do {
@@ -206,6 +211,8 @@ public struct X509Certificate: Sendable, Hashable {
         self.version = version
         self.serialNumber = serial
         self.signatureAlgorithm = outerSignatureAlgorithm
+        self.issuerName = issuerName
+        self.subjectName = subjectName
         self.validity = validity
         self.subjectPublicKeyInfo = spki
         self.extensions = extensions
@@ -246,10 +253,21 @@ public struct X509Certificate: Sendable, Hashable {
 
     /// Verifies the certificate signature for the supported signature algorithms.
     public borrowing func verifySignature() throws(X509CertificateError) {
+        try verifySignature(using: subjectPublicKeyInfo)
+    }
+
+    /// Verifies this certificate with an explicitly supplied issuer key.
+    ///
+    /// Name matching and validity-window checks belong to the path validator;
+    /// this method only selects the issuer key and validates the signature
+    /// algorithm/key compatibility at the cryptographic boundary.
+    public borrowing func verifySignature(
+        using verificationKey: borrowing SubjectPublicKeyInfo
+    ) throws(X509CertificateError) {
         if signatureAlgorithm.objectIdentifier == [1, 3, 101, 112] {
             guard signatureAlgorithm.parameters == .absent,
-                  subjectPublicKeyInfo.algorithm == .ed25519,
-                  subjectPublicKeyInfo.algorithmIdentifier.parameters == .absent else {
+                  verificationKey.algorithm == .ed25519,
+                  verificationKey.algorithmIdentifier.parameters == .absent else {
                 throw .unsupportedSignatureAlgorithm
             }
 
@@ -257,7 +275,7 @@ public struct X509Certificate: Sendable, Hashable {
             do {
                 valid = try withTBSCertificateBytes { tbs throws(CryptoInputError) in
                     try withSignatureBytes { signature throws(CryptoInputError) in
-                        try subjectPublicKeyInfo.withPublicKeyBytes { publicKey throws(CryptoInputError) in
+                        try verificationKey.withPublicKeyBytes { publicKey throws(CryptoInputError) in
                             try Ed25519.verify(
                                 signature: signature,
                                 message: tbs,
@@ -275,36 +293,31 @@ public struct X509Certificate: Sendable, Hashable {
             return
         }
 
-        // FIXME(INCOMPLETE_IMPLEMENTATION): This X.509 branch is vector- and
-        // certificate-tested, but its P-256 arithmetic still requires the
-        // constant-time and differential release gates. The current call
-        // path is validation-only and must not be selected by TLS until those
-        // gates pass.
+        // FIXME(INCOMPLETE_IMPLEMENTATION): These X.509 ECDSA branches are
+        // vector- and certificate-tested, but their fixed-width arithmetic
+        // still requires the constant-time, differential, sanitizer, and
+        // performance release gates. The current call path is validation-only
+        // and must not be selected by TLS until those gates pass.
         let digest: ContiguousArray<UInt8>
+        let signatureComponentByteCount: Int
         switch Array(signatureAlgorithm.objectIdentifier) {
         case [1, 2, 840, 10045, 4, 3, 2]:
-            guard signatureAlgorithm.parameters == .absent,
-                  subjectPublicKeyInfo.algorithm == .ecPublicKey(curve: .prime256v1),
-                  subjectPublicKeyInfo.algorithmIdentifier.parameters
-                    == .objectIdentifier([1, 2, 840, 10045, 3, 1, 7]) else {
-                throw .unsupportedSignatureAlgorithm
-            }
+            signatureComponentByteCount = try Self.requireSupportedECDSAKey(
+                verificationKey,
+                signatureParameters: signatureAlgorithm.parameters
+            )
             digest = try hashSHA256(tbs: self)
         case [1, 2, 840, 10045, 4, 3, 3]:
-            guard signatureAlgorithm.parameters == .absent,
-                  subjectPublicKeyInfo.algorithm == .ecPublicKey(curve: .prime256v1),
-                  subjectPublicKeyInfo.algorithmIdentifier.parameters
-                    == .objectIdentifier([1, 2, 840, 10045, 3, 1, 7]) else {
-                throw .unsupportedSignatureAlgorithm
-            }
+            signatureComponentByteCount = try Self.requireSupportedECDSAKey(
+                verificationKey,
+                signatureParameters: signatureAlgorithm.parameters
+            )
             digest = try hashSHA384(tbs: self)
         case [1, 2, 840, 10045, 4, 3, 4]:
-            guard signatureAlgorithm.parameters == .absent,
-                  subjectPublicKeyInfo.algorithm == .ecPublicKey(curve: .prime256v1),
-                  subjectPublicKeyInfo.algorithmIdentifier.parameters
-                    == .objectIdentifier([1, 2, 840, 10045, 3, 1, 7]) else {
-                throw .unsupportedSignatureAlgorithm
-            }
+            signatureComponentByteCount = try Self.requireSupportedECDSAKey(
+                verificationKey,
+                signatureParameters: signatureAlgorithm.parameters
+            )
             digest = try hashSHA512(tbs: self)
         default:
             throw .unsupportedSignatureAlgorithm
@@ -313,7 +326,10 @@ public struct X509Certificate: Sendable, Hashable {
         let rawSignature: ContiguousArray<UInt8>
         do {
             rawSignature = try withSignatureBytes { signature in
-                try Self.decodeECDSASignature(signature)
+                try Self.decodeECDSASignature(
+                    signature,
+                    componentByteCount: signatureComponentByteCount
+                )
             }
         } catch {
             throw .signatureVerificationFailed
@@ -321,7 +337,11 @@ public struct X509Certificate: Sendable, Hashable {
 
         let valid: Bool
         do {
-            valid = try withPublicKeyAndDigest(rawSignature: rawSignature, digest: digest)
+            valid = try withPublicKeyAndDigest(
+                rawSignature: rawSignature,
+                digest: digest,
+                verificationKey: verificationKey
+            )
         } catch {
             throw .signatureVerificationFailed
         }
@@ -332,15 +352,62 @@ public struct X509Certificate: Sendable, Hashable {
 
     private borrowing func withPublicKeyAndDigest(
         rawSignature: ContiguousArray<UInt8>,
-        digest: ContiguousArray<UInt8>
+        digest: ContiguousArray<UInt8>,
+        verificationKey: borrowing SubjectPublicKeyInfo
     ) throws(CryptoInputError) -> Bool {
-        try subjectPublicKeyInfo.withPublicKeyBytes { publicKey throws(CryptoInputError) in
-            let key = try P256PublicKey(bytes: publicKey)
-            return try P256ECDSA.verify(
-                signature: rawSignature.span,
-                messageHash: digest.span,
-                publicKey: key
-            )
+        try verificationKey.withPublicKeyBytes { publicKey throws(CryptoInputError) in
+            switch verificationKey.algorithm {
+            case .ecPublicKey(curve: .prime256v1):
+                let key = try P256PublicKey(bytes: publicKey)
+                return try P256ECDSA.verify(
+                    signature: rawSignature.span,
+                    messageHash: digest.span,
+                    publicKey: key
+                )
+            case .ecPublicKey(curve: .secp384r1):
+                return try P384ECDSA.verify(
+                    signature: rawSignature.span,
+                    messageHash: digest.span,
+                    publicKey: publicKey
+                )
+            case .ecPublicKey(curve: .secp521r1):
+                return try P521ECDSA.verify(
+                    signature: rawSignature.span,
+                    messageHash: digest.span,
+                    publicKey: publicKey
+                )
+            default:
+                throw CryptoInputError.invalidPeerKey
+            }
+        }
+    }
+
+    private static func requireSupportedECDSAKey(
+        _ key: borrowing SubjectPublicKeyInfo,
+        signatureParameters: DERAlgorithmParameters
+    ) throws(X509CertificateError) -> Int {
+        guard signatureParameters == .absent else {
+            throw .unsupportedSignatureAlgorithm
+        }
+        let expectedCurveOID: ContiguousArray<UInt64>
+        switch key.algorithm {
+        case .ecPublicKey(curve: .prime256v1):
+            expectedCurveOID = [1, 2, 840, 10045, 3, 1, 7]
+        case .ecPublicKey(curve: .secp384r1):
+            expectedCurveOID = [1, 3, 132, 0, 34]
+        case .ecPublicKey(curve: .secp521r1):
+            expectedCurveOID = [1, 3, 132, 0, 35]
+        default:
+            throw .unsupportedSignatureAlgorithm
+        }
+        guard key.algorithmIdentifier.parameters == .objectIdentifier(expectedCurveOID) else {
+            throw .unsupportedSignatureAlgorithm
+        }
+        switch key.algorithm {
+        case .ecPublicKey(curve: .prime256v1): return 32
+        case .ecPublicKey(curve: .secp384r1): return 48
+        case .ecPublicKey(curve: .secp521r1): return 66
+        default: throw .unsupportedSignatureAlgorithm
         }
     }
 
@@ -390,7 +457,8 @@ public struct X509Certificate: Sendable, Hashable {
     }
 
     private static func decodeECDSASignature(
-        _ signature: Span<UInt8>
+        _ signature: Span<UInt8>,
+        componentByteCount: Int
     ) throws(X509CertificateError) -> ContiguousArray<UInt8> {
         guard signature.count <= 256 else {
             throw .signatureVerificationFailed
@@ -424,10 +492,21 @@ public struct X509Certificate: Sendable, Hashable {
             throw .signatureVerificationFailed
         }
 
-        var raw = ContiguousArray<UInt8>(repeating: 0, count: P256ECDSA.signatureByteCount)
+        let signatureByteCount = componentByteCount * 2
+        var raw = ContiguousArray<UInt8>(repeating: 0, count: signatureByteCount)
         do {
-            try Self.copyECDSAComponent(rElement, into: &raw, offset: 0)
-            try Self.copyECDSAComponent(sElement, into: &raw, offset: 32)
+            try Self.copyECDSAComponent(
+                rElement,
+                into: &raw,
+                offset: 0,
+                componentByteCount: componentByteCount
+            )
+            try Self.copyECDSAComponent(
+                sElement,
+                into: &raw,
+                offset: componentByteCount,
+                componentByteCount: componentByteCount
+            )
         } catch {
             throw .signatureVerificationFailed
         }
@@ -437,7 +516,8 @@ public struct X509Certificate: Sendable, Hashable {
     private static func copyECDSAComponent(
         _ element: DERElementView,
         into output: inout ContiguousArray<UInt8>,
-        offset: Int
+        offset: Int,
+        componentByteCount: Int
     ) throws(X509CertificateError) {
         let integerTag = DERTag(tagClass: .universal, isConstructed: false, number: 2)
         guard element.tag == integerTag else {
@@ -457,10 +537,10 @@ public struct X509Certificate: Sendable, Hashable {
             }
         }
         let value = component[0] == 0 ? component.extracting(1..<component.count) : component
-        guard !value.isEmpty, value.count <= 32 else {
+        guard !value.isEmpty, value.count <= componentByteCount else {
             throw .signatureVerificationFailed
         }
-        let destinationOffset = offset + 32 - value.count
+        let destinationOffset = offset + componentByteCount - value.count
         var index = 0
         while index < value.count {
             output[destinationOffset + index] = value[index]
