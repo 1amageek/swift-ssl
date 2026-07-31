@@ -39,8 +39,6 @@ public struct X25519PrivateKey: ~Copyable, Sendable {
             case .memoryFailure:
                 throw .memoryFailure
             }
-        } catch {
-            throw .memoryFailure
         }
     }
 
@@ -56,8 +54,6 @@ public struct X25519PrivateKey: ~Copyable, Sendable {
             case .memoryFailure:
                 throw .memoryFailure
             }
-        } catch {
-            throw .memoryFailure
         }
     }
 
