@@ -18,6 +18,22 @@ public struct TLS13PreSharedKeyExtension: Sendable, Hashable {
               identities.count == binders.count else {
             throw .identityBinderCountMismatch
         }
+        var identityIndex = 0
+        while identityIndex < identities.count {
+            var comparisonIndex = identityIndex + 1
+            while comparisonIndex < identities.count {
+                let firstIdentity = identities[identityIndex].identity
+                let secondIdentity = identities[comparisonIndex].identity
+                if ConstantTime.equal(
+                    firstIdentity.span,
+                    secondIdentity.span
+                ) {
+                    throw .duplicateIdentity
+                }
+                comparisonIndex += 1
+            }
+            identityIndex += 1
+        }
         self.identities = identities
         self.binders = binders
     }

@@ -169,7 +169,7 @@ Early data is not an established session. Acceptance is independently decided fr
 
 ### 6.1 TLS stream profile
 
-The profile owns TLS 1.3 records, transcript/key schedule, encrypted NewSessionTicket transport, ticket/state/PSK binder values, post-handshake KeyUpdate, close, and supported modern extensions. It consumes and emits byte streams but performs no I/O. Selection of a PSK identity, binder transcript construction, and the resumed handshake are explicit engine work still required; the current engine never silently treats a parsed PSK extension as an accepted resumption.
+The profile owns TLS 1.3 records, transcript/key schedule, encrypted NewSessionTicket transport, ticket/state/PSK binder values, post-handshake KeyUpdate, close, and supported modern extensions. It consumes and emits byte streams but performs no I/O. PSK identity selection, binder transcript construction, ticket age validation, and the resumed handshake are explicit engine operations. Cross-process ticket replay coordination and ticket persistence remain application policy boundaries.
 
 ### 6.2 DTLS profile
 

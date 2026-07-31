@@ -48,6 +48,28 @@ final class TLS13PSKTests: XCTestCase {
         XCTAssertEqual(parsed.preSharedKey, psk)
     }
 
+    func testPreSharedKeyExtensionRejectsDuplicateIdentities() throws {
+        let identity = try TLS13PSKIdentity(
+            identity: ContiguousArray<UInt8>([0xAA]).span,
+            obfuscatedTicketAge: 0
+        )
+        let firstBinder = try TLS13PSKBinder(
+            value: ContiguousArray<UInt8>(repeating: 0x11, count: 32).span
+        )
+        let secondBinder = try TLS13PSKBinder(
+            value: ContiguousArray<UInt8>(repeating: 0x22, count: 32).span
+        )
+        do {
+            _ = try TLS13PreSharedKeyExtension(
+                identities: ContiguousArray([identity, identity]),
+                binders: ContiguousArray([firstBinder, secondBinder])
+            )
+            XCTFail("duplicate PSK identities were accepted")
+        } catch {
+            XCTAssertEqual(error, .duplicateIdentity)
+        }
+    }
+
     func testBinderVerificationIsConstantTimeAndSuiteSized() throws {
         let psk = try SecretBytes(
             copying: ContiguousArray<UInt8>(repeating: 0x55, count: 32).span

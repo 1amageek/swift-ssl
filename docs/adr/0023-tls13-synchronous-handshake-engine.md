@@ -27,8 +27,11 @@ the same validity check and validates that the supplied Ed25519 signing key
 matches the certificate SPKI. This is a deliberately narrow trust profile,
 not a replacement for path building or a platform trust store.
 Network I/O, trust-store lookup, asynchronous private-key providers, record
-fragment buffering, resumption, 0-RTT, and ECH remain separate responsibilities
-and are not represented as successful behavior by this engine.
+fragment buffering, 0-RTT, and ECH remain separate responsibilities and are not
+represented as successful behavior by this engine. TLS 1.3 PSK resumption is
+implemented for the synchronous profile, including binder transcript checking,
+ticket-age validation, and the certificate-free resumed flight; cross-process
+ticket persistence and replay coordination remain outside the engine.
 
 The handshake copies only the fixed 32-byte ECDHE result into the key-schedule
 boundary and wipes that temporary. Record payloads are copied into bounded
@@ -38,8 +41,8 @@ traffic.
 
 ## Verification
 
-The deterministic client/server fixture covers the complete wire path through
-server CertificateVerify, both Finished messages, and application-secret
-installation. A malformed or authenticated record must produce a typed failure
-and leave the engine unestablished. Differential and interoperability evidence
-remain release gates.
+The deterministic client/server fixtures cover both the certificate-authenticated
+wire path and the certificate-free PSK-resumed path through both Finished
+messages and application-secret installation. A malformed or authenticated
+record must produce a typed failure and leave the engine unestablished.
+Differential and interoperability evidence remain release gates.

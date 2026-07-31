@@ -5,8 +5,9 @@ import SwiftSSLCrypto
 ///
 /// The ticket bytes are an opaque server-selected identity. The state owns the
 /// resumption master secret and ticket nonce, validates lifetime and clock
-/// ordering, and consumes the PSK exactly once. Ticket storage, replay
-/// coordination across processes, and ClientHello transport remain outside.
+/// ordering, and consumes the PSK exactly once. Ticket persistence and replay
+/// coordination across processes remain outside; the TLS handshake engine owns
+/// ClientHello binder construction and server-side ticket-age validation.
 public struct TLS13ResumptionState: ~Copyable, Sendable {
     public static let maximumTicketByteCount = 16 * 1024
     public static let maximumNonceByteCount = 255

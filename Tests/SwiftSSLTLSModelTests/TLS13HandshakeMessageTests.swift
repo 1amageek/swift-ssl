@@ -239,6 +239,75 @@ final class TLS13HandshakeMessageTests: XCTestCase {
         }
     }
 
+    func testDeterministicPSKResumptionHandshakeCompletesWithoutCertificateFlight() throws {
+        let verificationInstant = try VerificationInstant(
+            secondsSinceUnixEpoch: 1_720_000_000,
+            nanoseconds: 0
+        )
+        let ticket = ContiguousArray<UInt8>([0xA0, 0xB0, 0xC0])
+        let nonce = ContiguousArray<UInt8>([0x01, 0x02, 0x03])
+        let masterSecret = ContiguousArray<UInt8>(repeating: 0x55, count: 32)
+        var serverState = try TLS13ResumptionState(
+            ticket: ticket.span,
+            ticketNonce: nonce.span,
+            resumptionMasterSecret: masterSecret.span,
+            cipherSuite: .aes128GCM_SHA256,
+            issuedAt: verificationInstant,
+            lifetime: 3_600,
+            ageAdd: 7
+        )
+        let serverPSK = try serverState.consumePSK()
+        let clientState = try TLS13ResumptionState(
+            ticket: ticket.span,
+            ticketNonce: nonce.span,
+            resumptionMasterSecret: masterSecret.span,
+            cipherSuite: .aes128GCM_SHA256,
+            issuedAt: verificationInstant,
+            lifetime: 3_600,
+            ageAdd: 7
+        )
+
+        let clientEphemeral = try X25519PrivateKey(
+            bytes: ContiguousArray(repeating: 0x11, count: 32).span
+        )
+        let serverEphemeralBytes = ContiguousArray<UInt8>(repeating: 0x22, count: 32)
+        var client = try TLS13ClientHandshake(
+            random: ContiguousArray(repeating: 0x01, count: 32).span,
+            ephemeralKey: clientEphemeral,
+            expectedServerPublicKey: deterministicServerPublicKey().span,
+            verificationInstant: verificationInstant,
+            resumptionState: consume clientState
+        )
+        var server = try serverPSK.withBorrowedBytes { psk in
+            let serverEphemeral = try X25519PrivateKey(bytes: serverEphemeralBytes.span)
+            return try TLS13ServerHandshake(
+                random: ContiguousArray(repeating: 0x02, count: 32).span,
+                ephemeralKey: serverEphemeral,
+                certificateDER: deterministicCertificate().span,
+                signingKey: try Ed25519PrivateKey(seed: deterministicSeed().span),
+                verificationInstant: verificationInstant,
+                resumptionIdentity: ticket.span,
+                resumptionPSK: psk,
+                resumptionIssuedAt: verificationInstant,
+                resumptionLifetime: 3_600,
+                resumptionAgeAdd: 7
+            )
+        }
+
+        let clientHello = try client.start()
+        let parsedClientHello = try TLS13HandshakeCodec.parseClientHello(
+            clientHello.bytes.span.extracting(5..<clientHello.bytes.count)
+        )
+        XCTAssertNotNil(parsedClientHello.preSharedKey)
+        let serverFlight = try server.receive(clientHello.bytes.span)
+        let clientFinished = try client.receive(serverFlight.bytes.span)
+        let serverFinished = try server.receive(clientFinished.bytes.span)
+
+        XCTAssertTrue(client.isEstablished)
+        XCTAssertTrue(server.isEstablished)
+        XCTAssertTrue(serverFinished.actions.contains(.handshakeConfirmed))
+    }
+
     func testNewSessionTicketIsEncryptedAndProducesResumptionState() throws {
         let verificationInstant = try VerificationInstant(
             secondsSinceUnixEpoch: 1_720_000_000,

@@ -20,4 +20,5 @@ public enum TLS13HandshakeEngineError: Error, Sendable, Equatable {
     case unsupportedCipherSuite(UInt16)
     case sessionTicket(TLS13SessionTicketError)
     case resumption(TLS13ResumptionError)
+    case preSharedKey(TLS13PSKError)
 }
