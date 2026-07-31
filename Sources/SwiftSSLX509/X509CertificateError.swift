@@ -1,0 +1,17 @@
+import SwiftSSLCore
+import SwiftSSLASN1
+
+public enum X509CertificateError: Error, Sendable, Equatable {
+    case invalidStructure
+    case der(DERError)
+    case value(DERValueError)
+    case algorithm(DERAlgorithmIdentifierError)
+    case publicKeyInfo(SubjectPublicKeyInfoError)
+    case resourceLimit(ResourceLimitError)
+    case invalidVersion(UInt64)
+    case invalidSerialNumber
+    case invalidValidity
+    case invalidSignatureValue
+    case duplicateOptionalField
+    case invalidRange(ByteError)
+}
