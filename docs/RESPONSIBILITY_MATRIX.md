@@ -26,7 +26,7 @@ Status values are `required`, `policy-gated`, `experimental`, `later`, and `excl
 | Family | Algorithms/constructions | Status | Owner and notes |
 |---|---|---|---|
 | Hash | SHA-256, SHA-384, SHA-512 | Required | `SwiftSSLCrypto`; SHA-256/384/512 callable implementations are present; TLS and signature dependencies remain to be integrated |
-| SHA-3/XOF | SHA3-256/512, SHAKE128/256 | Required | `SwiftSSLCrypto`; PQ dependencies |
+| SHA-3/XOF | SHA3-256/512, SHAKE128/256 | Required | `SwiftSSLCrypto`; FIPS 202 sponge and incremental contexts are implemented; PQ and protocol integration remain separate responsibilities |
 | Additional hash | BLAKE2 variants still justified by modern callers | Later | Separate from TLS completion; no BoringSSL symbol compatibility |
 | MAC | HMAC-SHA-256/384/512 | Required | `SwiftSSLCrypto` and façade implementations with constant-time tag verification |
 | KDF | HKDF-SHA-256/384/512 | Required | Extract/expand implementations; TLS and HPKE labels remain separate constructions |
@@ -56,7 +56,7 @@ Status values are `required`, `policy-gated`, `experimental`, `later`, and `excl
 | CMS/PKCS #7 certificate containers | Required subset | Parse and emit the certificate-container responsibility needed by current ecosystems |
 | X.509 certificate and extension parse | Required | Immutable DER owner plus ranges; syntax validity is not path validity |
 | RFC 5280 path building and validation | Required | Bounded search, loop detection, signature/algorithm policy, no partial success |
-| Service identity | Required | SAN-only matching; no Common Name fallback |
+| Service identity | Required | SAN-only matching; no Common Name fallback; `X509Certificate.matchesDNSName` implements ASCII DNS labels and one-label left-most wildcards |
 | Trust store | Required protocol | Caller-supplied immutable trust records; platform adapters are separate |
 | CRL and OCSP | Required | Acquisition, evidence validation, and hard/soft-fail policy separated |
 | Certificate Transparency inputs | Required | SCT parsing and verification capability; log-list acquisition is external |
@@ -115,7 +115,7 @@ No row below is complete unless the evidence column explicitly says that every c
 | Remaining cryptography | Responsibility protocols and typed error boundaries only | Native compilation | Concrete implementations, official vectors, negative/differential/target/performance gates |
 | ASN.1 | Strict DER cursor/TLV, canonical primitive codecs, bounded writer, and strict RFC 7468 PEM codec | Native unit tests for cursor, primitive values, transactional writer failures, canonical Base64, CRLF, malformed input, and output limits | SPKI/PKCS #8/PKCS #12/CMS codecs, fuzzing and full target evidence |
 | X.509 | Certificate/TBSCertificate/Validity/signature/SPKI structural parser, Ed25519 signature verification, strict v3 extension parsing, SPKI, and unencrypted PKCS #8 owners | Native X509 tests for certificate ranges/time fields, Ed25519 signatures, duplicate extensions, X25519 SPKI, and PKCS #8 version failures | Path building, identity, revocation, interoperability |
-| TLS/DTLS | TLS 1.3 HKDF key schedule, AEAD record protector, and synchronous X25519/Ed25519 AES-128-GCM stream handshake engine with explicit certificate validity and pinning | Native handshake completion, tampered-flight rejection, certificate-window rejection, all three AEAD suite round trips, padding, sequence and authentication-failure paths | Resumption, 0-RTT, key update, external credential/trust capabilities, DTLS state, full state/interop/target evidence |
+| TLS/DTLS | TLS 1.3 HKDF key schedule, AEAD record protector, synchronous X25519/Ed25519 AES-128-GCM stream handshake engine, and post-handshake KeyUpdate with explicit certificate validity and pinning | Native handshake completion, tampered-flight rejection, certificate-window rejection, KeyUpdate request/response and post-update data, all three AEAD suite round trips, padding, sequence and authentication-failure paths | Resumption, 0-RTT, external credential/trust capabilities, DTLS state, full state/interop/target evidence |
 | QUIC TLS integration | Profile actions, checked batch, noncopyable traffic-secret event, and ordered action/secret step output | Nine focused Native tests plus Native/WASI/Embedded WASI target-validation execution | TLS engine integration, capability correlation, RFC vectors, interoperability |
 | Platform adapters | Capability protocols only; no adapter product | Protocol compilation | Real entropy/clock/store adapters and per-target semantics |
 | `SwiftSSL` façade | Explicit AES-GCM, SHA-256, HMAC-SHA-256, HKDF-SHA-256, and X25519 adapters; lower modules remain separately importable products | AES-GCM, SHA-256, HMAC-SHA-256, HKDF-SHA-256, and X25519 have Native/WASI/Embedded WASI execution | Full application-facing TLS composition and a reviewed stability surface |

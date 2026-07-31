@@ -40,7 +40,7 @@ final class TLS13KeyScheduleTests: XCTestCase {
 
     func testSHA384SuiteAndInputFailures() throws {
         let psk = ContiguousArray<UInt8>(repeating: 0x55, count: 48)
-        let ecdhe = ContiguousArray<UInt8>(repeating: 0x66, count: 48)
+        let ecdhe = ContiguousArray<UInt8>(repeating: 0x66, count: X25519SharedSecret.byteCount)
         let transcript = ContiguousArray<UInt8>(repeating: 0x77, count: 48)
         let schedule = try TLS13KeySchedule(
             cipherSuite: .aes256GCM_SHA384,
@@ -54,7 +54,7 @@ final class TLS13KeyScheduleTests: XCTestCase {
             XCTAssertEqual(secret.count, 48)
         }
 
-        let invalidECDHE = ContiguousArray<UInt8>(repeating: 0, count: 32)
+        let invalidECDHE = ContiguousArray<UInt8>(repeating: 0, count: 48)
         do {
             _ = try schedule.makeHandshakeSecrets(
                 ecdheSharedSecret: invalidECDHE.span,
@@ -62,7 +62,7 @@ final class TLS13KeyScheduleTests: XCTestCase {
             )
             XCTFail("invalid ECDHE length was accepted")
         } catch {
-            XCTAssertEqual(error as? TLS13KeyScheduleError, .invalidECDHESecretLength(actual: 32))
+            XCTAssertEqual(error as? TLS13KeyScheduleError, .invalidECDHESecretLength(actual: 48))
         }
     }
 

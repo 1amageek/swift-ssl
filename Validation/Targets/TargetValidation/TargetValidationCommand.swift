@@ -13,6 +13,7 @@ enum TargetValidationCommand {
     case x25519
     case hmacDRBG
     case sha384512
+    case sha3
     case byteCursor
     case derCursor
     case secretOwner
@@ -47,6 +48,7 @@ enum TargetValidationCommand {
     try validateX25519()
     try validateHMACDRBG()
     try validateSHA384AndSHA512()
+    try validateSHA3()
     try validateSHA256()
     try validateHMACSHA256()
     try validateHKDFSHA256()
@@ -225,6 +227,34 @@ enum TargetValidationCommand {
     var output512Span = output512.mutableSpan
     try SwiftSSL.SHA512.hash(input.span, into: &output512Span)
     guard output384 == expected384, output512 == expected512 else { throw Failure.sha384512 }
+  }
+
+  private static func validateSHA3() throws {
+    var sha3 = ContiguousArray<UInt8>(repeating: 0, count: SwiftSSLCrypto.SHA3_256.digestByteCount)
+    var sha3Span = sha3.mutableSpan
+    try SwiftSSLCrypto.SHA3_256.hash(ContiguousArray<UInt8>().span, into: &sha3Span)
+    let expected = ContiguousArray<UInt8>([
+      0xA7, 0xFF, 0xC6, 0xF8, 0xBF, 0x1E, 0xD7, 0x66,
+      0x51, 0xC1, 0x47, 0x56, 0xA0, 0x61, 0xD6, 0x62,
+      0xF5, 0x80, 0xFF, 0x4D, 0xE4, 0x3B, 0x49, 0xFA,
+      0x82, 0xD8, 0x0A, 0x4B, 0x80, 0xF8, 0x43, 0x4A,
+    ])
+    guard sha3 == expected else { throw Failure.sha3 }
+
+    var shake = ContiguousArray<UInt8>(repeating: 0, count: 32)
+    var shakeSpan = shake.mutableSpan
+    try SwiftSSLCrypto.SHAKE128.hash(
+      ContiguousArray<UInt8>().span,
+      outputByteCount: 32,
+      into: &shakeSpan
+    )
+    let shakeExpected = ContiguousArray<UInt8>([
+      0x7F, 0x9C, 0x2B, 0xA4, 0xE8, 0x8F, 0x82, 0x7D,
+      0x61, 0x60, 0x45, 0x50, 0x76, 0x05, 0x85, 0x3E,
+      0xD7, 0x3B, 0x80, 0x93, 0xF6, 0xEF, 0xBC, 0x88,
+      0xEB, 0x1A, 0x6E, 0xAC, 0xFA, 0x66, 0xEF, 0x26,
+    ])
+    guard shake == shakeExpected else { throw Failure.sha3 }
   }
 
   private static func validateSHA256() throws {

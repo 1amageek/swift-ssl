@@ -4,8 +4,8 @@ import SwiftSSLCrypto
 public struct TLS13ApplicationSecrets: ~Copyable, Sendable {
     public let cipherSuite: TLSCipherSuite
 
-    private let clientTrafficSecret: SecretBytes
-    private let serverTrafficSecret: SecretBytes
+    private var clientTrafficSecret: SecretBytes
+    private var serverTrafficSecret: SecretBytes
     private let exporterMasterSecret: SecretBytes
     private let resumptionMasterSecret: SecretBytes
 
@@ -71,5 +71,21 @@ public struct TLS13ApplicationSecrets: ~Copyable, Sendable {
         _ body: (Span<UInt8>) throws(Failure) -> Result
     ) throws(Failure) -> Result {
         try resumptionMasterSecret.withBorrowedBytes(body)
+    }
+
+    public mutating func updateClientTrafficSecret() throws(TLS13KeyScheduleError) {
+        let next = try TLS13KeySchedule.updateTrafficSecret(
+            secret: clientTrafficSecret,
+            cipherSuite: cipherSuite
+        )
+        clientTrafficSecret = consume next
+    }
+
+    public mutating func updateServerTrafficSecret() throws(TLS13KeyScheduleError) {
+        let next = try TLS13KeySchedule.updateTrafficSecret(
+            secret: serverTrafficSecret,
+            cipherSuite: cipherSuite
+        )
+        serverTrafficSecret = consume next
     }
 }

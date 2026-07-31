@@ -97,6 +97,19 @@ final class X509CertificateTests: XCTestCase {
         }
     }
 
+    func testMatchesDNSNameFromSubjectAlternativeNameOnly() throws {
+        let parsed = try X509Certificate(der: makeCertificateWithSubjectAlternativeName().span)
+        XCTAssertTrue(try parsed.matchesDNSName(ContiguousArray("A.COM".utf8).span))
+        XCTAssertFalse(try parsed.matchesDNSName(ContiguousArray("b.a.com".utf8).span))
+
+        do {
+            _ = try parsed.matchesDNSName(ContiguousArray("bad name".utf8).span)
+            XCTFail("invalid hostname syntax was accepted")
+        } catch {
+            XCTAssertEqual(error, .invalidHostname)
+        }
+    }
+
     private func makeCertificate() -> ContiguousArray<UInt8> {
         var tbs: ContiguousArray<UInt8> = [
             0x30, 0x5A,
@@ -152,6 +165,22 @@ final class X509CertificateTests: XCTestCase {
         result.insert(contentsOf: extensions, at: 2 + 2 + 0x5A)
         result[1] += UInt8(extensions.count)
         result[3] += UInt8(extensions.count)
+        return result
+    }
+
+    private func makeCertificateWithSubjectAlternativeName() -> ContiguousArray<UInt8> {
+        var result = makeCertificate()
+        let extensionBytes: [UInt8] = [
+            0xA3, 0x14,
+            0x30, 0x12,
+            0x30, 0x10,
+            0x06, 0x03, 0x55, 0x1D, 0x11,
+            0x04, 0x09,
+            0x30, 0x07, 0x82, 0x05, 0x61, 0x2E, 0x63, 0x6F, 0x6D
+        ]
+        result.insert(contentsOf: extensionBytes, at: 94)
+        result[1] += UInt8(extensionBytes.count)
+        result[3] += UInt8(extensionBytes.count)
         return result
     }
 

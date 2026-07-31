@@ -5,6 +5,7 @@ import SwiftSSLX509
 public struct TLS13ClientHello: Sendable, Hashable {
     public let random: OwnedBytes
     public let keyShare: OwnedBytes
+    public let cipherSuite: TLSCipherSuite
 }
 
 public struct TLS13ServerHello: Sendable, Hashable {
@@ -20,6 +21,7 @@ public enum TLS13HandshakeCodec {
     public static let certificateType: UInt8 = 11
     public static let certificateVerifyType: UInt8 = 15
     public static let finishedType: UInt8 = 20
+    public static let keyUpdateType: UInt8 = 24
 
     public static func makeClientHello(
         random: Span<UInt8>,
@@ -29,7 +31,7 @@ public enum TLS13HandshakeCodec {
         guard random.count == 32, keyShare.count == 32 else {
             throw .invalidKeyShare
         }
-        guard cipherSuite == .aes128GCM_SHA256 else {
+        guard TLSCipherSuite(rawValue: cipherSuite.rawValue) != nil else {
             throw .unsupportedCipherSuite(cipherSuite.rawValue)
         }
         var body = try Self.makeBuilder(maximumByteCount: 512, minimumCapacity: 128)
@@ -62,7 +64,7 @@ public enum TLS13HandshakeCodec {
             let random = OwnedBytes(copying: try cursor.readSpan(count: 32))
             guard try cursor.readByte() == 0 else { throw TLS13HandshakeError.malformedMessage }
             guard try cursor.readUInt16BigEndian() == 2,
-                  try cursor.readUInt16BigEndian() == TLSCipherSuite.aes128GCM_SHA256.rawValue,
+                  let cipherSuite = TLSCipherSuite(rawValue: try cursor.readUInt16BigEndian()),
                   try cursor.readByte() == 1,
                   try cursor.readByte() == 0 else {
                 throw TLS13HandshakeError.unsupportedCipherSuite(0)
@@ -71,7 +73,9 @@ public enum TLS13HandshakeCodec {
             let extensions = try cursor.readSpan(count: extensionsLength)
             try cursor.requireFullyConsumed()
             let keyShare = try parseClientExtensions(extensions)
-            return TLS13ClientHello(random: random, keyShare: keyShare)
+            return TLS13ClientHello(random: random, keyShare: keyShare, cipherSuite: cipherSuite)
+        } catch let error as TLS13HandshakeError {
+            throw error
         } catch {
             throw .malformedMessage
         }
@@ -83,7 +87,7 @@ public enum TLS13HandshakeCodec {
         cipherSuite: TLSCipherSuite = .aes128GCM_SHA256
     ) throws(TLS13HandshakeError) -> OwnedBytes {
         guard random.count == 32, keyShare.count == 32 else { throw .invalidKeyShare }
-        guard cipherSuite == .aes128GCM_SHA256 else { throw .unsupportedCipherSuite(cipherSuite.rawValue) }
+        guard TLSCipherSuite(rawValue: cipherSuite.rawValue) != nil else { throw .unsupportedCipherSuite(cipherSuite.rawValue) }
         var body = try Self.makeBuilder(maximumByteCount: 256, minimumCapacity: 100)
         do {
             try body.appendUInt16BigEndian(0x0303)
@@ -112,7 +116,6 @@ public enum TLS13HandshakeCodec {
             let random = OwnedBytes(copying: try cursor.readSpan(count: 32))
             guard try cursor.readByte() == 0 else { throw TLS13HandshakeError.malformedMessage }
             guard let cipherSuite = TLSCipherSuite(rawValue: try cursor.readUInt16BigEndian()),
-                  cipherSuite == .aes128GCM_SHA256,
                   try cursor.readByte() == 0 else {
                 throw TLS13HandshakeError.unsupportedCipherSuite(0)
             }
@@ -121,6 +124,8 @@ public enum TLS13HandshakeCodec {
             try cursor.requireFullyConsumed()
             let keyShare = try parseServerExtensions(extensions)
             return TLS13ServerHello(random: random, keyShare: keyShare, cipherSuite: cipherSuite)
+        } catch let error as TLS13HandshakeError {
+            throw error
         } catch {
             throw .malformedMessage
         }
@@ -238,6 +243,27 @@ public enum TLS13HandshakeCodec {
         let body = try readBody(message, expectedType: Self.finishedType)
         guard body.count == hashByteCount else { throw .invalidFinished }
         return OwnedBytes(copying: body)
+    }
+
+    public static func makeKeyUpdate(
+        requestUpdate: Bool
+    ) throws(TLS13HandshakeError) -> OwnedBytes {
+        var body = try Self.makeBuilder(maximumByteCount: 1, minimumCapacity: 1)
+        do {
+            try body.append(requestUpdate ? 1 : 0)
+            return finish(type: Self.keyUpdateType, body: body.finish())
+        } catch {
+            throw .cryptographicFailure
+        }
+    }
+
+    public static func parseKeyUpdate(
+        _ message: Span<UInt8>
+    ) throws(TLS13HandshakeError) -> Bool {
+        let body = try readBody(message, expectedType: Self.keyUpdateType)
+        guard body.count == 1 else { throw .malformedMessage }
+        guard body[0] == 0 || body[0] == 1 else { throw .malformedMessage }
+        return body[0] == 1
     }
 
     public static func splitMessages(

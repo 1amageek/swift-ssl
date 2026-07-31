@@ -29,7 +29,9 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
         transcriptHash: Span<UInt8>
     ) throws(TLS13KeyScheduleError) -> TLS13HandshakeSecrets {
         let hashByteCount = Self.hashByteCount(for: cipherSuite)
-        guard ecdheSharedSecret.count == hashByteCount else {
+        // X25519 always produces a 32-byte shared secret; the hash size only
+        // controls the transcript and traffic-secret widths.
+        guard ecdheSharedSecret.count == X25519SharedSecret.byteCount else {
             throw .invalidECDHESecretLength(actual: ecdheSharedSecret.count)
         }
         guard transcriptHash.count == hashByteCount else {
@@ -111,6 +113,56 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
             secret: secret,
             info: info.span,
             outputByteCount: hashByteCount,
+            cipherSuite: cipherSuite
+        )
+    }
+
+    /// Derives the next sending or receiving traffic secret from RFC 8446
+    /// section 7.2. The update label has an empty context, unlike
+    /// `Derive-Secret`, which hashes a transcript before expanding.
+    static func updateTrafficSecret(
+        secret: borrowing SecretBytes,
+        cipherSuite: TLSCipherSuite
+    ) throws(TLS13KeyScheduleError) -> SecretBytes {
+        let hashByteCount = Self.hashByteCount(for: cipherSuite)
+        var info = ContiguousArray<UInt8>()
+        info.reserveCapacity(2 + 1 + 17 + 1)
+        info.append(UInt8(truncatingIfNeeded: hashByteCount >> 8))
+        info.append(UInt8(truncatingIfNeeded: hashByteCount))
+        info.append(17)
+        info.append(contentsOf: "tls13 traffic upd".utf8)
+        info.append(0)
+        return try Self.expand(
+            secret: secret,
+            info: info.span,
+            outputByteCount: hashByteCount,
+            cipherSuite: cipherSuite
+        )
+    }
+
+    static func deriveResumptionPSK(
+        resumptionMasterSecret: borrowing SecretBytes,
+        ticketNonce: Span<UInt8>,
+        cipherSuite: TLSCipherSuite
+    ) throws(TLS13KeyScheduleError) -> SecretBytes {
+        let hashByteCount = Self.hashByteCount(for: cipherSuite)
+        var nonceHash = ContiguousArray<UInt8>(repeating: 0, count: hashByteCount)
+        do {
+            var destination = nonceHash.mutableSpan
+            switch cipherSuite {
+            case .aes256GCM_SHA384:
+                try SHA384.hash(ticketNonce, into: &destination)
+            case .aes128GCM_SHA256, .chacha20Poly1305_SHA256:
+                try SHA256.hash(ticketNonce, into: &destination)
+            }
+        } catch {
+            throw .cryptographicFailure
+        }
+        defer { wipe(&nonceHash) }
+        return try Self.deriveSecret(
+            secret: resumptionMasterSecret,
+            label: "resumption",
+            transcriptHash: nonceHash.span,
             cipherSuite: cipherSuite
         )
     }

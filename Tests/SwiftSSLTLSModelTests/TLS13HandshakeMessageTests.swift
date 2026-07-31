@@ -50,6 +50,88 @@ final class TLS13HandshakeMessageTests: XCTestCase {
         }
     }
 
+    func testKeyUpdateCodecRejectsInvalidRequestValue() throws {
+        let message = try TLS13HandshakeCodec.makeKeyUpdate(requestUpdate: true)
+        XCTAssertTrue(try TLS13HandshakeCodec.parseKeyUpdate(message.span))
+
+        var malformed = ContiguousArray(copy(message.span))
+        malformed[malformed.count - 1] = 2
+        do {
+            _ = try TLS13HandshakeCodec.parseKeyUpdate(malformed.span)
+            XCTFail("invalid KeyUpdate request value was accepted")
+        } catch {
+            XCTAssertEqual(error, .malformedMessage)
+        }
+    }
+
+    func testResumptionStateDerivesSingleUsePSKAndObfuscatedAge() throws {
+        let issuedAt = try VerificationInstant(
+            secondsSinceUnixEpoch: 1_720_000_000,
+            nanoseconds: 500_000_000
+        )
+        let ticket = ContiguousArray<UInt8>(repeating: 0xA5, count: 24)
+        let nonce = ContiguousArray<UInt8>([2, 3, 4])
+        let masterSecret = ContiguousArray<UInt8>(0..<32)
+        var state = try TLS13ResumptionState(
+            ticket: ticket.span,
+            ticketNonce: nonce.span,
+            resumptionMasterSecret: masterSecret.span,
+            cipherSuite: .aes128GCM_SHA256,
+            issuedAt: issuedAt,
+            lifetime: 3_600,
+            ageAdd: 0x0102_0304
+        )
+
+        let nextInstant = try VerificationInstant(
+            secondsSinceUnixEpoch: 1_720_000_001,
+            nanoseconds: 500_000_000
+        )
+        XCTAssertEqual(
+            try state.obfuscatedTicketAge(at: nextInstant),
+            1_000 &+ 0x0102_0304
+        )
+        state.withTicketBytes { bytes in
+            XCTAssertEqual(copy(bytes), Array(ticket))
+        }
+
+        let psk = try state.consumePSK()
+        psk.withBorrowedBytes { pskBytes in
+            XCTAssertEqual(
+                copy(pskBytes),
+                Array(bytes("73bd90ca427f124a189ef64ee7009d911ba8c213587fa5fec7a7c300a74a9c3e"))
+            )
+        }
+        XCTAssertTrue(state.isConsumed)
+        do {
+            _ = try state.consumePSK()
+            XCTFail("a resumption PSK was consumed more than once")
+        } catch {
+            XCTAssertEqual(error, .replayDetected)
+        }
+
+        let beforeIssue = try VerificationInstant(
+            secondsSinceUnixEpoch: 1_719_999_999,
+            nanoseconds: 500_000_000
+        )
+        do {
+            _ = try state.obfuscatedTicketAge(at: beforeIssue)
+            XCTFail("a ticket age before issuance was accepted")
+        } catch {
+            XCTAssertEqual(error, .issuedInFuture)
+        }
+
+        let afterExpiry = try VerificationInstant(
+            secondsSinceUnixEpoch: 1_720_003_601,
+            nanoseconds: 500_000_000
+        )
+        do {
+            _ = try state.obfuscatedTicketAge(at: afterExpiry)
+            XCTFail("an expired ticket was accepted")
+        } catch {
+            XCTAssertEqual(error, .expired)
+        }
+    }
+
     func testDeterministicClientServerHandshakeCompletes() throws {
         let seed = deterministicSeed()
         let serverPublicKey = deterministicServerPublicKey()
@@ -94,6 +176,67 @@ final class TLS13HandshakeMessageTests: XCTestCase {
         let responseOutput = try server.sendApplicationData(response.span)
         let clientReceived = try client.receiveApplicationRecord(responseOutput.bytes.span)
         XCTAssertEqual(copy(clientReceived.span), Array(response))
+
+        let clientKeyUpdate = try client.requestKeyUpdate(requestPeerUpdate: true)
+        let serverKeyUpdateResponse = try server.receivePostHandshakeRecord(
+            clientKeyUpdate.bytes.span
+        )
+        XCTAssertFalse(serverKeyUpdateResponse.bytes.isEmpty)
+        let clientKeyUpdateConsumed = try client.receivePostHandshakeRecord(
+            serverKeyUpdateResponse.bytes.span
+        )
+        XCTAssertTrue(clientKeyUpdateConsumed.bytes.isEmpty)
+
+        let postUpdateClientData = ContiguousArray<UInt8>([0x6E, 0x65, 0x77])
+        let postUpdateClientOutput = try client.sendApplicationData(postUpdateClientData.span)
+        let postUpdateClientReceived = try server.receiveApplicationRecord(
+            postUpdateClientOutput.bytes.span
+        )
+        XCTAssertEqual(copy(postUpdateClientReceived.span), Array(postUpdateClientData))
+
+        let postUpdateServerData = ContiguousArray<UInt8>([0x6F, 0x6C, 0x64])
+        let postUpdateServerOutput = try server.sendApplicationData(postUpdateServerData.span)
+        let postUpdateServerReceived = try client.receiveApplicationRecord(
+            postUpdateServerOutput.bytes.span
+        )
+        XCTAssertEqual(copy(postUpdateServerReceived.span), Array(postUpdateServerData))
+    }
+
+    func testDeterministicHandshakeSupportsAllTLS13CipherSuites() throws {
+        let verificationInstant = try VerificationInstant(
+            secondsSinceUnixEpoch: 1_720_000_000,
+            nanoseconds: 0
+        )
+        for cipherSuite in TLSCipherSuite.allCases {
+            let clientEphemeral = try X25519PrivateKey(
+                bytes: ContiguousArray(repeating: 0x11, count: 32).span
+            )
+            let serverEphemeral = try X25519PrivateKey(
+                bytes: ContiguousArray(repeating: 0x22, count: 32).span
+            )
+            let signingKey = try Ed25519PrivateKey(seed: deterministicSeed().span)
+            var client = try TLS13ClientHandshake(
+                random: ContiguousArray(repeating: 0x01, count: 32).span,
+                ephemeralKey: clientEphemeral,
+                expectedServerPublicKey: deterministicServerPublicKey().span,
+                verificationInstant: verificationInstant,
+                cipherSuite: cipherSuite
+            )
+            var server = try TLS13ServerHandshake(
+                random: ContiguousArray(repeating: 0x02, count: 32).span,
+                ephemeralKey: serverEphemeral,
+                certificateDER: deterministicCertificate().span,
+                signingKey: signingKey,
+                verificationInstant: verificationInstant
+            )
+
+            let clientHello = try client.start()
+            let serverFlight = try server.receive(clientHello.bytes.span)
+            let clientFinished = try client.receive(serverFlight.bytes.span)
+            _ = try server.receive(clientFinished.bytes.span)
+            XCTAssertTrue(client.isEstablished, "client did not establish (cipherSuite)")
+            XCTAssertTrue(server.isEstablished, "server did not establish (cipherSuite)")
+        }
     }
 
     func testClientRejectsTamperedServerFlight() throws {
