@@ -15,6 +15,8 @@ public struct X509Certificate: Sendable, Hashable {
     private let der: OwnedBytes
     private let tbsRange: ByteRange
     private let signatureRange: ByteRange
+    private let rsaPSSHash: RSAPSSHash?
+    private let rsaPSSSaltLength: Int?
 
     public init(
         der encodedDER: Span<UInt8>,
@@ -184,6 +186,21 @@ public struct X509Certificate: Sendable, Hashable {
         guard outerSignatureAlgorithm == tbsSignature else {
             throw .invalidStructure
         }
+        let parsedPSSParameters: (hash: RSAPSSHash, saltLength: Int)?
+        if outerSignatureAlgorithm.objectIdentifier == [1, 2, 840, 113549, 1, 1, 10] {
+            do {
+                parsedPSSParameters = try Self.parseRSAPSSParameters(
+                    signatureAlgorithmElement,
+                    limits: limits
+                )
+            } catch let error as X509CertificateError {
+                throw error
+            } catch {
+                throw .unsupportedSignatureAlgorithm
+            }
+        } else {
+            parsedPSSParameters = nil
+        }
         let signatureBits: DERBitString
         do {
             signatureBits = try DERPrimitiveCodec.decodeBitString(from: signatureValueElement)
@@ -225,6 +242,8 @@ public struct X509Certificate: Sendable, Hashable {
         self.der = owned
         self.tbsRange = tbsRange
         self.signatureRange = signatureRange
+        self.rsaPSSHash = parsedPSSParameters?.hash
+        self.rsaPSSSaltLength = parsedPSSParameters?.saltLength
     }
 
     public borrowing func withTBSCertificateBytes<Result, Failure: Error>(
@@ -290,6 +309,11 @@ public struct X509Certificate: Sendable, Hashable {
             guard valid else {
                 throw .signatureVerificationFailed
             }
+            return
+        }
+
+        if signatureAlgorithm.objectIdentifier == [1, 2, 840, 113549, 1, 1, 10] {
+            try verifyRSAPSS(using: verificationKey)
             return
         }
 
@@ -382,6 +406,52 @@ public struct X509Certificate: Sendable, Hashable {
         }
     }
 
+    // FIXME(INCOMPLETE_IMPLEMENTATION): RSA-PSS certificate verification is
+    // callable for compatibility validation, but the crypto backend remains
+    // outside TLS selection until its constant-time and differential release
+    // gates pass.
+    private borrowing func verifyRSAPSS(
+        using verificationKey: borrowing SubjectPublicKeyInfo
+    ) throws(X509CertificateError) {
+        guard verificationKey.algorithm == .rsaEncryption,
+              verificationKey.algorithmIdentifier.parameters == .null
+                  || verificationKey.algorithmIdentifier.parameters == .absent,
+              let hash = rsaPSSHash,
+              let saltLength = rsaPSSSaltLength else {
+            throw .unsupportedSignatureAlgorithm
+        }
+        let key: RSAPublicKey
+        do {
+            key = try verificationKey.withPublicKeyBytes { bytes in
+                try Self.parseRSAPublicKey(bytes, limits: Self.defaultParsingLimits)
+            }
+        } catch {
+            throw .signatureVerificationFailed
+        }
+        let digest: ContiguousArray<UInt8>
+        switch hash {
+        case .sha256: digest = try hashSHA256(tbs: self)
+        case .sha384: digest = try hashSHA384(tbs: self)
+        case .sha512: digest = try hashSHA512(tbs: self)
+        }
+        let digestOwner = OwnedBytes(consuming: digest)
+        let valid: Bool
+        do {
+            valid = try withSignatureBytes { signature in
+                try RSAPSS.verify(
+                    signature: signature,
+                    messageHash: digestOwner.span,
+                    publicKey: key,
+                    hash: hash,
+                    saltLength: saltLength
+                )
+            }
+        } catch {
+            throw .signatureVerificationFailed
+        }
+        guard valid else { throw .signatureVerificationFailed }
+    }
+
     private static func requireSupportedECDSAKey(
         _ key: borrowing SubjectPublicKeyInfo,
         signatureParameters: DERAlgorithmParameters
@@ -454,6 +524,212 @@ public struct X509Certificate: Sendable, Hashable {
             throw .signatureVerificationFailed
         }
         return digest
+    }
+
+    private static func parseRSAPublicKey(
+        _ encoded: Span<UInt8>,
+        limits: ParsingLimits
+    ) throws(X509CertificateError) -> RSAPublicKey {
+        var budget: ParsingBudget
+        do {
+            budget = try ParsingBudget(limits: limits, inputByteCount: encoded.count)
+        } catch {
+            throw .resourceLimit(.inputBytes(limit: limits.maximumInputBytes, actual: encoded.count))
+        }
+        var cursor = DERCursor(encoded)
+        let root: DERElementView
+        do {
+            root = try cursor.readElement(using: &budget)
+            try cursor.requireFullyConsumed()
+        } catch let error as DERError {
+            throw .der(error)
+        } catch {
+            throw .invalidStructure
+        }
+        let sequenceTag = DERTag(tagClass: .universal, isConstructed: true, number: 16)
+        guard root.tag == sequenceTag else { throw .invalidStructure }
+        var body = DERCursor(root.contentBytes)
+        let modulusElement: DERElementView
+        let exponentElement: DERElementView
+        do {
+            modulusElement = try body.readElement(using: &budget)
+            exponentElement = try body.readElement(using: &budget)
+            try body.requireFullyConsumed()
+        } catch let error as DERError {
+            throw .der(error)
+        } catch {
+            throw .invalidStructure
+        }
+        let integerTag = DERTag(tagClass: .universal, isConstructed: false, number: 2)
+        guard modulusElement.tag == integerTag, exponentElement.tag == integerTag else {
+            throw .invalidStructure
+        }
+        let modulusBytes = modulusElement.contentBytes
+        guard !modulusBytes.isEmpty,
+              modulusBytes[0] & 0x80 == 0,
+              !(modulusBytes.count > 1 && modulusBytes[0] == 0 && modulusBytes[1] & 0x80 == 0) else {
+            throw .invalidStructure
+        }
+        let modulus = modulusBytes[0] == 0
+            ? modulusBytes.extracting(1..<modulusBytes.count)
+            : modulusBytes
+        let exponent: UInt64
+        do {
+            exponent = try DERPrimitiveCodec.decodePositiveInteger(from: exponentElement)
+        } catch {
+            throw .invalidStructure
+        }
+        do {
+            return try RSAPublicKey(modulus: modulus, exponent: exponent)
+        } catch {
+            throw .publicKeyInfo(.invalidKeyBitString)
+        }
+    }
+
+    private static func parseRSAPSSParameters(
+        _ algorithmElement: DERElementView,
+        limits: ParsingLimits
+    ) throws(X509CertificateError) -> (hash: RSAPSSHash, saltLength: Int) {
+        var budget: ParsingBudget
+        do {
+            budget = try ParsingBudget(
+                limits: limits,
+                inputByteCount: algorithmElement.encodedBytes.count
+            )
+        } catch {
+            throw .unsupportedSignatureAlgorithm
+        }
+        let sequenceTag = DERTag(tagClass: .universal, isConstructed: true, number: 16)
+        guard algorithmElement.tag == sequenceTag else { throw .unsupportedSignatureAlgorithm }
+        var algorithmBody = DERCursor(algorithmElement.contentBytes)
+        do {
+            _ = try algorithmBody.readElement(using: &budget)
+        } catch {
+            throw .unsupportedSignatureAlgorithm
+        }
+        let parameters: DERElementView
+        do {
+            parameters = try algorithmBody.readElement(using: &budget)
+            try algorithmBody.requireFullyConsumed()
+        } catch {
+            throw .unsupportedSignatureAlgorithm
+        }
+        guard parameters.tag == sequenceTag else { throw .unsupportedSignatureAlgorithm }
+
+        var hash: RSAPSSHash?
+        var mgfHash: RSAPSSHash?
+        var saltLength: Int?
+        var trailerField: UInt64?
+        hash = nil
+        mgfHash = nil
+        saltLength = nil
+        trailerField = nil
+        var parameterBody = DERCursor(parameters.contentBytes)
+        while !parameterBody.isAtEnd {
+            let field: DERElementView
+            do { field = try parameterBody.readElement(using: &budget) }
+            catch { throw .unsupportedSignatureAlgorithm }
+            guard field.tag.tagClass == .contextSpecific,
+                  field.tag.isConstructed,
+                  field.tag.number <= 3 else {
+                throw .unsupportedSignatureAlgorithm
+            }
+            var innerCursor = DERCursor(field.contentBytes)
+            let inner: DERElementView
+            do {
+                inner = try innerCursor.readElement(using: &budget)
+                try innerCursor.requireFullyConsumed()
+            } catch {
+                throw .unsupportedSignatureAlgorithm
+            }
+            switch field.tag.number {
+            case 0:
+                guard hash == nil else { throw .unsupportedSignatureAlgorithm }
+                hash = try Self.parseRSASHA2Algorithm(inner, budget: &budget)
+            case 1:
+                guard mgfHash == nil else { throw .unsupportedSignatureAlgorithm }
+                mgfHash = try Self.parseRSAMGF1Algorithm(inner, budget: &budget)
+            case 2:
+                guard saltLength == nil else { throw .unsupportedSignatureAlgorithm }
+                let value: UInt64
+                do { value = try DERPrimitiveCodec.decodePositiveInteger(from: inner) }
+                catch { throw .unsupportedSignatureAlgorithm }
+                guard value <= UInt64(Int.max) else { throw .unsupportedSignatureAlgorithm }
+                saltLength = Int(value)
+            case 3:
+                guard trailerField == nil else { throw .unsupportedSignatureAlgorithm }
+                do { trailerField = try DERPrimitiveCodec.decodePositiveInteger(from: inner) }
+                catch { throw .unsupportedSignatureAlgorithm }
+            default:
+                throw .unsupportedSignatureAlgorithm
+            }
+        }
+        guard let hash, let mgfHash, hash == mgfHash,
+              let saltLength, saltLength == hash.digestByteCount,
+              (trailerField == nil || trailerField == 1) else {
+            throw .unsupportedSignatureAlgorithm
+        }
+        return (hash, saltLength)
+    }
+
+    private static func parseRSASHA2Algorithm(
+        _ algorithmElement: DERElementView,
+        budget: inout ParsingBudget
+    ) throws(X509CertificateError) -> RSAPSSHash {
+        let sequenceTag = DERTag(tagClass: .universal, isConstructed: true, number: 16)
+        guard algorithmElement.tag == sequenceTag else { throw .unsupportedSignatureAlgorithm }
+        var body = DERCursor(algorithmElement.contentBytes)
+        let oidElement: DERElementView
+        do { oidElement = try body.readElement(using: &budget) }
+        catch { throw .unsupportedSignatureAlgorithm }
+        let oid: ContiguousArray<UInt64>
+        do { oid = try DERPrimitiveCodec.decodeObjectIdentifier(from: oidElement) }
+        catch { throw .unsupportedSignatureAlgorithm }
+        if !body.isAtEnd {
+            let parameters: DERElementView
+            do {
+                parameters = try body.readElement(using: &budget)
+                try body.requireFullyConsumed()
+            } catch {
+                throw .unsupportedSignatureAlgorithm
+            }
+            let nullTag = DERTag(tagClass: .universal, isConstructed: false, number: 5)
+            guard parameters.tag == nullTag, parameters.contentBytes.isEmpty else {
+                throw .unsupportedSignatureAlgorithm
+            }
+        }
+        switch Array(oid) {
+        case [2, 16, 840, 1, 101, 3, 4, 2, 1]: return .sha256
+        case [2, 16, 840, 1, 101, 3, 4, 2, 2]: return .sha384
+        case [2, 16, 840, 1, 101, 3, 4, 2, 3]: return .sha512
+        default: throw .unsupportedSignatureAlgorithm
+        }
+    }
+
+    private static func parseRSAMGF1Algorithm(
+        _ algorithmElement: DERElementView,
+        budget: inout ParsingBudget
+    ) throws(X509CertificateError) -> RSAPSSHash {
+        let sequenceTag = DERTag(tagClass: .universal, isConstructed: true, number: 16)
+        guard algorithmElement.tag == sequenceTag else { throw .unsupportedSignatureAlgorithm }
+        var body = DERCursor(algorithmElement.contentBytes)
+        let oidElement: DERElementView
+        do { oidElement = try body.readElement(using: &budget) }
+        catch { throw .unsupportedSignatureAlgorithm }
+        let oid: ContiguousArray<UInt64>
+        do { oid = try DERPrimitiveCodec.decodeObjectIdentifier(from: oidElement) }
+        catch { throw .unsupportedSignatureAlgorithm }
+        guard Array(oid) == [1, 2, 840, 113549, 1, 1, 8], !body.isAtEnd else {
+            throw .unsupportedSignatureAlgorithm
+        }
+        let parameters: DERElementView
+        do {
+            parameters = try body.readElement(using: &budget)
+            try body.requireFullyConsumed()
+        } catch {
+            throw .unsupportedSignatureAlgorithm
+        }
+        return try Self.parseRSASHA2Algorithm(parameters, budget: &budget)
     }
 
     private static func decodeECDSASignature(
