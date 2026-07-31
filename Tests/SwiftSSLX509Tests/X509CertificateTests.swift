@@ -75,6 +75,55 @@ final class X509CertificateTests: XCTestCase {
         }
     }
 
+    func testVerifiesP256ECDSACertificateSignature() throws {
+        let certificate = makeECDSACertificate()
+        let parsed = try X509Certificate(der: certificate.span)
+
+        XCTAssertNoThrow(try parsed.verifySignature())
+        XCTAssertEqual(parsed.signatureAlgorithm.objectIdentifier, [1, 2, 840, 10045, 4, 3, 2])
+        XCTAssertEqual(parsed.subjectPublicKeyInfo.algorithm, .ecPublicKey(curve: .prime256v1))
+    }
+
+    func testRejectsModifiedP256ECDSACertificateSignature() throws {
+        var certificate = makeECDSACertificate()
+        certificate[certificate.count - 1] ^= 0x01
+        let parsed = try X509Certificate(der: certificate.span)
+
+        do {
+            try parsed.verifySignature()
+            XCTFail("modified P-256 ECDSA certificate signature was accepted")
+        } catch {
+            XCTAssertEqual(error, .signatureVerificationFailed)
+        }
+    }
+
+    func testVerifiesP256ECDSASHA384AndSHA512Certificates() throws {
+        let sha384 = bytes(
+            "308201303081d7a003020102020107300a06082a8648ce3d04030330223120301e" +
+            "06035504030c1773776966742d73736c2d65636473612e6578616d706c65301e170d" +
+            "3235303130313030303030305a170d3335303130313030303030305a30223120301e" +
+            "06035504030c1773776966742d73736c2d65636473612e6578616d706c6530593013" +
+            "06072a8648ce3d020106082a8648ce3d030107034200046b17d1f2e12c4247f8bce6e" +
+            "563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f" +
+            "9e162bce33576b315ececbb6406837bf51f5300a06082a8648ce3d04030303480030" +
+            "450220230553b7ae39f4f20f6db904c015f1e3937a8fcf2dcf5782e2112bf1afaaaaff" +
+            "022100b9e338d6dc2357d79fc7cf5efc96e93b42142d8aafe6976947e9e52d7c445037"
+        )
+        let sha512 = bytes(
+            "308201303081d7a003020102020107300a06082a8648ce3d04030430223120301e" +
+            "06035504030c1773776966742d73736c2d65636473612e6578616d706c65301e170d" +
+            "3235303130313030303030305a170d3335303130313030303030305a30223120301e" +
+            "06035504030c1773776966742d73736c2d65636473612e6578616d706c6530593013" +
+            "06072a8648ce3d020106082a8648ce3d030107034200046b17d1f2e12c4247f8bce6e" +
+            "563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f" +
+            "9e162bce33576b315ececbb6406837bf51f5300a06082a8648ce3d04030403480030" +
+            "450221009f9486ec03f25bcfbd83f0bc716d43431e3c3113e86929332ce33e773d8722ae" +
+            "02200e7a44c907d57549732d05e661f42218fcb041eec26726d09f09f9affe8ce098"
+        )
+        XCTAssertNoThrow(try X509Certificate(der: sha384.span).verifySignature())
+        XCTAssertNoThrow(try X509Certificate(der: sha512.span).verifySignature())
+    }
+
     func testParsesV3ExtensionsAndOwnsExtensionValue() throws {
         let certificate = makeCertificateWithExtensions()
         let parsed = try X509Certificate(der: certificate.span)
@@ -196,6 +245,22 @@ final class X509CertificateTests: XCTestCase {
             "15596380832a60cc57d2a84f843c774ffe0a7b462a9556f76751a870d5c7901"
         ))
         return result
+    }
+
+    private func makeECDSACertificate() -> ContiguousArray<UInt8> {
+        bytes(
+            "3082016930820110a003020102020107300a06082a8648ce3d04030230223120301e" +
+            "06035504030c1773776966742d73736c2d65636473612e6578616d706c65301e170d" +
+            "3235303130313030303030305a170d3335303130313030303030305a30223120301e" +
+            "06035504030c1773776966742d73736c2d65636473612e6578616d706c6530593013" +
+            "06072a8648ce3d020106082a8648ce3d030107034200046b17d1f2e12c4247f8bce6e" +
+            "563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f" +
+            "9e162bce33576b315ececbb6406837bf51f5a3373035300f0603551d130101ff0405" +
+            "30030101ff30220603551d11041b3019821773776966742d73736c2d65636473612e" +
+            "6578616d706c65300a06082a8648ce3d040302034700304402207d64b4f0d8d41a49" +
+            "720e591dc1844556462cd8beb44558fa9f63156a76f2c6cc022063756eb89655ab0b" +
+            "0b04032d184382dd99e0be5ce5cacc66374a36dc83f7ac23"
+        )
     }
 
     private func bytes(_ value: String) -> ContiguousArray<UInt8> {

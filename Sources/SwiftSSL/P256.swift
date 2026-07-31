@@ -22,6 +22,31 @@ public enum P256 {
     }
 }
 
+/// P-256 ECDSA verification exposed by the SwiftSSL façade.
+// FIXME(INCOMPLETE_IMPLEMENTATION): This façade exposes the validated
+// certificate/signature path, but the underlying arithmetic remains variable
+// time. TLS authentication must not select it until the constant-time and
+// differential release gates pass.
+public enum P256ECDSA {
+    public static let signatureByteCount = SwiftSSLCrypto.P256ECDSA.signatureByteCount
+
+    public static func verify(
+        signature: Span<UInt8>,
+        messageHash: Span<UInt8>,
+        publicKey: borrowing P256PublicKey
+    ) throws(CryptoInputError) -> Bool {
+        do {
+            return try SwiftSSLCrypto.P256ECDSA.verify(
+                signature: signature,
+                messageHash: messageHash,
+                publicKey: publicKey.implementation
+            )
+        } catch {
+            throw CryptoInputError(error)
+        }
+    }
+}
+
 public struct P256PrivateKey: ~Copyable, Sendable {
     public static let byteCount = SwiftSSLCrypto.P256PrivateKey.byteCount
     fileprivate let implementation: SwiftSSLCrypto.P256PrivateKey

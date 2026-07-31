@@ -69,6 +69,32 @@ final class P256Tests: XCTestCase {
         XCTAssertEqual(bobSecret.withBorrowedBytes { copyBytes($0) }, Array(expectedShared))
     }
 
+    func testECDSAVerificationMatchesIndependentVectorAndRejectsMutation() throws {
+        let publicKey = bytes(
+            "046B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296" +
+            "4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5"
+        )
+        let digest = bytes("172B1296FEDDD5E2C0B6300615142D3C4F6D375E5CB70ED8CFA9220CCEB94BE2")
+        let rawSignature = bytes(
+            "B186796906E26621D8940DDDF79330F38FB9EB6D8D8D88236E7223C71119C8CE" +
+            "FA037545B606E053DBFB53AFF1D182250E1CD6BEF8EF5B6F56C35C0B3EE8AF64"
+        )
+        let key = try P256PublicKey(bytes: publicKey.span)
+        XCTAssertTrue(try P256ECDSA.verify(
+            signature: rawSignature.span,
+            messageHash: digest.span,
+            publicKey: key
+        ))
+
+        var mutated = rawSignature
+        mutated[63] ^= 1
+        XCTAssertFalse(try P256ECDSA.verify(
+            signature: mutated.span,
+            messageHash: digest.span,
+            publicKey: key
+        ))
+    }
+
     func testRejectsInvalidScalarAndPoint() throws {
         let zero = ContiguousArray<UInt8>(repeating: 0, count: P256PrivateKey.byteCount)
         do {

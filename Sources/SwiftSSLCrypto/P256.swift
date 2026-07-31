@@ -36,6 +36,58 @@ public enum P256: KeyAgreement {
     }
 }
 
+/// P-256 ECDSA verification over a caller-provided message digest.
+// FIXME(INCOMPLETE_IMPLEMENTATION): This verifier is available for vector and
+// certificate-path validation, but it still shares the variable-time point
+// arithmetic used by the standalone P-256 primitive. The current callable
+// path must not be treated as production-ready until constant-time and
+// differential release gates pass.
+public enum P256ECDSA {
+    public static let signatureByteCount = 64
+
+    /// Verifies a raw ECDSA signature encoded as fixed-width `r || s`.
+    ///
+    /// The digest is interpreted as a big-endian integer and truncated to the
+    /// curve order width, as specified by SEC 1. The caller is responsible for
+    /// selecting the digest algorithm named by the surrounding protocol.
+    public static func verify(
+        signature: Span<UInt8>,
+        messageHash: Span<UInt8>,
+        publicKey: borrowing P256PublicKey
+    ) throws(CryptoInputError) -> Bool {
+        guard signature.count == Self.signatureByteCount else {
+            throw .invalidLength(expected: Self.signatureByteCount, actual: signature.count)
+        }
+        guard messageHash.count >= P256PrivateKey.byteCount else {
+            throw .invalidLength(expected: P256PrivateKey.byteCount, actual: messageHash.count)
+        }
+
+        let r = P256Scalar(bytes: signature.extracting(0..<32))
+        let s = P256Scalar(bytes: signature.extracting(32..<64))
+        guard !r.isZero, !s.isZero, r < .order, s < .order else {
+            throw .nonCanonicalEncoding
+        }
+
+        let digest = P256Scalar(bytes: messageHash.extracting(0..<32)).reduced
+        let inverse = s.inverted()
+        let u1 = digest * inverse
+        let u2 = r * inverse
+
+        let point: P256Point
+        do {
+            point = try publicKey.withBorrowedPoint { publicPoint throws(CryptoInputError) in
+                let first = P256Point.scalarMultiply(P256Point.generator, scalar: u1.encoded.span)
+                let second = P256Point.scalarMultiply(publicPoint, scalar: u2.encoded.span)
+                return first.adding(second)
+            }
+        } catch {
+            throw .invalidPeerKey
+        }
+        guard let affine = point.affine() else { return false }
+        return P256Scalar(words: affine.x.words).reduced == r
+    }
+}
+
 public struct P256PrivateKey: ~Copyable, Sendable {
     public static let byteCount = 32
     private let storage: SecretBytes
@@ -208,6 +260,10 @@ private struct P256Scalar: Equatable, Comparable {
         self.words = P256Words.decode(hex: hex)
     }
 
+    init(words: SIMD8<UInt32>) {
+        self.words = words
+    }
+
     var isZero: Bool {
         var value: UInt32 = 0
         var index = 0
@@ -216,6 +272,139 @@ private struct P256Scalar: Equatable, Comparable {
             index += 1
         }
         return value == 0
+    }
+
+    var reduced: P256Scalar {
+        P256Words.compare(words, Self.order.words) >= 0
+            ? P256Scalar(words: P256Words.subtract(words, Self.order.words))
+            : self
+    }
+
+    var encoded: ContiguousArray<UInt8> {
+        P256Words.encode(words)
+    }
+
+    func inverted() -> P256Scalar {
+        Self.power(self, exponent: Self.inverseExponent)
+    }
+
+    static func + (lhs: P256Scalar, rhs: P256Scalar) -> P256Scalar {
+        var result = SIMD8<UInt32>(repeating: 0)
+        var carry: UInt64 = 0
+        var index = 0
+        while index < 8 {
+            let sum = UInt64(lhs.words[index]) + UInt64(rhs.words[index]) + carry
+            result[index] = UInt32(truncatingIfNeeded: sum)
+            carry = sum >> 32
+            index += 1
+        }
+        if carry != 0 {
+            result = P256Words.add(result, Self.modulusComplement)
+        } else if P256Words.compare(result, Self.order.words) >= 0 {
+            result = P256Words.subtract(result, Self.order.words)
+        }
+        return P256Scalar(words: result)
+    }
+
+    static func - (lhs: P256Scalar, rhs: P256Scalar) -> P256Scalar {
+        var result = SIMD8<UInt32>(repeating: 0)
+        var borrow: UInt64 = 0
+        var index = 0
+        while index < 8 {
+            let minuend = UInt64(lhs.words[index])
+            let subtrahend = UInt64(rhs.words[index]) + borrow
+            if minuend < subtrahend {
+                result[index] = UInt32(truncatingIfNeeded: (UInt64(1) << 32) + minuend - subtrahend)
+                borrow = 1
+            } else {
+                result[index] = UInt32(truncatingIfNeeded: minuend - subtrahend)
+                borrow = 0
+            }
+            index += 1
+        }
+        if borrow != 0 {
+            result = P256Words.add(result, Self.order.words)
+        }
+        return P256Scalar(words: result)
+    }
+
+    static func * (lhs: P256Scalar, rhs: P256Scalar) -> P256Scalar {
+        var product = [UInt64](repeating: 0, count: 16)
+        var i = 0
+        while i < 8 {
+            var carry: UInt64 = 0
+            var j = 0
+            while j < 8 {
+                let value = UInt64(lhs.words[i]) * UInt64(rhs.words[j]) + product[i + j] + carry
+                product[i + j] = value & 0xFFFF_FFFF
+                carry = value >> 32
+                j += 1
+            }
+            var index = i + 8
+            while carry != 0 {
+                let value = product[index] + carry
+                product[index] = value & 0xFFFF_FFFF
+                carry = value >> 32
+                index += 1
+            }
+            i += 1
+        }
+
+        var remainder = [UInt64](repeating: 0, count: 9)
+        var bit = 511
+        while bit >= 0 {
+            var carry = (product[bit >> 5] >> UInt64(bit & 31)) & 1
+            var index = 0
+            while index < 9 {
+                let value = (remainder[index] << 1) | carry
+                remainder[index] = value & 0xFFFF_FFFF
+                carry = value >> 32
+                index += 1
+            }
+            if remainder[8] != 0 || P256Words.compare(
+                P256Words.truncate(remainder), Self.order.words
+            ) >= 0 {
+                var borrow: UInt64 = 0
+                index = 0
+                while index < 8 {
+                    let minuend = remainder[index]
+                    let subtrahend = UInt64(Self.order.words[index]) + borrow
+                    if minuend < subtrahend {
+                        remainder[index] = (UInt64(1) << 32) + minuend - subtrahend
+                        borrow = 1
+                    } else {
+                        remainder[index] = minuend - subtrahend
+                        borrow = 0
+                    }
+                    index += 1
+                }
+                remainder[8] -= borrow
+            }
+            bit -= 1
+        }
+        return P256Scalar(words: P256Words.truncate(remainder))
+    }
+
+    private static let modulusComplement = P256Words.decode(
+        hex: "00000000FFFFFFFF00000000000000004319055258E8617B0C46353D039CDAAF"
+    )
+    private static let inverseExponent = P256Words.decode(
+        hex: "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC63254F"
+    )
+
+    private static func power(_ value: P256Scalar, exponent: SIMD8<UInt32>) -> P256Scalar {
+        var one = SIMD8<UInt32>(repeating: 0)
+        one[0] = 1
+        var result = P256Scalar(words: one)
+        var bit = 255
+        while bit >= 0 {
+            result = result * result
+            if ((exponent[bit >> 5] >> UInt32(bit & 31)) & 1) == 1 {
+                result = result * value
+            }
+            bit -= 1
+        }
+        return result
     }
 
     static func < (lhs: P256Scalar, rhs: P256Scalar) -> Bool {
