@@ -1,0 +1,93 @@
+# swift-ssl
+
+`swift-ssl` is an independent, Pure Swift implementation of modern cryptography, PKI, TLS 1.3, DTLS 1.3, and the TLS integration required by QUIC. It is designed to replace the modern responsibilities commonly supplied by BoringSSL without reproducing the OpenSSL/BoringSSL C API, ABI, ownership conventions, or legacy protocol surface.
+
+> Project status: architecture and core implementation are under active development. This repository is not yet suitable for production cryptography or network security.
+
+## Design goals
+
+- Swift-native ownership, errors, protocols, and deterministic state machines.
+- One semantic implementation for Native, WASI, and Embedded Swift targets.
+- Borrowed byte views on hot paths, explicit owned outputs, and noncopyable secret owners.
+- Strict parsers with resource budgets and no silent fallback.
+- No socket, event-loop, filesystem, DNS, or platform trust-store dependency in protocol engines.
+- Independently verifiable behavior through official vectors, differential tests, interoperability tests, fuzzing, sanitizers, and target-specific execution.
+
+```mermaid
+flowchart LR
+    Core[SwiftSSLCore] --> Crypto[SwiftSSLCrypto]
+    Core --> ASN1[SwiftSSLASN1]
+    Crypto --> X509[SwiftSSLX509]
+    ASN1 --> X509
+    Crypto --> TLS[SwiftSSLTLS]
+    X509 --> TLS
+    TLS --> QUIC[SwiftSSLQUIC]
+    Core -. capability protocols .-> Adapters["application/platform adapters\nnot yet provided"]
+    Adapters -. purpose-specific injection .-> TLS
+    Crypto --> Facade[SwiftSSL]
+```
+
+## Modern profile
+
+The implementation target is deliberately smaller than BoringSSL's historical API surface while covering its current security responsibilities.
+
+| Area | Included profile | Status |
+|---|---|---|
+| Core | Owned and borrowed bytes, strict cursors/builders, secret ownership, constant-time utilities, typed errors | Foundation implemented; verification incomplete |
+| Symmetric crypto | AES-GCM, ChaCha20-Poly1305, AES block operations needed by GCM, SHA-256/384/512, HMAC, HKDF | SHA-256, HMAC-SHA-256, and HKDF-SHA-256 implemented; remaining algorithms planned |
+| Public-key crypto | X25519, NIST P-256/P-384/P-521, Ed25519, RSA-PSS, ML-KEM, ML-DSA, approved hybrid groups | Planned |
+| Formats | Strict DER, PEM, SPKI, PKCS #8, encrypted PKCS #8, PKCS #12, certificate containers | Strict DER cursor foundation implemented; remaining formats planned |
+| PKI | X.509 parsing, path construction, policy processing, hostname verification, revocation inputs, trust-provider boundary | Byte-owner/model foundation only; engine planned |
+| TLS | TLS 1.3, resumption, 0-RTT policy, client authentication, key update, ECH, certificate compression, delegated credentials, raw public keys | Profile/action models only; engine planned |
+| Datagram | DTLS 1.3, replay windows, ACKs, retransmission state, connection IDs, DTLS-SRTP negotiation | Profile/action models only; engine planned |
+| QUIC | RFC 9001 handshake adapter and traffic-secret events; QUIC packet protection remains owned by the QUIC stack | Ordered action/secret output model implemented; engine planned |
+| Additional modern constructions | HPKE and narrowly scoped protocol constructions required by the modern profile | Planned |
+| Platform composition | Entropy and clock capabilities supplied explicitly per operation | Protocols only; concrete adapters are not yet provided |
+| Public façade | Curated application-facing API without blanket lower-module exports | Explicit SHA-256, HMAC-SHA-256, and HKDF-SHA-256 protocol adapters |
+
+The following are intentionally absent: SSL, TLS 1.0-1.2, DTLS 1.0-1.2, renegotiation, record compression, CBC cipher suites, RC4, DES/3DES, Blowfish, CAST, MD4, MD5, SHA-1 handshake signatures, DSA, legacy finite-field DH, the C API/ABI, `BIO`, `ENGINE`, `ex_data`, and the thread-local error queue.
+
+Algorithms required only to validate still-current certificate ecosystems are governed separately from handshake algorithms. Any such verification-only algorithm must be explicitly enabled by policy; it is never silently selected.
+
+## Toolchain baseline
+
+Development is pinned to:
+
+- Swift toolchain: `swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a`
+- macOS toolchain identifier: `org.swift.64202607231a`
+- Swift compiler commit: `ef761e567dc94ee`
+- WASI SDK: `swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm`
+- Embedded WASI SDK: `swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded`
+
+See [TOOLCHAIN.md](TOOLCHAIN.md) for the exact validation commands and target contract.
+
+## Verification and benchmarks
+
+Correctness tests live under `Tests/`. Long-running differential, interoperability, fuzz, sanitizer, and target execution programs live under `Validation/`. Performance workloads and raw measurements live under `Benchmarks/`; they are not part of the normal test command.
+
+| Implemented primitive | Current evidence | Still required before completion |
+|---|---|---|
+| SHA-256 | Incremental/one-shot tests, boundary tests, million-byte vector, scalar/ARM64 differential test, production ARM64 multi-block codegen gate, Native/WASI/Embedded WASI execution | Independent committed differential corpus and release benchmark |
+| HMAC-SHA-256 | RFC 4231 cases 1, 2, 3, 4, 6, and 7; incremental equivalence; typed output failure; constant-time verification; three-target execution; ASan/TSan/UBSan; optimized wipe inspection | Independent committed differential corpus, measured allocation/copy counts, and release benchmark |
+| HKDF-SHA-256 | RFC 5869 SHA-256 cases 1, 2, and 3, additional fixed fixtures, maximum-length and overlap boundaries, Native/WASI/Embedded WASI execution, ASan/TSan/UBSan, and `-O`/`-Osize` code-generation inspection; caller-provided output, one-time prepared HMAC schedule, zero-heap optimized path, direct full-block writes, and façade route | Independent committed differential corpus, measured allocation/copy counts, and release benchmark |
+
+The performance release goal is a paired median speedup of at least `1.10x` over BoringSSL for every fixed supported headline workload on the same machine and compiler configuration. The lower bound of the paired 95% bootstrap confidence interval must also be at least `1.10`. Constant-time and memory-safety requirements remain hard gates. No result is reported until runner-owned fresh builds use read-only commit snapshots, an allowlisted environment, verified arm64/SDK/Release code generation, equivalent inputs and CPU features, convergence, paired sampling, and complete output validation.
+
+| Benchmark | Swift result | BoringSSL result | Ratio | Evidence |
+|---|---:|---:|---:|---|
+| SHA-256 one-shot, 64 B | Not measured yet | Not measured yet | — | Formal raw artifact required |
+| SHA-256 one-shot, 1 KiB | Not measured yet | Not measured yet | — | Formal raw artifact required |
+| SHA-256 one-shot, 16 KiB | Not measured yet | Not measured yet | — | Formal raw artifact required |
+
+See [docs/VERIFICATION.md](docs/VERIFICATION.md) for gates and measurement rules.
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Responsibility matrix](docs/RESPONSIBILITY_MATRIX.md)
+- [Verification and benchmark policy](docs/VERIFICATION.md)
+- [Architecture decision records](docs/adr/)
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).

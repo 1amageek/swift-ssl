@@ -1,0 +1,13 @@
+.build/
+.swiftpm/
+.DS_Store
+__pycache__/
+*.py[cod]
+DerivedData/
+.test-artifacts/
+*.xcodeproj/
+*.xcworkspace/
+*.profraw
+*.profdata
+*.trace
+Validation/Artifacts/
