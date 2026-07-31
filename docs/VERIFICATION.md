@@ -112,6 +112,8 @@ Hot paths define a budget before optimization.
 | HMAC update | 0 additional input copies; 0 heap allocations and 0 reference-count operations |
 | HKDF expand | 0 heap/container materializations of caller input; one fixed 64-byte HMAC key-schedule scratch per operation; two inline working SHA-256 contexts plus one wiped 32-byte inner digest per block; full digest blocks written directly to caller output; at most one additional wiped 32-byte temporary for a partial final block; optimized allocation count must be 0 |
 | AEAD seal/open | 0 input copies when nonoverlapping buffers are supplied; 0 heap allocations after context creation |
+| X25519 public-key derivation/shared-secret | No input-coordinate copies beyond the fixed 32-byte scalar/u-coordinate normalization; one owned public-key or shared-secret result; no escaping unsafe pointer |
+| HMAC-DRBG generate | Caller-owned output; K/V remain in one `SecretBytes` owner; temporary HMAC messages and digests are wiped before return; entropy input is copied only into bounded seed material |
 | DER field access | 0 field copies after certificate parse; ranges borrow the certificate owner |
 | TLS complete inbound record | 0 record copies; plaintext written once into the action batch |
 | TLS incomplete record | At most one bounded copy of the unconsumed fragment |

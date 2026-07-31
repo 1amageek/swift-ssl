@@ -54,6 +54,18 @@ public struct SecretBytes: ~Copyable {
         return try body(span)
     }
 
+    // Unsafe boundary invariants:
+    // - This value remains the unique owner for the entire mutable borrow.
+    // - The initialized UInt8 allocation is exposed only through MutableSpan.
+    // - The caller cannot retain the span or its derived pointer beyond this call.
+    // - No type rebinding, aliasing, or Sendable crossing occurs while mutating.
+    public mutating func withMutableBorrowedBytes<Result, Failure: Error>(
+        _ body: (inout MutableSpan<UInt8>) throws(Failure) -> Result
+    ) throws(Failure) -> Result {
+        var span = MutableSpan(_unsafeStart: pointer, count: count)
+        return try body(&span)
+    }
+
     deinit {
         SecureWipe.erase(UnsafeMutableRawPointer(pointer), byteCount: count)
         pointer.deinitialize(count: count)

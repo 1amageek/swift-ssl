@@ -10,6 +10,8 @@ enum TargetValidationCommand {
   enum Failure: Error {
     case aesGCM
     case chacha20Poly1305
+    case x25519
+    case hmacDRBG
     case sha384512
     case byteCursor
     case derCursor
@@ -24,9 +26,26 @@ enum TargetValidationCommand {
     case uint24Failure
   }
 
+  private struct FixedEntropy: EntropySource {
+    let bytes: ContiguousArray<UInt8>
+
+    func fill(_ destination: inout MutableSpan<UInt8>) throws(EntropyError) {
+      guard destination.count == bytes.count else {
+        throw .partialFill(expected: destination.count, actual: bytes.count)
+      }
+      var index = 0
+      while index < bytes.count {
+        destination[index] = bytes[index]
+        index += 1
+      }
+    }
+  }
+
   static func main() throws {
     try validateAESGCM()
     try validateChaCha20Poly1305()
+    try validateX25519()
+    try validateHMACDRBG()
     try validateSHA384AndSHA512()
     try validateSHA256()
     try validateHMACSHA256()
@@ -107,6 +126,76 @@ enum TargetValidationCommand {
       into: &recoveredSpan
     )
     guard recovered == plaintext else { throw Failure.chacha20Poly1305 }
+  }
+
+  private static func validateX25519() throws {
+    let alicePrivate = ContiguousArray<UInt8>([
+      0x77, 0x07, 0x6D, 0x0A, 0x73, 0x18, 0xA5, 0x7D,
+      0x3C, 0x16, 0xC1, 0x72, 0x51, 0xB2, 0x66, 0x45,
+      0xDF, 0x4C, 0x2F, 0x87, 0xEB, 0xC0, 0x99, 0x2A,
+      0xB1, 0x77, 0xFB, 0xA5, 0x1D, 0xB9, 0x2C, 0x2A,
+    ])
+    let bobPrivate = ContiguousArray<UInt8>(0..<32)
+    let expectedPublic = ContiguousArray<UInt8>([
+      0x85, 0x20, 0xF0, 0x09, 0x89, 0x30, 0xA7, 0x54,
+      0x74, 0x8B, 0x7D, 0xDC, 0xB4, 0x3E, 0xF7, 0x5A,
+      0x0D, 0xBF, 0x3A, 0x0D, 0x26, 0x38, 0x1A, 0xF4,
+      0xEB, 0xA4, 0xA9, 0x8E, 0xAA, 0x9B, 0x4E, 0x6A,
+    ])
+    let expectedShared = ContiguousArray<UInt8>([
+      0x5B, 0xF2, 0x20, 0xD6, 0x70, 0xC9, 0x4B, 0x8D,
+      0x70, 0xBC, 0x5E, 0xDE, 0x1C, 0xFF, 0xB8, 0x5D,
+      0x6C, 0x4B, 0x7C, 0x9D, 0x87, 0x17, 0xBB, 0xB5,
+      0xEB, 0x90, 0xC0, 0x25, 0x83, 0x86, 0x20, 0x07,
+    ])
+    let alice = try SwiftSSL.X25519PrivateKey(bytes: alicePrivate.span)
+    let bob = try SwiftSSL.X25519PrivateKey(bytes: bobPrivate.span)
+    let publicKey = alice.publicKey()
+    guard publicKey.span.count == expectedPublic.count else {
+      throw Failure.x25519
+    }
+    var index = 0
+    while index < expectedPublic.count {
+      guard publicKey.span[index] == expectedPublic[index] else {
+        throw Failure.x25519
+      }
+      index += 1
+    }
+    let shared = try SwiftSSL.X25519.sharedSecret(
+      privateKey: alice,
+      peerPublicKey: bob.publicKey()
+    )
+    let matches = shared.withBorrowedBytes { bytes in
+      guard bytes.count == expectedShared.count else { return false }
+      var index = 0
+      while index < bytes.count {
+        if bytes[index] != expectedShared[index] { return false }
+        index += 1
+      }
+      return true
+    }
+    guard matches else { throw Failure.x25519 }
+  }
+
+  private static func validateHMACDRBG() throws {
+    let entropy = FixedEntropy(bytes: ContiguousArray(0..<32))
+    let nonce = ContiguousArray<UInt8>(32..<48)
+    let personalization = ContiguousArray<UInt8>(48..<64)
+    var generator = try HMACDRBG(
+      entropy: entropy,
+      nonce: nonce.span,
+      personalization: personalization.span
+    )
+    var output = ContiguousArray<UInt8>(repeating: 0, count: 32)
+    var outputSpan = output.mutableSpan
+    try generator.generate(into: &outputSpan)
+    let expected = ContiguousArray<UInt8>([
+      0xAC, 0xB4, 0xC0, 0x52, 0x73, 0x46, 0x34, 0x3F,
+      0x45, 0x26, 0x6A, 0x99, 0xA5, 0xEA, 0x86, 0xE9,
+      0x49, 0x3B, 0x69, 0x63, 0x5F, 0x50, 0x9E, 0xD6,
+      0x87, 0x1D, 0x4C, 0x87, 0x1F, 0x93, 0x61, 0x3B,
+    ])
+    guard output == expected else { throw Failure.hmacDRBG }
   }
 
   private static func validateSHA384AndSHA512() throws {
