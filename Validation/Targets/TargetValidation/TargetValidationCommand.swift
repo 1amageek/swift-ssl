@@ -25,6 +25,8 @@ enum TargetValidationCommand {
     case quicStepOutput
     case profileBoundary
     case uint24Failure
+    case dtlsReplay
+    case quicInitial
   }
 
   private struct FixedEntropy: EntropySource {
@@ -60,6 +62,8 @@ enum TargetValidationCommand {
     try validateQUICStepOutput()
     try validateSecretOwner()
     try validateUInt24Failure()
+    try validateDTLSReplay()
+    try validateQUICInitial()
     print("swift-ssl target validation: ok")
   }
 
@@ -98,6 +102,41 @@ enum TargetValidationCommand {
     guard recovered == plaintext else {
       throw Failure.aesGCM
     }
+  }
+
+  private static func validateDTLSReplay() throws {
+    var window = DTLS13ReplayWindow()
+    guard try window.accept(10) == .accepted,
+      try window.accept(9) == .accepted,
+      try window.accept(10) == .replayed
+    else {
+      throw Failure.dtlsReplay
+    }
+  }
+
+  private static func validateQUICInitial() throws {
+    let connectionID = ContiguousArray<UInt8>([
+      0x83, 0x94, 0xC8, 0xF0, 0x3E, 0x51, 0x57, 0x08,
+    ])
+    let secrets = try QUICInitialSecrets(destinationConnectionID: connectionID.span)
+    let expected = ContiguousArray<UInt8>([
+      0x1F, 0x36, 0x96, 0x13, 0xDD, 0x76, 0xD5, 0x46,
+      0x77, 0x30, 0xEF, 0xCB, 0xE3, 0xB1, 0xA2, 0x2D,
+    ])
+    guard secrets.withClientKey({ key in copy(key) }) == expected else {
+      throw Failure.quicInitial
+    }
+  }
+
+  private static func copy(_ span: Span<UInt8>) -> ContiguousArray<UInt8> {
+    var result = ContiguousArray<UInt8>()
+    result.reserveCapacity(span.count)
+    var index = 0
+    while index < span.count {
+      result.append(span[index])
+      index += 1
+    }
+    return result
   }
 
   private static func validateChaCha20Poly1305() throws {
