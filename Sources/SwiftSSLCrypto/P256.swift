@@ -194,6 +194,14 @@ private struct RFC6979State {
         input.append(0)
         input.append(contentsOf: privateScalar.encoded)
         input.append(contentsOf: messageScalar.encoded)
+        defer { Self.wipe(&input) }
+        key = try Self.hmac(input.span, key: key.span)
+        value = try Self.hmac(value.span, key: key.span)
+        input.removeAll(keepingCapacity: true)
+        input.append(contentsOf: value)
+        input.append(1)
+        input.append(contentsOf: privateScalar.encoded)
+        input.append(contentsOf: messageScalar.encoded)
         key = try Self.hmac(input.span, key: key.span)
         value = try Self.hmac(value.span, key: key.span)
     }
@@ -219,6 +227,7 @@ private struct RFC6979State {
         input.reserveCapacity(value.count + 1)
         input.append(contentsOf: value)
         input.append(0)
+        defer { Self.wipe(&input) }
         key = try Self.hmac(input.span, key: key.span)
         value = try Self.hmac(value.span, key: key.span)
     }

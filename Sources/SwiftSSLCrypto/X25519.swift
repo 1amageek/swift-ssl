@@ -41,6 +41,7 @@ public struct X25519PrivateKey: ~Copyable, Sendable {
         using entropy: borrowing any EntropySource
     ) throws(X25519KeyGenerationError) -> X25519PrivateKey {
         var bytes = ContiguousArray<UInt8>(repeating: 0, count: Self.byteCount)
+        defer { Self.wipe(&bytes) }
         do {
             var destination = bytes.mutableSpan
             try entropy.fill(&destination)
@@ -51,6 +52,16 @@ public struct X25519PrivateKey: ~Copyable, Sendable {
             return try X25519PrivateKey(bytes: bytes.span)
         } catch {
             throw .memoryFailure
+        }
+    }
+
+    private static func wipe(_ bytes: inout ContiguousArray<UInt8>) {
+        bytes.withUnsafeMutableBufferPointer { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+            SecureWipe.erase(
+                UnsafeMutableRawPointer(baseAddress),
+                byteCount: buffer.count
+            )
         }
     }
 

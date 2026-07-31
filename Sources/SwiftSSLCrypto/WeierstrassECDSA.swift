@@ -1,19 +1,34 @@
 import SwiftSSLCore
 
-/// ECDSA verification for the NIST P-384 and P-521 curves.
+/// ECDSA signing and verification for the NIST P-384 and P-521 curves.
 ///
 /// The implementation is intentionally private-width and owns no general
 /// purpose big integer API. Arithmetic is performed over fixed-size 32-bit
 /// limbs and all loops are bounded by the selected curve width. The public
 /// entry points accept borrowed SEC1 keys and signatures; no pointer escapes
 /// the scoped borrow.
-// FIXME(INCOMPLETE_IMPLEMENTATION): P-384/P-521 verification is vector- and
-// certificate-tested, but the fixed-width arithmetic remains a validation
-// backend until constant-time, differential, sanitizer, and performance
-// release gates pass. TLS certificate authentication must not select these
-// curves before those gates are recorded.
+// FIXME(INCOMPLETE_IMPLEMENTATION): P-384/P-521 signing and verification are
+// vector- and certificate-tested, but the fixed-width arithmetic remains a
+// validation backend until constant-time, differential, sanitizer, and
+// performance release gates pass. TLS certificate authentication must not
+// select these curves before those gates are recorded.
 public enum P384ECDSA {
     public static let signatureByteCount = 96
+
+    /// Creates an RFC 6979 deterministic raw signature encoded as `r || s`.
+    /// The input is the digest selected by the caller's certificate profile.
+    public static func sign(
+        messageHash: Span<UInt8>,
+        privateKey: borrowing P384PrivateKey
+    ) throws(CryptoInputError) -> ContiguousArray<UInt8> {
+        try privateKey.withBorrowedScalar { scalar throws(CryptoInputError) in
+            try WeierstrassECDSA.sign(
+                messageHash: messageHash,
+                privateScalar: scalar,
+                curve: .p384
+            )
+        }
+    }
 
     public static func verify(
         signature: Span<UInt8>,
@@ -31,6 +46,21 @@ public enum P384ECDSA {
 
 public enum P521ECDSA {
     public static let signatureByteCount = 132
+
+    /// Creates an RFC 6979 deterministic raw signature encoded as `r || s`.
+    /// The input is the digest selected by the caller's certificate profile.
+    public static func sign(
+        messageHash: Span<UInt8>,
+        privateKey: borrowing P521PrivateKey
+    ) throws(CryptoInputError) -> ContiguousArray<UInt8> {
+        try privateKey.withBorrowedScalar { scalar throws(CryptoInputError) in
+            try WeierstrassECDSA.sign(
+                messageHash: messageHash,
+                privateScalar: scalar,
+                curve: .p521
+            )
+        }
+    }
 
     public static func verify(
         signature: Span<UInt8>,
@@ -182,10 +212,10 @@ public struct P384PrivateKey: ~Copyable, Sendable {
         return P384PublicKey(uncheckedPoint: point)
     }
 
-    fileprivate borrowing func withBorrowedScalar<Result: ~Copyable>(
-        _ body: (WeierstrassECDSA.FixedUInt) throws -> Result
-    ) rethrows -> Result {
-        try storage.withBorrowedBytes { bytes in
+    fileprivate borrowing func withBorrowedScalar<Result: ~Copyable, Failure: Error>(
+        _ body: (WeierstrassECDSA.FixedUInt) throws(Failure) -> Result
+    ) throws(Failure) -> Result {
+        try storage.withBorrowedBytes { (bytes: Span<UInt8>) throws(Failure) -> Result in
             try body(WeierstrassECDSA.FixedUInt(bytes: bytes, byteCount: Self.byteCount))
         }
     }
@@ -315,10 +345,10 @@ public struct P521PrivateKey: ~Copyable, Sendable {
         return P521PublicKey(uncheckedPoint: point)
     }
 
-    fileprivate borrowing func withBorrowedScalar<Result: ~Copyable>(
-        _ body: (WeierstrassECDSA.FixedUInt) throws -> Result
-    ) rethrows -> Result {
-        try storage.withBorrowedBytes { bytes in
+    fileprivate borrowing func withBorrowedScalar<Result: ~Copyable, Failure: Error>(
+        _ body: (WeierstrassECDSA.FixedUInt) throws(Failure) -> Result
+    ) throws(Failure) -> Result {
+        try storage.withBorrowedBytes { (bytes: Span<UInt8>) throws(Failure) -> Result in
             try body(WeierstrassECDSA.FixedUInt(bytes: bytes, byteCount: Self.byteCount))
         }
     }
@@ -437,6 +467,173 @@ enum WeierstrassECDSA {
                 return FixedUInt(hex: "3617DE4A96262C6F5D9E98BF9292DC29F8F41DBD289A147CE9DA3113B5F0B8C00A60B1CE1D7E819D7A431D7C90EA0E5F", byteCount: 48)
             case .p521:
                 return FixedUInt(hex: "011839296A789A3BC0045C8A5FB42C7D1BD998F54449579B446817AFBD17273E662C97EE72995EF42640C550B9013FAD0761353C7086A272C24088BE94769FD16650", byteCount: 66)
+            }
+        }
+    }
+
+    fileprivate static func sign(
+        messageHash: Span<UInt8>,
+        privateScalar: FixedUInt,
+        curve: Curve
+    ) throws(CryptoInputError) -> ContiguousArray<UInt8> {
+        guard !messageHash.isEmpty else {
+            throw .invalidLength(expected: 1, actual: 0)
+        }
+        let digest = FixedUInt(truncatingDigest: messageHash, curve: curve)
+            .modulo(curve.order)
+        var generator = try RFC6979State(
+            privateScalar: privateScalar,
+            messageScalar: digest,
+            curve: curve
+        )
+        defer { generator.wipe() }
+
+        var attempt = 0
+        while attempt < 128 {
+            let nonce = try generator.next()
+            let noncePoint = Point.scalarMultiply(
+                Point.generator(curve),
+                scalar: nonce,
+                curve: curve
+            )
+            guard let affine = noncePoint.affine(curve: curve) else {
+                try generator.reject()
+                attempt += 1
+                continue
+            }
+            let r = affine.x.modulo(curve.order)
+            guard !r.isZero else {
+                try generator.reject()
+                attempt += 1
+                continue
+            }
+            let inverse = nonce.power(
+                curve.order.subtractingSmall(2),
+                modulus: curve.order,
+                bitCount: curve.bitCount
+            )
+            let s = inverse.moduloMultiply(
+                digest.moduloAdd(
+                    r.moduloMultiply(privateScalar, modulus: curve.order),
+                    modulus: curve.order
+                ),
+                modulus: curve.order
+            )
+            guard !s.isZero else {
+                try generator.reject()
+                attempt += 1
+                continue
+            }
+            var result = ContiguousArray<UInt8>()
+            result.reserveCapacity(curve.signatureByteCount)
+            result.append(contentsOf: r.encoded(byteCount: curve.byteCount))
+            result.append(contentsOf: s.encoded(byteCount: curve.byteCount))
+            return result
+        }
+        throw .invalidSignature
+    }
+
+    private struct RFC6979State {
+        private enum HashKind {
+            case sha384
+            case sha512
+
+            var byteCount: Int {
+                switch self {
+                case .sha384: return SHA384.digestByteCount
+                case .sha512: return SHA512.digestByteCount
+                }
+            }
+        }
+
+        private var key: ContiguousArray<UInt8>
+        private var value: ContiguousArray<UInt8>
+        private let hash: HashKind
+        private let curve: Curve
+
+        init(
+            privateScalar: FixedUInt,
+            messageScalar: FixedUInt,
+            curve: Curve
+        ) throws(CryptoInputError) {
+            hash = curve == .p384 ? .sha384 : .sha512
+            self.curve = curve
+            key = ContiguousArray(repeating: 0, count: hash.byteCount)
+            value = ContiguousArray(repeating: 1, count: hash.byteCount)
+            var input = ContiguousArray<UInt8>()
+            input.reserveCapacity(value.count + 1 + curve.byteCount * 2)
+            input.append(contentsOf: value)
+            input.append(0)
+            input.append(contentsOf: privateScalar.encoded(byteCount: curve.byteCount))
+            input.append(contentsOf: messageScalar.encoded(byteCount: curve.byteCount))
+            defer { Self.wipe(&input) }
+            key = try Self.hmac(input.span, key: key.span, hash: hash)
+            value = try Self.hmac(value.span, key: key.span, hash: hash)
+            input.removeAll(keepingCapacity: true)
+            input.append(contentsOf: value)
+            input.append(1)
+            input.append(contentsOf: privateScalar.encoded(byteCount: curve.byteCount))
+            input.append(contentsOf: messageScalar.encoded(byteCount: curve.byteCount))
+            key = try Self.hmac(input.span, key: key.span, hash: hash)
+            value = try Self.hmac(value.span, key: key.span, hash: hash)
+        }
+
+        mutating func next() throws(CryptoInputError) -> FixedUInt {
+            var attempt = 0
+            while attempt < 128 {
+                value = try Self.hmac(value.span, key: key.span, hash: hash)
+                let candidate = FixedUInt(bytes: value.span, byteCount: curve.byteCount)
+                if !candidate.isZero, candidate < curve.order {
+                    return candidate
+                }
+                try reject()
+                attempt += 1
+            }
+            throw .invalidSignature
+        }
+
+        mutating func reject() throws(CryptoInputError) {
+            var input = ContiguousArray<UInt8>()
+            input.reserveCapacity(value.count + 1)
+            input.append(contentsOf: value)
+            input.append(0)
+            defer { Self.wipe(&input) }
+            key = try Self.hmac(input.span, key: key.span, hash: hash)
+            value = try Self.hmac(value.span, key: key.span, hash: hash)
+        }
+
+        mutating func wipe() {
+            Self.wipe(&key)
+            Self.wipe(&value)
+        }
+
+        private static func hmac(
+            _ message: Span<UInt8>,
+            key: Span<UInt8>,
+            hash: HashKind
+        ) throws(CryptoInputError) -> ContiguousArray<UInt8> {
+            var output = ContiguousArray<UInt8>(repeating: 0, count: hash.byteCount)
+            var destination = output.mutableSpan
+            switch hash {
+            case .sha384:
+                var context = try HMACSHA384Context(authenticatingWith: key)
+                try context.update(message)
+                try context.finalize(into: &destination)
+            case .sha512:
+                var context = try HMACSHA512Context(authenticatingWith: key)
+                try context.update(message)
+                try context.finalize(into: &destination)
+            }
+            return output
+        }
+
+        private static func wipe(_ bytes: inout ContiguousArray<UInt8>) {
+            bytes.withUnsafeMutableBufferPointer { buffer in
+                guard let baseAddress = buffer.baseAddress else { return }
+                SecureWipe.erase(
+                    UnsafeMutableRawPointer(baseAddress),
+                    byteCount: buffer.count
+                )
             }
         }
     }

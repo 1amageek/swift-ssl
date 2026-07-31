@@ -4,6 +4,70 @@ import XCTest
 @testable import SwiftSSLCrypto
 
 final class WeierstrassECDSATests: XCTestCase {
+    func testP384RFC6979SigningRoundTrips() throws {
+        let scalar = bytes(
+            "6B9D3DAD2E1B8C1C05B19875B6659F4DE23C3B667BF297BA9AA47740787137D8" +
+            "96D5724E4C70A825F872C9EA60D2EDF5"
+        )
+        let privateKey = try P384PrivateKey(bytes: scalar.span)
+        let expectedPublicKey = bytes(
+            "04EC3A4E415B4E19A4568618029F427FA5DA9A8BC4AE92E02E06AAE5286B300C64" +
+            "DEF8F0EA9055866064A254515480BC13" +
+            "8015D9B72D7D57244EA8EF9AC0C621896708A59367F9DFB9F54CA84B3F1C9DB1" +
+            "288B231C3AE0D4FE7344FD2533264720"
+        )
+        let digest = bytes(
+            "9A9083505BC92276AEC4BE312696EF7BF3BF603F4BBD381196A029F340585312" +
+            "313BCA4A9B5B890EFEE42C77B1EE25FE"
+        )
+        let expectedSignature = bytes(
+            "94EDBB92A5ECB8AAD4736E56C691916B3F88140666CE9FA73D64C4EA95AD133C" +
+            "81A648152E44ACF96E36DD1E80FABE46" +
+            "99EF4AEB15F178CEA1FE40DB2603138F130E740A19624526203B6351D0A3A94F" +
+            "A329C145786E679E7B82C71A38628AC8"
+        )
+        let signature = try P384ECDSA.sign(
+            messageHash: digest.span,
+            privateKey: privateKey
+        )
+        XCTAssertEqual(signature.count, P384ECDSA.signatureByteCount)
+        XCTAssertEqual(signature, expectedSignature)
+        XCTAssertEqual(copyBytes(privateKey.publicKey().span), Array(expectedPublicKey))
+        XCTAssertTrue(try P384ECDSA.verify(
+            signature: signature.span,
+            messageHash: digest.span,
+            publicKey: privateKey.publicKey().span
+        ))
+        XCTAssertEqual(
+            signature,
+            try P384ECDSA.sign(messageHash: digest.span, privateKey: privateKey)
+        )
+    }
+
+    func testP521RFC6979SigningRoundTrips() throws {
+        var scalar = ContiguousArray<UInt8>(repeating: 0, count: 66)
+        scalar[65] = 1
+        let privateKey = try P521PrivateKey(bytes: scalar.span)
+        let digest = bytes(
+            "39A5E04AAFF7455D9850C605364F514C11324CE64016960D23D5DC57D3FFD8F4" +
+            "9A739468AB8049BF18EEF820CDB1AD6C9015F838556BC7FAD4138B23FDF986C7"
+        )
+        let signature = try P521ECDSA.sign(
+            messageHash: digest.span,
+            privateKey: privateKey
+        )
+        XCTAssertEqual(signature.count, P521ECDSA.signatureByteCount)
+        XCTAssertTrue(try P521ECDSA.verify(
+            signature: signature.span,
+            messageHash: digest.span,
+            publicKey: privateKey.publicKey().span
+        ))
+        XCTAssertEqual(
+            signature,
+            try P521ECDSA.sign(messageHash: digest.span, privateKey: privateKey)
+        )
+    }
+
     func testP384VerificationAndMutation() throws {
         let publicKey = bytes(
             "04AA87CA22BE8B05378EB1C71EF320AD746E1D3B628BA79B9859F741E082542A385502F25DBF55296C3A545E3872760AB7" +
@@ -65,6 +129,17 @@ final class WeierstrassECDSATests: XCTestCase {
             let next = value.index(index, offsetBy: 2)
             result.append(UInt8(value[index..<next], radix: 16)!)
             index = next
+        }
+        return result
+    }
+
+    private func copyBytes(_ value: Span<UInt8>) -> [UInt8] {
+        var result = [UInt8]()
+        result.reserveCapacity(value.count)
+        var index = 0
+        while index < value.count {
+            result.append(value[index])
+            index += 1
         }
         return result
     }
