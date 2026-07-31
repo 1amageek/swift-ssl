@@ -1,4 +1,5 @@
 import SwiftSSLCore
+import SwiftSSLASN1
 import SwiftSSLCrypto
 import SwiftSSLX509
 
@@ -14,6 +15,61 @@ public struct TLS13ServerHello: Sendable, Hashable {
     public let keyShare: OwnedBytes
     public let cipherSuite: TLSCipherSuite
     public let selectedPreSharedKey: Bool
+}
+
+/// Signature schemes permitted by the modern TLS 1.3 profile.
+public enum TLS13SignatureScheme: UInt16, Sendable, Hashable {
+    case ecdsaP256SHA256 = 0x0403
+    case ecdsaP384SHA384 = 0x0503
+    case ecdsaP521SHA512 = 0x0603
+    case rsaPSSRSAESHA256 = 0x0804
+    case rsaPSSRSAESHA384 = 0x0805
+    case rsaPSSRSAESHA512 = 0x0806
+    case ed25519 = 0x0807
+    case rsaPSSPSSSHA256 = 0x0809
+    case rsaPSSPSSSHA384 = 0x080A
+    case rsaPSSPSSSHA512 = 0x080B
+
+    public var publicKeyByteCount: Int {
+        switch self {
+        case .ed25519: return 32
+        case .ecdsaP256SHA256: return 65
+        case .ecdsaP384SHA384: return 97
+        case .ecdsaP521SHA512: return 133
+        case .rsaPSSRSAESHA256, .rsaPSSRSAESHA384, .rsaPSSRSAESHA512,
+             .rsaPSSPSSSHA256, .rsaPSSPSSSHA384, .rsaPSSPSSSHA512:
+            return 0
+        }
+    }
+
+    public var keyAlgorithm: PublicKeyAlgorithm {
+        switch self {
+        case .ed25519:
+            return .ed25519
+        case .ecdsaP256SHA256:
+            return .ecPublicKey(curve: .prime256v1)
+        case .ecdsaP384SHA384:
+            return .ecPublicKey(curve: .secp384r1)
+        case .ecdsaP521SHA512:
+            return .ecPublicKey(curve: .secp521r1)
+        case .rsaPSSRSAESHA256, .rsaPSSRSAESHA384, .rsaPSSRSAESHA512,
+             .rsaPSSPSSSHA256, .rsaPSSPSSSHA384, .rsaPSSPSSSHA512:
+            return .rsaEncryption
+        }
+    }
+}
+
+public struct TLS13CertificateVerify: Sendable, Hashable {
+    public let signatureScheme: TLS13SignatureScheme
+    public let signature: OwnedBytes
+
+    public init(
+        signatureScheme: TLS13SignatureScheme,
+        signature: consuming OwnedBytes
+    ) {
+        self.signatureScheme = signatureScheme
+        self.signature = signature
+    }
 }
 
 public enum TLS13HandshakeCodec {
@@ -234,10 +290,25 @@ public enum TLS13HandshakeCodec {
     public static func makeCertificateVerify(
         signature: Span<UInt8>
     ) throws(TLS13HandshakeError) -> OwnedBytes {
-        guard signature.count == 64 else { throw .signatureFailure }
-        var body = try Self.makeBuilder(maximumByteCount: 128, minimumCapacity: 68)
+        try makeCertificateVerify(
+            signatureScheme: .ed25519,
+            signature: signature
+        )
+    }
+
+    public static func makeCertificateVerify(
+        signatureScheme: TLS13SignatureScheme,
+        signature: Span<UInt8>
+    ) throws(TLS13HandshakeError) -> OwnedBytes {
+        guard !signature.isEmpty, signature.count <= UInt16.max else {
+            throw .signatureFailure
+        }
+        var body = try Self.makeBuilder(
+            maximumByteCount: Int(UInt16.max) + 4,
+            minimumCapacity: signature.count + 4
+        )
         do {
-            try body.appendUInt16BigEndian(0x0807)
+            try body.appendUInt16BigEndian(signatureScheme.rawValue)
             try body.appendUInt16BigEndian(UInt16(signature.count))
             try body.append(signature)
             return finish(type: Self.certificateVerifyType, body: body.finish())
@@ -249,14 +320,33 @@ public enum TLS13HandshakeCodec {
     public static func parseCertificateVerify(
         _ message: Span<UInt8>
     ) throws(TLS13HandshakeError) -> OwnedBytes {
+        let parsed = try parseCertificateVerifyWithScheme(message)
+        guard parsed.signatureScheme == .ed25519,
+              parsed.signature.count == 64 else {
+            throw .signatureFailure
+        }
+        return parsed.signature
+    }
+
+    public static func parseCertificateVerifyWithScheme(
+        _ message: Span<UInt8>
+    ) throws(TLS13HandshakeError) -> TLS13CertificateVerify {
         let body = try readBody(message, expectedType: Self.certificateVerifyType)
         var cursor = ByteCursor(body)
         do {
-            guard try cursor.readUInt16BigEndian() == 0x0807 else { throw TLS13HandshakeError.signatureFailure }
-            guard try cursor.readUInt16BigEndian() == 64 else { throw TLS13HandshakeError.signatureFailure }
-            let signature = OwnedBytes(copying: try cursor.readSpan(count: 64))
+            guard let signatureScheme = TLS13SignatureScheme(
+                rawValue: try cursor.readUInt16BigEndian()
+            ) else {
+                throw TLS13HandshakeError.signatureFailure
+            }
+            let signatureLength = Int(try cursor.readUInt16BigEndian())
+            guard signatureLength > 0 else { throw TLS13HandshakeError.signatureFailure }
+            let signature = OwnedBytes(copying: try cursor.readSpan(count: signatureLength))
             try cursor.requireFullyConsumed()
-            return signature
+            return TLS13CertificateVerify(
+                signatureScheme: signatureScheme,
+                signature: signature
+            )
         } catch {
             throw .malformedMessage
         }

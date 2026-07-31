@@ -46,8 +46,348 @@ public enum P521ECDSA {
     }
 }
 
-fileprivate enum WeierstrassECDSA {
-    fileprivate enum Curve {
+/// NIST P-384 ECDH key agreement.
+// FIXME(INCOMPLETE_IMPLEMENTATION): The fixed-width P-384 ECDH backend is
+// vector-tested and bounded, but constant-time and differential release gates
+// are still required before protocol selection.
+public enum P384: KeyAgreement {
+    public typealias PublicKey = P384PublicKey
+    public typealias PrivateKey = P384PrivateKey
+    public typealias SharedSecret = P384SharedSecret
+
+    public static func sharedSecret(
+        privateKey: borrowing P384PrivateKey,
+        peerPublicKey: borrowing P384PublicKey
+    ) throws(CryptoInputError) -> P384SharedSecret {
+        let secret = privateKey.withBorrowedScalar { scalar in
+            peerPublicKey.withBorrowedPoint { point in
+                WeierstrassECDSA.Point.scalarMultiply(
+                    point,
+                    scalar: scalar,
+                    curve: .p384
+                )
+            }
+        }
+        guard let affine = secret.affine(curve: .p384) else {
+            throw .invalidPeerKey
+        }
+        do {
+            return try P384SharedSecret(consuming: affine.x.encoded(byteCount: 48))
+        } catch {
+            throw .invalidPeerKey
+        }
+    }
+}
+
+/// NIST P-521 ECDH key agreement.
+// FIXME(INCOMPLETE_IMPLEMENTATION): The fixed-width P-521 ECDH backend is
+// vector-tested and bounded, but constant-time and differential release gates
+// are still required before protocol selection.
+public enum P521: KeyAgreement {
+    public typealias PublicKey = P521PublicKey
+    public typealias PrivateKey = P521PrivateKey
+    public typealias SharedSecret = P521SharedSecret
+
+    public static func sharedSecret(
+        privateKey: borrowing P521PrivateKey,
+        peerPublicKey: borrowing P521PublicKey
+    ) throws(CryptoInputError) -> P521SharedSecret {
+        let secret = privateKey.withBorrowedScalar { scalar in
+            peerPublicKey.withBorrowedPoint { point in
+                WeierstrassECDSA.Point.scalarMultiply(
+                    point,
+                    scalar: scalar,
+                    curve: .p521
+                )
+            }
+        }
+        guard let affine = secret.affine(curve: .p521) else {
+            throw .invalidPeerKey
+        }
+        do {
+            return try P521SharedSecret(consuming: affine.x.encoded(byteCount: 66))
+        } catch {
+            throw .invalidPeerKey
+        }
+    }
+}
+
+public struct P384PrivateKey: ~Copyable, Sendable {
+    public static let byteCount = 48
+    private let storage: SecretBytes
+
+    public init(bytes: Span<UInt8>) throws(CryptoInputError) {
+        guard bytes.count == Self.byteCount else {
+            throw .invalidLength(expected: Self.byteCount, actual: bytes.count)
+        }
+        let scalar = WeierstrassECDSA.FixedUInt(bytes: bytes, byteCount: Self.byteCount)
+        guard !scalar.isZero, scalar < WeierstrassECDSA.Curve.p384.order else {
+            throw .nonCanonicalEncoding
+        }
+        do {
+            storage = try SecretBytes(copying: bytes)
+        } catch {
+            throw .invalidLength(expected: Self.byteCount, actual: bytes.count)
+        }
+    }
+
+    public static func generate(
+        using entropy: borrowing any EntropySource
+    ) throws(P384KeyGenerationError) -> P384PrivateKey {
+        var attempt = 0
+        while attempt < 256 {
+            var bytes = ContiguousArray<UInt8>(repeating: 0, count: Self.byteCount)
+            defer { Self.wipe(&bytes) }
+            do {
+                var destination = bytes.mutableSpan
+                try entropy.fill(&destination)
+            } catch let error {
+                throw .entropy(error)
+            }
+            do {
+                return try Self(bytes: bytes.span)
+            } catch let error {
+                switch error {
+                case .nonCanonicalEncoding: attempt += 1
+                default: throw .invalidScalar
+                }
+            }
+        }
+        throw .invalidScalar
+    }
+
+    private static func wipe(_ bytes: inout ContiguousArray<UInt8>) {
+        // The temporary entropy buffer owns initialized UInt8 storage for
+        // this scope; the raw pointer is borrowed only by SecureWipe and
+        // never escapes the closure before the array releases its allocation.
+        bytes.withUnsafeMutableBufferPointer { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+            SecureWipe.erase(UnsafeMutableRawPointer(baseAddress), byteCount: buffer.count)
+        }
+    }
+
+    public static func generate() throws(P384KeyGenerationError) -> P384PrivateKey {
+        try Self.generate(using: SystemEntropySource())
+    }
+
+    public borrowing func publicKey() -> P384PublicKey {
+        let point = storage.withBorrowedBytes { bytes in
+            let scalar = WeierstrassECDSA.FixedUInt(bytes: bytes, byteCount: Self.byteCount)
+            return WeierstrassECDSA.Point.scalarMultiply(
+                .generator(.p384),
+                scalar: scalar,
+                curve: .p384
+            )
+        }
+        return P384PublicKey(uncheckedPoint: point)
+    }
+
+    fileprivate borrowing func withBorrowedScalar<Result: ~Copyable>(
+        _ body: (WeierstrassECDSA.FixedUInt) throws -> Result
+    ) rethrows -> Result {
+        try storage.withBorrowedBytes { bytes in
+            try body(WeierstrassECDSA.FixedUInt(bytes: bytes, byteCount: Self.byteCount))
+        }
+    }
+}
+
+public struct P384PublicKey: Sendable, Equatable {
+    public static let uncompressedByteCount = 97
+    private let storage: OwnedBytes
+    fileprivate let point: WeierstrassECDSA.Point
+
+    public init(bytes: Span<UInt8>) throws(CryptoInputError) {
+        guard bytes.count == Self.uncompressedByteCount else {
+            throw .invalidLength(expected: Self.uncompressedByteCount, actual: bytes.count)
+        }
+        guard let point = WeierstrassECDSA.Point.decode(bytes, curve: .p384) else {
+            throw .invalidPeerKey
+        }
+        storage = OwnedBytes(copying: bytes)
+        self.point = point
+    }
+
+    fileprivate init(uncheckedPoint point: WeierstrassECDSA.Point) {
+        let encoded = point.encoded(curve: .p384) ?? []
+        storage = OwnedBytes(consuming: encoded)
+        self.point = point
+    }
+
+    public var span: Span<UInt8> { storage.span }
+
+    fileprivate borrowing func withBorrowedPoint<Result: ~Copyable>(
+        _ body: (WeierstrassECDSA.Point) throws -> Result
+    ) rethrows -> Result {
+        try body(point)
+    }
+}
+
+public struct P384SharedSecret: ~Copyable, Sendable {
+    public static let byteCount = 48
+    private let storage: SecretBytes
+
+    fileprivate init(consuming bytes: consuming ContiguousArray<UInt8>) throws(SecretMemoryError) {
+        storage = SecretBytes(byteCount: try SecretByteCount(bytes.count)) { destination in
+            var index = 0
+            while index < bytes.count {
+                destination[index] = bytes[index]
+                index += 1
+            }
+        }
+    }
+
+    public borrowing func withBorrowedBytes<Result: ~Copyable, Failure: Error>(
+        _ body: (Span<UInt8>) throws(Failure) -> Result
+    ) throws(Failure) -> Result {
+        try storage.withBorrowedBytes(body)
+    }
+}
+
+public struct P521PrivateKey: ~Copyable, Sendable {
+    public static let byteCount = 66
+    private let storage: SecretBytes
+
+    public init(bytes: Span<UInt8>) throws(CryptoInputError) {
+        guard bytes.count == Self.byteCount else {
+            throw .invalidLength(expected: Self.byteCount, actual: bytes.count)
+        }
+        let scalar = WeierstrassECDSA.FixedUInt(bytes: bytes, byteCount: Self.byteCount)
+        guard !scalar.isZero, scalar < WeierstrassECDSA.Curve.p521.order else {
+            throw .nonCanonicalEncoding
+        }
+        do {
+            storage = try SecretBytes(copying: bytes)
+        } catch {
+            throw .invalidLength(expected: Self.byteCount, actual: bytes.count)
+        }
+    }
+
+    public static func generate(
+        using entropy: borrowing any EntropySource
+    ) throws(P521KeyGenerationError) -> P521PrivateKey {
+        var attempt = 0
+        while attempt < 256 {
+            var bytes = ContiguousArray<UInt8>(repeating: 0, count: Self.byteCount)
+            defer { Self.wipe(&bytes) }
+            do {
+                var destination = bytes.mutableSpan
+                try entropy.fill(&destination)
+            } catch let error {
+                throw .entropy(error)
+            }
+            // P-521 uses only one significant bit in the leading byte.
+            bytes[0] &= 0x01
+            do {
+                return try Self(bytes: bytes.span)
+            } catch let error {
+                switch error {
+                case .nonCanonicalEncoding: attempt += 1
+                default: throw .invalidScalar
+                }
+            }
+        }
+        throw .invalidScalar
+    }
+
+    private static func wipe(_ bytes: inout ContiguousArray<UInt8>) {
+        // The temporary entropy buffer owns initialized UInt8 storage for
+        // this scope; the raw pointer is borrowed only by SecureWipe and
+        // never escapes the closure before the array releases its allocation.
+        bytes.withUnsafeMutableBufferPointer { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+            SecureWipe.erase(UnsafeMutableRawPointer(baseAddress), byteCount: buffer.count)
+        }
+    }
+
+    public static func generate() throws(P521KeyGenerationError) -> P521PrivateKey {
+        try Self.generate(using: SystemEntropySource())
+    }
+
+    public borrowing func publicKey() -> P521PublicKey {
+        let point = storage.withBorrowedBytes { bytes in
+            let scalar = WeierstrassECDSA.FixedUInt(bytes: bytes, byteCount: Self.byteCount)
+            return WeierstrassECDSA.Point.scalarMultiply(
+                .generator(.p521),
+                scalar: scalar,
+                curve: .p521
+            )
+        }
+        return P521PublicKey(uncheckedPoint: point)
+    }
+
+    fileprivate borrowing func withBorrowedScalar<Result: ~Copyable>(
+        _ body: (WeierstrassECDSA.FixedUInt) throws -> Result
+    ) rethrows -> Result {
+        try storage.withBorrowedBytes { bytes in
+            try body(WeierstrassECDSA.FixedUInt(bytes: bytes, byteCount: Self.byteCount))
+        }
+    }
+}
+
+public struct P521PublicKey: Sendable, Equatable {
+    public static let uncompressedByteCount = 133
+    private let storage: OwnedBytes
+    fileprivate let point: WeierstrassECDSA.Point
+
+    public init(bytes: Span<UInt8>) throws(CryptoInputError) {
+        guard bytes.count == Self.uncompressedByteCount else {
+            throw .invalidLength(expected: Self.uncompressedByteCount, actual: bytes.count)
+        }
+        guard let point = WeierstrassECDSA.Point.decode(bytes, curve: .p521) else {
+            throw .invalidPeerKey
+        }
+        storage = OwnedBytes(copying: bytes)
+        self.point = point
+    }
+
+    fileprivate init(uncheckedPoint point: WeierstrassECDSA.Point) {
+        let encoded = point.encoded(curve: .p521) ?? []
+        storage = OwnedBytes(consuming: encoded)
+        self.point = point
+    }
+
+    public var span: Span<UInt8> { storage.span }
+
+    fileprivate borrowing func withBorrowedPoint<Result: ~Copyable>(
+        _ body: (WeierstrassECDSA.Point) throws -> Result
+    ) rethrows -> Result {
+        try body(point)
+    }
+}
+
+public struct P521SharedSecret: ~Copyable, Sendable {
+    public static let byteCount = 66
+    private let storage: SecretBytes
+
+    fileprivate init(consuming bytes: consuming ContiguousArray<UInt8>) throws(SecretMemoryError) {
+        storage = SecretBytes(byteCount: try SecretByteCount(bytes.count)) { destination in
+            var index = 0
+            while index < bytes.count {
+                destination[index] = bytes[index]
+                index += 1
+            }
+        }
+    }
+
+    public borrowing func withBorrowedBytes<Result: ~Copyable, Failure: Error>(
+        _ body: (Span<UInt8>) throws(Failure) -> Result
+    ) throws(Failure) -> Result {
+        try storage.withBorrowedBytes(body)
+    }
+}
+
+public enum P384KeyGenerationError: Error, Sendable, Equatable {
+    case entropy(EntropyError)
+    case invalidScalar
+}
+
+public enum P521KeyGenerationError: Error, Sendable, Equatable {
+    case entropy(EntropyError)
+    case invalidScalar
+}
+
+enum WeierstrassECDSA {
+    enum Curve {
         case p384
         case p521
 
@@ -138,7 +478,7 @@ fileprivate enum WeierstrassECDSA {
         return affine.x.modulo(curve.order) == r
     }
 
-    fileprivate struct FixedUInt: Equatable, Comparable {
+    struct FixedUInt: Equatable, Comparable {
         let words: ContiguousArray<UInt32>
 
         init(byteCount: Int) {
@@ -213,6 +553,18 @@ fileprivate enum WeierstrassECDSA {
             var result: UInt32 = 0
             for word in words { result |= word }
             return result == 0
+        }
+
+        func encoded(byteCount: Int) -> ContiguousArray<UInt8> {
+            var result = ContiguousArray<UInt8>(repeating: 0, count: byteCount)
+            var index = 0
+            while index < byteCount {
+                let word = index / 4
+                let shift = UInt32((index & 3) * 8)
+                result[byteCount - 1 - index] = UInt8(truncatingIfNeeded: words[word] >> shift)
+                index += 1
+            }
+            return result
         }
 
         func modulo(_ modulus: FixedUInt) -> FixedUInt {
@@ -357,7 +709,7 @@ fileprivate enum WeierstrassECDSA {
         }
     }
 
-    fileprivate struct Point: Equatable {
+    struct Point: Equatable {
         let x: FixedUInt
         let y: FixedUInt
         let z: FixedUInt
@@ -400,6 +752,21 @@ fileprivate enum WeierstrassECDSA {
             let affineX = x.moduloMultiply(inverseSquared, modulus: curve.prime)
             let affineY = y.moduloMultiply(inverseSquared, modulus: curve.prime).moduloMultiply(inverse, modulus: curve.prime)
             return Point(x: affineX, y: affineY, z: FixedUInt.one(byteCount: curve.byteCount))
+        }
+
+        func encoded(curve: Curve) -> ContiguousArray<UInt8>? {
+            guard let affine = affine(curve: curve) else { return nil }
+            var result = ContiguousArray<UInt8>(repeating: 0, count: 1 + curve.byteCount * 2)
+            result[0] = 0x04
+            let x = affine.x.encoded(byteCount: curve.byteCount)
+            let y = affine.y.encoded(byteCount: curve.byteCount)
+            var index = 0
+            while index < curve.byteCount {
+                result[1 + index] = x[index]
+                result[1 + curve.byteCount + index] = y[index]
+                index += 1
+            }
+            return result
         }
 
         func doubled(curve: Curve) -> Point {

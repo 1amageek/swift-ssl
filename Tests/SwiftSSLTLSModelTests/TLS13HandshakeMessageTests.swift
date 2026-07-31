@@ -50,6 +50,24 @@ final class TLS13HandshakeMessageTests: XCTestCase {
         }
     }
 
+    func testCertificateVerifyCodecCarriesExplicitSignatureScheme() throws {
+        let signature = ContiguousArray<UInt8>(repeating: 0x5A, count: 64)
+        let message = try TLS13HandshakeCodec.makeCertificateVerify(
+            signatureScheme: .ecdsaP256SHA256,
+            signature: signature.span
+        )
+        let parsed = try TLS13HandshakeCodec.parseCertificateVerifyWithScheme(message.span)
+        XCTAssertEqual(parsed.signatureScheme, .ecdsaP256SHA256)
+        XCTAssertEqual(copy(parsed.signature.span), Array(signature))
+
+        do {
+            _ = try TLS13HandshakeCodec.parseCertificateVerify(message.span)
+            XCTFail("the Ed25519-only compatibility parser accepted a P-256 scheme")
+        } catch {
+            XCTAssertEqual(error, .signatureFailure)
+        }
+    }
+
     func testKeyUpdateCodecRejectsInvalidRequestValue() throws {
         let message = try TLS13HandshakeCodec.makeKeyUpdate(requestUpdate: true)
         XCTAssertTrue(try TLS13HandshakeCodec.parseKeyUpdate(message.span))
@@ -153,7 +171,7 @@ final class TLS13HandshakeMessageTests: XCTestCase {
             random: ContiguousArray(repeating: 0x02, count: 32).span,
             ephemeralKey: serverEphemeral,
             certificateDER: certificate.span,
-            signingKey: signingKey,
+            signingKey: .ed25519(signingKey),
             verificationInstant: verificationInstant
         )
 
@@ -202,6 +220,49 @@ final class TLS13HandshakeMessageTests: XCTestCase {
         XCTAssertEqual(copy(postUpdateServerReceived.span), Array(postUpdateServerData))
     }
 
+    func testP256ECDSAClientServerHandshakeIsRejectedUntilReleaseGates() throws {
+        let certificate = makeECDSACertificate()
+        let privateScalar = bytes(
+            "0000000000000000000000000000000000000000000000000000000000000001"
+        )
+        let signingKey = try P256PrivateKey(bytes: privateScalar.span)
+        let expectedPublicKey = ContiguousArray(copy(signingKey.publicKey().span))
+        let verificationInstant = try VerificationInstant(
+            secondsSinceUnixEpoch: 1_750_000_000,
+            nanoseconds: 0
+        )
+        do {
+            let client = try TLS13ClientHandshake(
+                random: ContiguousArray(repeating: 0x31, count: 32).span,
+                ephemeralKey: try X25519PrivateKey(
+                    bytes: ContiguousArray(repeating: 0x11, count: 32).span
+                ),
+                expectedServerPublicKey: expectedPublicKey.span,
+                verificationInstant: verificationInstant,
+                expectedServerSignatureScheme: .ecdsaP256SHA256
+            )
+            XCTAssertFalse(client.isEstablished)
+            XCTFail("P-256 TLS client selection was accepted before release gates")
+        } catch {
+            XCTAssertEqual(error as? TLS13HandshakeEngineError, .invalidConfiguration)
+        }
+        do {
+            let server = try TLS13ServerHandshake(
+                random: ContiguousArray(repeating: 0x32, count: 32).span,
+                ephemeralKey: try X25519PrivateKey(
+                    bytes: ContiguousArray(repeating: 0x22, count: 32).span
+                ),
+                certificateDER: certificate.span,
+                signingKey: .p256(signingKey),
+                verificationInstant: verificationInstant
+            )
+            XCTAssertFalse(server.isEstablished)
+            XCTFail("P-256 TLS server selection was accepted before release gates")
+        } catch {
+            XCTAssertEqual(error as? TLS13HandshakeEngineError, .invalidConfiguration)
+        }
+    }
+
     func testDeterministicHandshakeSupportsAllTLS13CipherSuites() throws {
         let verificationInstant = try VerificationInstant(
             secondsSinceUnixEpoch: 1_720_000_000,
@@ -226,7 +287,7 @@ final class TLS13HandshakeMessageTests: XCTestCase {
                 random: ContiguousArray(repeating: 0x02, count: 32).span,
                 ephemeralKey: serverEphemeral,
                 certificateDER: deterministicCertificate().span,
-                signingKey: signingKey,
+            signingKey: .ed25519(signingKey),
                 verificationInstant: verificationInstant
             )
 
@@ -288,7 +349,7 @@ final class TLS13HandshakeMessageTests: XCTestCase {
                 random: ContiguousArray(repeating: 0x02, count: 32).span,
                 ephemeralKey: serverEphemeral,
                 certificateDER: deterministicCertificate().span,
-                signingKey: try Ed25519PrivateKey(seed: deterministicSeed().span),
+            signingKey: .ed25519(try Ed25519PrivateKey(seed: deterministicSeed().span)),
                 verificationInstant: serverVerificationInstant,
                 resumptionIdentity: ticket.span,
                 resumptionPSK: psk,
@@ -333,7 +394,7 @@ final class TLS13HandshakeMessageTests: XCTestCase {
             random: ContiguousArray(repeating: 0x02, count: 32).span,
             ephemeralKey: serverEphemeral,
             certificateDER: deterministicCertificate().span,
-            signingKey: try Ed25519PrivateKey(seed: deterministicSeed().span),
+            signingKey: .ed25519(try Ed25519PrivateKey(seed: deterministicSeed().span)),
             verificationInstant: verificationInstant
         )
         let clientHello = try client.start()
@@ -372,7 +433,7 @@ final class TLS13HandshakeMessageTests: XCTestCase {
             random: ContiguousArray(repeating: 0x02, count: 32).span,
             ephemeralKey: serverEphemeral,
             certificateDER: deterministicCertificate().span,
-            signingKey: signingKey,
+            signingKey: .ed25519(signingKey),
             verificationInstant: verificationInstant
         )
         let clientEphemeral = try X25519PrivateKey(
@@ -413,7 +474,7 @@ final class TLS13HandshakeMessageTests: XCTestCase {
                 random: ContiguousArray(repeating: 0x02, count: 32).span,
                 ephemeralKey: ephemeralKey,
                 certificateDER: deterministicCertificate().span,
-                signingKey: signingKey,
+                signingKey: .ed25519(signingKey),
                 verificationInstant: verificationInstant
             )
             XCTFail("certificate outside the verification window was accepted")
@@ -442,6 +503,22 @@ final class TLS13HandshakeMessageTests: XCTestCase {
             index = next
         }
         return result
+    }
+
+    private func makeECDSACertificate() -> ContiguousArray<UInt8> {
+        bytes(
+            "3082016930820110a003020102020107300a06082a8648ce3d04030230223120301e" +
+            "06035504030c1773776966742d73736c2d65636473612e6578616d706c65301e170d" +
+            "3235303130313030303030305a170d3335303130313030303030305a30223120301e" +
+            "06035504030c1773776966742d73736c2d65636473612e6578616d706c6530593013" +
+            "06072a8648ce3d020106082a8648ce3d030107034200046b17d1f2e12c4247f8bce6e" +
+            "563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f" +
+            "9e162bce33576b315ececbb6406837bf51f5a3373035300f0603551d130101ff0405" +
+            "30030101ff30220603551d11041b3019821773776966742d73736c2d65636473612e" +
+            "6578616d706c65300a06082a8648ce3d040302034700304402207d64b4f0d8d41a49" +
+            "720e591dc1844556462cd8beb44558fa9f63156a76f2c6cc022063756eb89655ab0b" +
+            "0b04032d184382dd99e0be5ce5cacc66374a36dc83f7ac23"
+        )
     }
 
     private func deterministicSeed() -> ContiguousArray<UInt8> {

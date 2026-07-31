@@ -36,14 +36,81 @@ public enum P256: KeyAgreement {
     }
 }
 
-/// P-256 ECDSA verification over a caller-provided message digest.
-// FIXME(INCOMPLETE_IMPLEMENTATION): This verifier is available for vector and
-// certificate-path validation, but it still shares the variable-time point
-// arithmetic used by the standalone P-256 primitive. The current callable
-// path must not be treated as production-ready until constant-time and
-// differential release gates pass.
+/// P-256 ECDSA signing and verification over a caller-provided message digest.
+///
+/// Signing uses RFC 6979 HMAC-SHA-256 nonce generation, so an operation does
+/// not depend on an ambient random source after the private-key owner has been
+/// created. The raw signature format is fixed-width `r || s`; DER encoding is
+/// owned by the X.509/ASN.1 layer. The scalar and point arithmetic are kept
+/// inside this module so no general-purpose big integer or platform crypto API
+/// crosses the public boundary.
+// FIXME(INCOMPLETE_IMPLEMENTATION): RFC 6979 signing and verification are
+// vector-tested, but the shared variable-time arithmetic still requires the
+// constant-time, differential, sanitizer, and performance release gates
+// before protocol authentication may select this backend.
 public enum P256ECDSA {
     public static let signatureByteCount = 64
+
+    /// Creates a deterministic raw ECDSA signature encoded as `r || s`.
+    ///
+    /// The digest is interpreted as a big-endian integer and truncated to the
+    /// curve order width, as specified by SEC 1. The caller selects the hash
+    /// algorithm at the surrounding protocol boundary; RFC 6979 uses the
+    /// SHA-256 HMAC function for this P-256 profile.
+    public static func sign(
+        messageHash: Span<UInt8>,
+        privateKey: borrowing P256PrivateKey
+    ) throws(CryptoInputError) -> ContiguousArray<UInt8> {
+        guard messageHash.count >= P256PrivateKey.byteCount else {
+            throw .invalidLength(expected: P256PrivateKey.byteCount, actual: messageHash.count)
+        }
+
+        let digest = P256Scalar(bytes: messageHash.extracting(0..<P256PrivateKey.byteCount)).reduced
+        return try privateKey.withBorrowedBytes { privateBytes throws(CryptoInputError) in
+            let privateScalar = P256Scalar(bytes: privateBytes)
+            var generator = try RFC6979State(
+                privateScalar: privateScalar,
+                messageScalar: digest
+            )
+            defer { generator.wipe() }
+
+            // RFC 6979 requires advancing the generator if an extremely rare
+            // zero r or s is produced. The loop is bounded so malformed
+            // arithmetic cannot turn signing into an unbounded operation.
+            var attempt = 0
+            while attempt < 128 {
+                let nonce = try generator.next()
+                let noncePoint = P256Point.scalarMultiply(
+                    P256Point.generator,
+                    scalar: nonce.encoded.span
+                )
+                guard let affine = noncePoint.affine() else {
+                    try generator.reject()
+                    attempt += 1
+                    continue
+                }
+                let r = P256Scalar(words: affine.x.words).reduced
+                if r.isZero {
+                    try generator.reject()
+                    attempt += 1
+                    continue
+                }
+                let s = nonce.inverted() * (digest + (r * privateScalar))
+                if s.isZero {
+                    try generator.reject()
+                    attempt += 1
+                    continue
+                }
+
+                var signature = ContiguousArray<UInt8>()
+                signature.reserveCapacity(Self.signatureByteCount)
+                signature.append(contentsOf: r.encoded)
+                signature.append(contentsOf: s.encoded)
+                return signature
+            }
+            throw .invalidSignature
+        }
+    }
 
     /// Verifies a raw ECDSA signature encoded as fixed-width `r || s`.
     ///
@@ -85,6 +152,102 @@ public enum P256ECDSA {
         }
         guard let affine = point.affine() else { return false }
         return P256Scalar(words: affine.x.words).reduced == r
+    }
+
+    private static func hmac(
+        _ message: Span<UInt8>,
+        key: Span<UInt8>
+    ) throws(CryptoInputError) -> ContiguousArray<UInt8> {
+        var output = ContiguousArray<UInt8>(repeating: 0, count: SHA256.digestByteCount)
+        var destination = output.mutableSpan
+        try HMACSHA256.authenticate(message, using: key, into: &destination)
+        return output
+    }
+
+    private static func wipe(_ bytes: inout ContiguousArray<UInt8>) {
+        // RFC 6979 state owns initialized UInt8 storage for this scope; the
+        // raw pointer is borrowed only by SecureWipe and never escapes.
+        bytes.withUnsafeMutableBufferPointer { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+            SecureWipe.erase(
+                UnsafeMutableRawPointer(baseAddress),
+                byteCount: buffer.count
+            )
+        }
+    }
+}
+
+/// RFC 6979 HMAC-DRBG state for P-256 ECDSA nonce generation.
+private struct RFC6979State {
+    private var key: ContiguousArray<UInt8>
+    private var value: ContiguousArray<UInt8>
+
+    init(
+        privateScalar: P256Scalar,
+        messageScalar: P256Scalar
+    ) throws(CryptoInputError) {
+        key = ContiguousArray(repeating: 0, count: SHA256.digestByteCount)
+        value = ContiguousArray(repeating: 1, count: SHA256.digestByteCount)
+        var input = ContiguousArray<UInt8>()
+        input.reserveCapacity(value.count + 1 + 64)
+        input.append(contentsOf: value)
+        input.append(0)
+        input.append(contentsOf: privateScalar.encoded)
+        input.append(contentsOf: messageScalar.encoded)
+        key = try Self.hmac(input.span, key: key.span)
+        value = try Self.hmac(value.span, key: key.span)
+    }
+
+    mutating func next() throws(CryptoInputError) -> P256Scalar {
+        var attempt = 0
+        while attempt < 128 {
+            value = try Self.hmac(value.span, key: key.span)
+            // RFC 6979 rejects candidates outside [1, q - 1]; reducing a
+            // digest modulo q here would change the deterministic sequence.
+            let candidate = P256Scalar(bytes: value.span)
+            if !candidate.isZero, candidate < .order {
+                return candidate
+            }
+            try reject()
+            attempt += 1
+        }
+        throw .invalidSignature
+    }
+
+    mutating func reject() throws(CryptoInputError) {
+        var input = ContiguousArray<UInt8>()
+        input.reserveCapacity(value.count + 1)
+        input.append(contentsOf: value)
+        input.append(0)
+        key = try Self.hmac(input.span, key: key.span)
+        value = try Self.hmac(value.span, key: key.span)
+    }
+
+    mutating func wipe() {
+        Self.wipe(&key)
+        Self.wipe(&value)
+    }
+
+    private static func hmac(
+        _ message: Span<UInt8>,
+        key: Span<UInt8>
+    ) throws(CryptoInputError) -> ContiguousArray<UInt8> {
+        var output = ContiguousArray<UInt8>(repeating: 0, count: SHA256.digestByteCount)
+        var destination = output.mutableSpan
+        try HMACSHA256.authenticate(message, using: key, into: &destination)
+        return output
+    }
+
+    private static func wipe(_ bytes: inout ContiguousArray<UInt8>) {
+        // RFC 6979 state owns initialized UInt8 storage for this scope; the
+        // raw pointer is borrowed only by SecureWipe and never escapes.
+        bytes.withUnsafeMutableBufferPointer { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+            SecureWipe.erase(
+                UnsafeMutableRawPointer(baseAddress),
+                byteCount: buffer.count
+            )
+        }
     }
 }
 

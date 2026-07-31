@@ -3,10 +3,10 @@ import SwiftSSLASN1
 import SwiftSSLCrypto
 import SwiftSSLX509
 
-/// A synchronous TLS 1.3 client handshake for the supported X25519/Ed25519
-/// profile. Transport I/O, buffering, and trust-store lookup remain outside
-/// the engine; each step consumes complete TLS records and returns one owned
-/// output batch.
+/// A synchronous TLS 1.3 client handshake for the supported X25519 and
+/// certificate-signature profiles. Transport I/O, buffering, and trust-store
+/// lookup remain outside the engine; each step consumes complete TLS records
+/// and returns one owned output batch.
 public struct TLS13ClientHandshake: ~Copyable, Sendable {
     private enum Phase: Sendable {
         case idle
@@ -18,6 +18,7 @@ public struct TLS13ClientHandshake: ~Copyable, Sendable {
     private let random: OwnedBytes
     private let ephemeralKey: X25519PrivateKey
     private let expectedServerPublicKey: OwnedBytes
+    private let expectedServerSignatureScheme: TLS13SignatureScheme
     private let verificationInstant: VerificationInstant
     private let cipherSuite: TLSCipherSuite
     private var transcript: TLS13Transcript
@@ -39,13 +40,22 @@ public struct TLS13ClientHandshake: ~Copyable, Sendable {
         expectedServerPublicKey: Span<UInt8>,
         verificationInstant: VerificationInstant,
         cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
-        resumptionState: consuming TLS13ResumptionState? = nil
+        resumptionState: consuming TLS13ResumptionState? = nil,
+        expectedServerSignatureScheme: TLS13SignatureScheme = .ed25519
     ) throws(TLS13HandshakeEngineError) {
-        guard random.count == 32, expectedServerPublicKey.count == 32 else {
+        guard random.count == 32,
+              expectedServerPublicKey.count == expectedServerSignatureScheme.publicKeyByteCount else {
             throw .invalidConfiguration
         }
         guard TLSCipherSuite(rawValue: cipherSuite.rawValue) != nil else {
             throw .unsupportedCipherSuite(cipherSuite.rawValue)
+        }
+        // FIXME(INCOMPLETE_IMPLEMENTATION): P-256 certificate verification is
+        // available as a vector-tested validation path, but its variable-time
+        // arithmetic has not passed the release gates. Keep production TLS
+        // selection on the complete Ed25519 profile until those gates pass.
+        guard expectedServerSignatureScheme == .ed25519 else {
+            throw .invalidConfiguration
         }
         do {
             transcript = try TLS13Transcript()
@@ -55,6 +65,7 @@ public struct TLS13ClientHandshake: ~Copyable, Sendable {
         self.random = OwnedBytes(copying: random)
         self.ephemeralKey = ephemeralKey
         self.expectedServerPublicKey = OwnedBytes(copying: expectedServerPublicKey)
+        self.expectedServerSignatureScheme = expectedServerSignatureScheme
         self.verificationInstant = verificationInstant
         self.cipherSuite = cipherSuite
         self.resumptionState = resumptionState
@@ -499,6 +510,126 @@ public struct TLS13ClientHandshake: ~Copyable, Sendable {
         return try makeClientFinishedOutput()
     }
 
+    private func verifyCertificateVerify(
+        _ value: TLS13CertificateVerify,
+        signedMessage: Span<UInt8>
+    ) throws(TLS13HandshakeEngineError) -> Bool {
+        do {
+            switch value.signatureScheme {
+            case .ed25519:
+                return try Ed25519.verify(
+                    signature: value.signature.span,
+                    message: signedMessage,
+                    publicKey: expectedServerPublicKey.span
+                )
+            case .ecdsaP256SHA256:
+                let rawSignature = try decodeECDSASignature(
+                    value.signature.span,
+                    componentByteCount: 32
+                )
+                var digest = ContiguousArray<UInt8>(repeating: 0, count: SHA256.digestByteCount)
+                var destination = digest.mutableSpan
+                try SHA256.hash(signedMessage, into: &destination)
+                let key = try P256PublicKey(bytes: expectedServerPublicKey.span)
+                return try P256ECDSA.verify(
+                    signature: rawSignature.span,
+                    messageHash: digest.span,
+                    publicKey: key
+                )
+            case .ecdsaP384SHA384, .ecdsaP521SHA512,
+                 .rsaPSSRSAESHA256, .rsaPSSRSAESHA384, .rsaPSSRSAESHA512,
+                 .rsaPSSPSSSHA256, .rsaPSSPSSSHA384, .rsaPSSPSSSHA512:
+                throw TLS13HandshakeEngineError.certificateVerifyFailure
+            }
+        } catch let error as TLS13HandshakeEngineError {
+            throw error
+        } catch {
+            throw .certificateVerifyFailure
+        }
+    }
+
+    private func decodeECDSASignature(
+        _ signature: Span<UInt8>,
+        componentByteCount: Int
+    ) throws(TLS13HandshakeEngineError) -> ContiguousArray<UInt8> {
+        guard signature.count <= 256 else { throw .certificateVerifyFailure }
+        var budget: ParsingBudget
+        do {
+            budget = try ParsingBudget(
+                limits: X509Certificate.defaultParsingLimits,
+                inputByteCount: signature.count
+            )
+        } catch {
+            throw .certificateVerifyFailure
+        }
+        var cursor = DERCursor(signature)
+        let root: DERElementView
+        do {
+            root = try cursor.readElement(using: &budget)
+            try cursor.requireFullyConsumed()
+        } catch {
+            throw .certificateVerifyFailure
+        }
+        guard root.tag == DERTag(tagClass: .universal, isConstructed: true, number: 16) else {
+            throw .certificateVerifyFailure
+        }
+        var body = DERCursor(root.contentBytes)
+        let rElement: DERElementView
+        let sElement: DERElementView
+        do {
+            rElement = try body.readElement(using: &budget)
+            sElement = try body.readElement(using: &budget)
+            try body.requireFullyConsumed()
+        } catch {
+            throw .certificateVerifyFailure
+        }
+        let integerTag = DERTag(tagClass: .universal, isConstructed: false, number: 2)
+        guard rElement.tag == integerTag, sElement.tag == integerTag else {
+            throw .certificateVerifyFailure
+        }
+
+        var result = ContiguousArray<UInt8>(repeating: 0, count: componentByteCount * 2)
+        try copyPositiveInteger(
+            rElement.contentBytes,
+            into: &result,
+            offset: 0,
+            componentByteCount: componentByteCount
+        )
+        try copyPositiveInteger(
+            sElement.contentBytes,
+            into: &result,
+            offset: componentByteCount,
+            componentByteCount: componentByteCount
+        )
+        return result
+    }
+
+    private func copyPositiveInteger(
+        _ bytes: Span<UInt8>,
+        into result: inout ContiguousArray<UInt8>,
+        offset: Int,
+        componentByteCount: Int
+    ) throws(TLS13HandshakeEngineError) {
+        guard bytes.count > 0, bytes.count <= componentByteCount + 1,
+              (bytes[0] & 0x80 == 0 || bytes[0] == 0) else {
+            throw .certificateVerifyFailure
+        }
+        var sourceOffset = 0
+        if bytes.count > 1, bytes[0] == 0 {
+            guard bytes[1] & 0x80 != 0 else { throw .certificateVerifyFailure }
+            sourceOffset = 1
+        }
+        let count = bytes.count - sourceOffset
+        guard count > 0, count <= componentByteCount else {
+            throw .certificateVerifyFailure
+        }
+        var index = 0
+        while index < count {
+            result[offset + componentByteCount - count + index] = bytes[sourceOffset + index]
+            index += 1
+        }
+    }
+
     private mutating func processServerMessages(
         _ messages: ContiguousArray<OwnedBytes>
     ) throws(TLS13HandshakeEngineError) {
@@ -529,7 +660,7 @@ public struct TLS13ClientHandshake: ~Copyable, Sendable {
                 guard certificate.validity.contains(verificationInstant) else {
                     throw .certificateNotValid
                 }
-                guard certificate.subjectPublicKeyInfo.algorithm == .ed25519 else {
+                guard certificate.subjectPublicKeyInfo.algorithm == expectedServerSignatureScheme.keyAlgorithm else {
                     throw .certificateVerificationFailed
                 }
                 let expected = expectedServerPublicKey
@@ -543,16 +674,18 @@ public struct TLS13ClientHandshake: ~Copyable, Sendable {
                 guard !resumedHandshake, sawCertificate, !sawCertificateVerify else {
                     throw .malformedInput
                 }
-                let signature = try engineTry { try TLS13HandshakeCodec.parseCertificateVerify(message.span) }
+                let certificateVerify = try engineTry {
+                    try TLS13HandshakeCodec.parseCertificateVerifyWithScheme(message.span)
+                }
+                guard certificateVerify.signatureScheme == expectedServerSignatureScheme else {
+                    throw .certificateVerifyFailure
+                }
                 let hash = try transcriptDigest(for: cipherSuite)
                 let signed = TLS13HandshakeWire.certificateVerifyInput(transcriptHash: hash.span)
-                let verified = try engineTry {
-                    try Ed25519.verify(
-                        signature: signature.span,
-                        message: signed.span,
-                        publicKey: expectedServerPublicKey.span
-                    )
-                }
+                let verified = try verifyCertificateVerify(
+                    certificateVerify,
+                    signedMessage: signed.span
+                )
                 guard verified else { throw .certificateVerifyFailure }
                 try appendTranscript(message.span)
                 sawCertificateVerify = true
@@ -681,9 +814,10 @@ public struct TLS13ClientHandshake: ~Copyable, Sendable {
     }
 }
 
-/// A synchronous TLS 1.3 server handshake using an Ed25519 certificate and
-/// X25519 key exchange. The application supplies the certificate and signing
-/// key; trust policy for clients is intentionally outside this engine.
+/// A synchronous TLS 1.3 server handshake using an explicit certificate
+/// signing key and X25519 key exchange. The application supplies the
+/// certificate and signing key; trust policy for clients is intentionally
+/// outside this engine.
 public struct TLS13ServerHandshake: ~Copyable, Sendable {
     private enum Phase: Sendable {
         case awaitingClientHello
@@ -695,7 +829,7 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
     private let random: OwnedBytes
     private let ephemeralKey: X25519PrivateKey
     private let certificate: CertificateBytes
-    private let signingKey: Ed25519PrivateKey
+    private let signingKey: TLS13SigningKey
     private let verificationInstant: VerificationInstant
     private let resumptionIdentity: OwnedBytes?
     private let resumptionPSK: SecretBytes?
@@ -718,7 +852,7 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
         random: Span<UInt8>,
         ephemeralKey: consuming X25519PrivateKey,
         certificateDER: Span<UInt8>,
-        signingKey: consuming Ed25519PrivateKey,
+        signingKey: consuming TLS13SigningKey,
         verificationInstant: VerificationInstant,
         resumptionIdentity: Span<UInt8>? = nil,
         resumptionPSK: Span<UInt8>? = nil,
@@ -737,7 +871,13 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
         guard parsed.validity.contains(verificationInstant) else {
             throw .certificateNotValid
         }
-        guard parsed.subjectPublicKeyInfo.algorithm == .ed25519 else {
+        guard parsed.subjectPublicKeyInfo.algorithm == signingKey.signatureScheme.keyAlgorithm else {
+            throw .invalidConfiguration
+        }
+        // FIXME(INCOMPLETE_IMPLEMENTATION): The generic signing-key codec is
+        // validation-only for P-256. TLS production selection remains limited
+        // to Ed25519 until constant-time and differential release gates pass.
+        guard signingKey.signatureScheme == .ed25519 else {
             throw .invalidConfiguration
         }
         guard (resumptionIdentity == nil) == (resumptionPSK == nil) else {
@@ -771,7 +911,7 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
         }
         let signerPublicKeyBytes: ContiguousArray<UInt8>
         do {
-            signerPublicKeyBytes = try signingKey.publicKey()
+            signerPublicKeyBytes = try signingKey.publicKeyBytes()
         } catch let error {
             throw .crypto(error)
         }
@@ -805,6 +945,37 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
         applicationRead = nil
         applicationWrite = nil
         phase = .awaitingClientHello
+    }
+
+    /// Compatibility initializer for the original Ed25519-only profile.
+    /// The key is immediately wrapped in the explicit signing-key enum, so
+    /// the engine has one authentication path internally.
+    public init(
+        random: Span<UInt8>,
+        ephemeralKey: consuming X25519PrivateKey,
+        certificateDER: Span<UInt8>,
+        signingKey: consuming Ed25519PrivateKey,
+        verificationInstant: VerificationInstant,
+        resumptionIdentity: Span<UInt8>? = nil,
+        resumptionPSK: Span<UInt8>? = nil,
+        resumptionIssuedAt: VerificationInstant? = nil,
+        resumptionLifetime: UInt32? = nil,
+        resumptionAgeAdd: UInt32? = nil,
+        resumptionAgeToleranceMilliseconds: UInt32 = 10_000
+    ) throws(TLS13HandshakeEngineError) {
+        try self.init(
+            random: random,
+            ephemeralKey: consume ephemeralKey,
+            certificateDER: certificateDER,
+            signingKey: .ed25519(signingKey),
+            verificationInstant: verificationInstant,
+            resumptionIdentity: resumptionIdentity,
+            resumptionPSK: resumptionPSK,
+            resumptionIssuedAt: resumptionIssuedAt,
+            resumptionLifetime: resumptionLifetime,
+            resumptionAgeAdd: resumptionAgeAdd,
+            resumptionAgeToleranceMilliseconds: resumptionAgeToleranceMilliseconds
+        )
     }
 
     public var isEstablished: Bool {
@@ -1235,7 +1406,23 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
             let hash = try transcriptDigest(for: cipherSuite)
             let signed = TLS13HandshakeWire.certificateVerifyInput(transcriptHash: hash.span)
             let signature = try engineTry { try signingKey.sign(message: signed.span) }
-            let certificateVerify = try engineTry { try TLS13HandshakeCodec.makeCertificateVerify(signature: signature.span) }
+            let wireSignature: ContiguousArray<UInt8>
+            switch signingKey.signatureScheme {
+            case .ed25519:
+                wireSignature = signature
+            case .ecdsaP256SHA256:
+                wireSignature = try encodeECDSASignature(
+                    signature.span,
+                    componentByteCount: 32
+                )
+            default:
+                throw .invalidConfiguration
+            }
+            let certificateVerify: OwnedBytes
+            certificateVerify = try makeCertificateVerifyMessage(
+                signatureScheme: signingKey.signatureScheme,
+                signature: consume wireSignature
+            )
             try appendTranscript(certificateVerify.span)
             messages.append(certificateVerify)
         }
@@ -1250,6 +1437,47 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
         }
         handshakeSecrets = consume secrets
         handshakeWrite = consume protector
+        return result
+    }
+
+    private func encodeECDSASignature(
+        _ rawSignature: Span<UInt8>,
+        componentByteCount: Int
+    ) throws(TLS13HandshakeEngineError) -> ContiguousArray<UInt8> {
+        guard rawSignature.count == componentByteCount * 2 else {
+            throw .certificateVerifyFailure
+        }
+        let r = derInteger(rawSignature.extracting(0..<componentByteCount))
+        let s = derInteger(rawSignature.extracting(componentByteCount..<rawSignature.count))
+        let bodyCount = 2 + r.count + 2 + s.count
+        guard bodyCount < 128 else { throw .certificateVerifyFailure }
+        var result = ContiguousArray<UInt8>()
+        result.reserveCapacity(bodyCount + 2)
+        result.append(0x30)
+        result.append(UInt8(bodyCount))
+        result.append(0x02)
+        result.append(UInt8(r.count))
+        result.append(contentsOf: r)
+        result.append(0x02)
+        result.append(UInt8(s.count))
+        result.append(contentsOf: s)
+        return result
+    }
+
+    private func derInteger(_ bytes: Span<UInt8>) -> ContiguousArray<UInt8> {
+        var first = 0
+        while first + 1 < bytes.count, bytes[first] == 0 {
+            first += 1
+        }
+        var result = ContiguousArray<UInt8>()
+        if bytes[first] & 0x80 != 0 {
+            result.append(0)
+        }
+        var index = first
+        while index < bytes.count {
+            result.append(bytes[index])
+            index += 1
+        }
         return result
     }
 
@@ -1551,6 +1779,21 @@ private func engineTry<Result: ~Copyable>(
 ) throws(TLS13HandshakeEngineError) -> Result {
     do {
         return try body()
+    } catch let error {
+        throw mapHandshakeEngineError(error)
+    }
+}
+
+private func makeCertificateVerifyMessage(
+    signatureScheme: TLS13SignatureScheme,
+    signature: consuming ContiguousArray<UInt8>
+) throws(TLS13HandshakeEngineError) -> OwnedBytes {
+    let owner = OwnedBytes(consuming: signature)
+    do {
+        return try TLS13HandshakeCodec.makeCertificateVerify(
+            signatureScheme: signatureScheme,
+            signature: owner.span
+        )
     } catch let error {
         throw mapHandshakeEngineError(error)
     }

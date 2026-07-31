@@ -95,6 +95,30 @@ final class P256Tests: XCTestCase {
         ))
     }
 
+    func testECDSASigningUsesRFC6979VectorAndRoundTrips() throws {
+        let privateBytes = bytes(
+            "0000000000000000000000000000000000000000000000000000000000000001"
+        )
+        let digest = bytes(
+            "172B1296FEDDD5E2C0B6300615142D3C4F6D375E5CB70ED8CFA9220CCEB94BE2"
+        )
+        let expected = bytes(
+            "6B11717B7EB4575800107E60F63E284A07D7852EFC9193635301F229BE6EEA80" +
+            "0F945EAC0CA9E852B69663B82C33C8E1955D8CC64A967B32F6318128AB37646A"
+        )
+        let key = try P256PrivateKey(bytes: privateBytes.span)
+        let signature = try P256ECDSA.sign(
+            messageHash: digest.span,
+            privateKey: key
+        )
+        XCTAssertEqual(signature, expected)
+        XCTAssertTrue(try P256ECDSA.verify(
+            signature: signature.span,
+            messageHash: digest.span,
+            publicKey: key.publicKey()
+        ))
+    }
+
     func testRejectsInvalidScalarAndPoint() throws {
         let zero = ContiguousArray<UInt8>(repeating: 0, count: P256PrivateKey.byteCount)
         do {

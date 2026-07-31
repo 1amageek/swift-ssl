@@ -2,9 +2,9 @@ import SwiftSSLCore
 import SwiftSSLCrypto
 
 /// NIST P-256 ECDH key agreement exposed by the SwiftSSL façade.
-// FIXME(INCOMPLETE_IMPLEMENTATION): The façade is validation-only until the
-// underlying P-256 implementation passes its constant-time and differential
-// release gates; TLS and X.509 integration must reject it before then.
+// FIXME(INCOMPLETE_IMPLEMENTATION): The façade is vector-tested and
+// target-validated, but the underlying variable-time arithmetic still needs
+// constant-time and differential release gates before protocol selection.
 public enum P256 {
     public static func sharedSecret(
         privateKey: borrowing P256PrivateKey,
@@ -22,13 +22,26 @@ public enum P256 {
     }
 }
 
-/// P-256 ECDSA verification exposed by the SwiftSSL façade.
-// FIXME(INCOMPLETE_IMPLEMENTATION): This façade exposes the validated
-// certificate/signature path, but the underlying arithmetic remains variable
-// time. TLS authentication must not select it until the constant-time and
-// differential release gates pass.
+/// P-256 ECDSA signing and verification exposed by the SwiftSSL façade.
+// FIXME(INCOMPLETE_IMPLEMENTATION): This façade exposes a validation path for
+// P-256 ECDSA, but protocol authentication must remain on the Ed25519 profile
+// until constant-time, differential, sanitizer, and performance gates pass.
 public enum P256ECDSA {
     public static let signatureByteCount = SwiftSSLCrypto.P256ECDSA.signatureByteCount
+
+    public static func sign(
+        messageHash: Span<UInt8>,
+        privateKey: borrowing P256PrivateKey
+    ) throws(CryptoInputError) -> ContiguousArray<UInt8> {
+        do {
+            return try SwiftSSLCrypto.P256ECDSA.sign(
+                messageHash: messageHash,
+                privateKey: privateKey.implementation
+            )
+        } catch {
+            throw CryptoInputError(error)
+        }
+    }
 
     public static func verify(
         signature: Span<UInt8>,
