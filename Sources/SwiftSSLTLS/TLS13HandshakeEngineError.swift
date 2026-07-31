@@ -18,4 +18,6 @@ public enum TLS13HandshakeEngineError: Error, Sendable, Equatable {
     case certificateVerifyFailure
     case output(ByteError)
     case unsupportedCipherSuite(UInt16)
+    case sessionTicket(TLS13SessionTicketError)
+    case resumption(TLS13ResumptionError)
 }

@@ -239,6 +239,53 @@ final class TLS13HandshakeMessageTests: XCTestCase {
         }
     }
 
+    func testNewSessionTicketIsEncryptedAndProducesResumptionState() throws {
+        let verificationInstant = try VerificationInstant(
+            secondsSinceUnixEpoch: 1_720_000_000,
+            nanoseconds: 0
+        )
+        let clientEphemeral = try X25519PrivateKey(
+            bytes: ContiguousArray(repeating: 0x11, count: 32).span
+        )
+        let serverEphemeral = try X25519PrivateKey(
+            bytes: ContiguousArray(repeating: 0x22, count: 32).span
+        )
+        var client = try TLS13ClientHandshake(
+            random: ContiguousArray(repeating: 0x01, count: 32).span,
+            ephemeralKey: clientEphemeral,
+            expectedServerPublicKey: deterministicServerPublicKey().span,
+            verificationInstant: verificationInstant
+        )
+        var server = try TLS13ServerHandshake(
+            random: ContiguousArray(repeating: 0x02, count: 32).span,
+            ephemeralKey: serverEphemeral,
+            certificateDER: deterministicCertificate().span,
+            signingKey: try Ed25519PrivateKey(seed: deterministicSeed().span),
+            verificationInstant: verificationInstant
+        )
+        let clientHello = try client.start()
+        let serverFlight = try server.receive(clientHello.bytes.span)
+        let clientFinished = try client.receive(serverFlight.bytes.span)
+        _ = try server.receive(clientFinished.bytes.span)
+
+        let ticket = ContiguousArray<UInt8>([0xA0, 0xB0, 0xC0])
+        let nonce = ContiguousArray<UInt8>([0x01, 0x02, 0x03])
+        let ticketOutput = try server.sendNewSessionTicket(
+            lifetime: 3_600,
+            ageAdd: 7,
+            ticketNonce: nonce.span,
+            ticket: ticket.span
+        )
+        let state = try client.receiveNewSessionTicket(
+            ticketOutput.bytes.span,
+            receivedAt: verificationInstant
+        )
+        state.withTicketBytes { bytes in
+            XCTAssertEqual(copy(bytes), Array(ticket))
+        }
+        XCTAssertEqual(try state.obfuscatedTicketAge(at: verificationInstant), 7)
+    }
+
     func testClientRejectsTamperedServerFlight() throws {
         let signingKey = try Ed25519PrivateKey(seed: deterministicSeed().span)
         let verificationInstant = try VerificationInstant(

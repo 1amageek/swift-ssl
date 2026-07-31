@@ -144,6 +144,68 @@ public struct TLS13ClientHandshake: ~Copyable, Sendable {
         return result
     }
 
+    /// Consumes one authenticated post-handshake NewSessionTicket and returns
+    /// the single-use state needed by a future PSK ClientHello. The ticket is
+    /// not persisted implicitly; the caller owns that policy boundary.
+    public mutating func receiveNewSessionTicket(
+        _ input: Span<UInt8>,
+        receivedAt: VerificationInstant
+    ) throws(TLS13HandshakeEngineError) -> TLS13ResumptionState {
+        guard case .established = phase else { throw .invalidState }
+        guard var protector = applicationRead.take() else { throw .invalidState }
+        guard let secrets = applicationSecrets.take() else {
+            applicationRead = consume protector
+            throw .invalidState
+        }
+        do {
+            let records = try TLS13HandshakeWire.splitRecords(input)
+            guard records.count == 1 else { throw TLS13HandshakeEngineError.malformedInput }
+            let record = records[0]
+            var plaintext = ContiguousArray<UInt8>(
+                repeating: 0,
+                count: TLS13RecordProtector.maximumPlaintextByteCount + 256
+            )
+            var destination = plaintext.mutableSpan
+            let contentType = try protector.open(record: record.span, into: &destination)
+            guard contentType == .handshake else { throw TLS13HandshakeEngineError.malformedInput }
+            let count = protector.lastOpenedByteCount
+            let messages = try engineTry {
+                try TLS13HandshakeCodec.splitMessages(destination.span.extracting(0..<count))
+            }
+            guard messages.count == 1 else { throw TLS13HandshakeEngineError.malformedInput }
+            let ticket: TLS13NewSessionTicket
+            var pendingMessages = messages
+            let encodedTicket = pendingMessages.removeFirst()
+            ticket = try TLS13SessionTicketCodec.parseNewSessionTicket(encodedTicket.span)
+            let state = try secrets.withResumptionMasterSecret { master throws(TLS13ResumptionError) in
+                try TLS13ResumptionState(
+                    ticket: ticket.ticket.span,
+                    ticketNonce: ticket.ticketNonce.span,
+                    resumptionMasterSecret: master,
+                    cipherSuite: secrets.cipherSuite,
+                    issuedAt: receivedAt,
+                    lifetime: ticket.lifetime,
+                    ageAdd: ticket.ageAdd
+                )
+            }
+            applicationSecrets = consume secrets
+            applicationRead = consume protector
+            return state
+        } catch let error as TLS13HandshakeEngineError {
+            phase = .failed
+            throw error
+        } catch let error as TLS13SessionTicketError {
+            phase = .failed
+            throw .sessionTicket(error)
+        } catch let error as TLS13ResumptionError {
+            phase = .failed
+            throw .resumption(error)
+        } catch {
+            phase = .failed
+            throw .malformedInput
+        }
+    }
+
     /// Sends a post-handshake KeyUpdate under the current write key and then
     /// installs the next write traffic secret for subsequent records.
     public mutating func requestKeyUpdate(
@@ -665,6 +727,41 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
         return result
     }
 
+    /// Emits one authenticated post-handshake NewSessionTicket. Ticket
+    /// protection and persistence remain caller-owned; the engine only binds
+    /// the supplied opaque ticket to the current TLS 1.3 application epoch.
+    public mutating func sendNewSessionTicket(
+        lifetime: UInt32,
+        ageAdd: UInt32,
+        ticketNonce: Span<UInt8>,
+        ticket: Span<UInt8>,
+        extensions: Span<UInt8> = Span<UInt8>()
+    ) throws(TLS13HandshakeEngineError) -> TLS13HandshakeOutput {
+        guard case .established = phase else { throw .invalidState }
+        guard var protector = applicationWrite.take() else { throw .invalidState }
+        do {
+            let message = try engineTry {
+                try TLS13SessionTicketCodec.makeNewSessionTicket(
+                    lifetime: lifetime,
+                    ageAdd: ageAdd,
+                    ticketNonce: ticketNonce,
+                    ticket: ticket,
+                    extensions: extensions
+                )
+            }
+            let record = try TLS13HandshakeWire.seal(message, with: &protector)
+            let output = try TLS13HandshakeWire.makeOutput(
+                records: ContiguousArray([record]),
+                completed: false
+            )
+            applicationWrite = consume protector
+            return output
+        } catch {
+            applicationWrite = consume protector
+            throw mapHandshakeEngineError(error)
+        }
+    }
+
     /// Sends a post-handshake KeyUpdate under the current write key and then
     /// installs the next write traffic secret for subsequent records.
     public mutating func requestKeyUpdate(
@@ -1084,6 +1181,8 @@ private func mapHandshakeEngineError(_ error: any Error) -> TLS13HandshakeEngine
     if let error = error as? CryptoInputError { return .crypto(error) }
     if let error = error as? X25519KeyGenerationError { return .x25519(error) }
     if let error = error as? X509CertificateError { return .certificate(error) }
+    if let error = error as? TLS13SessionTicketError { return .sessionTicket(error) }
+    if let error = error as? TLS13ResumptionError { return .resumption(error) }
     if let error = error as? ByteError { return .output(error) }
     return .malformedInput
 }
