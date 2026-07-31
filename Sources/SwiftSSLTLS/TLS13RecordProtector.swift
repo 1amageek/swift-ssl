@@ -16,6 +16,7 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
     private let key: SecretBytes
     private let iv: SecretBytes
     private var sequenceNumber: UInt64
+    public private(set) var lastOpenedByteCount: Int
 
     public init(
         cipherSuite: TLSCipherSuite,
@@ -42,6 +43,7 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
         iv = derivedIV
         self.cipherSuite = cipherSuite
         sequenceNumber = 0
+        lastOpenedByteCount = 0
     }
 
     public var currentSequenceNumber: UInt64 {
@@ -143,6 +145,7 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
         record: Span<UInt8>,
         into output: inout MutableSpan<UInt8>
     ) throws(TLS13RecordError) -> TLS13ContentType {
+        lastOpenedByteCount = 0
         guard record.count >= Self.recordHeaderByteCount + Self.tagByteCount else {
             throw .malformedRecord
         }
@@ -218,6 +221,7 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
             index += 1
         }
         sequenceNumber &+= 1
+        lastOpenedByteCount = contentByteCount
         return contentType
     }
 

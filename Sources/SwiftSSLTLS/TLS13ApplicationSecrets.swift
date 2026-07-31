@@ -49,25 +49,25 @@ public struct TLS13ApplicationSecrets: ~Copyable, Sendable {
         resumptionMasterSecret = resumption
     }
 
-    public borrowing func withClientTrafficSecret<Result, Failure: Error>(
+    public borrowing func withClientTrafficSecret<Result: ~Copyable, Failure: Error>(
         _ body: (Span<UInt8>) throws(Failure) -> Result
     ) throws(Failure) -> Result {
         try clientTrafficSecret.withBorrowedBytes(body)
     }
 
-    public borrowing func withServerTrafficSecret<Result, Failure: Error>(
+    public borrowing func withServerTrafficSecret<Result: ~Copyable, Failure: Error>(
         _ body: (Span<UInt8>) throws(Failure) -> Result
     ) throws(Failure) -> Result {
         try serverTrafficSecret.withBorrowedBytes(body)
     }
 
-    public borrowing func withExporterMasterSecret<Result, Failure: Error>(
+    public borrowing func withExporterMasterSecret<Result: ~Copyable, Failure: Error>(
         _ body: (Span<UInt8>) throws(Failure) -> Result
     ) throws(Failure) -> Result {
         try exporterMasterSecret.withBorrowedBytes(body)
     }
 
-    public borrowing func withResumptionMasterSecret<Result, Failure: Error>(
+    public borrowing func withResumptionMasterSecret<Result: ~Copyable, Failure: Error>(
         _ body: (Span<UInt8>) throws(Failure) -> Result
     ) throws(Failure) -> Result {
         try resumptionMasterSecret.withBorrowedBytes(body)

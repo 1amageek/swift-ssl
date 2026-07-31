@@ -20,16 +20,36 @@ public struct TLS13HandshakeSecrets: ~Copyable, Sendable {
         self.masterSecret = masterSecret
     }
 
-    public borrowing func withClientTrafficSecret<Result, Failure: Error>(
+    public borrowing func withClientTrafficSecret<Result: ~Copyable, Failure: Error>(
         _ body: (Span<UInt8>) throws(Failure) -> Result
     ) throws(Failure) -> Result {
         try clientTrafficSecret.withBorrowedBytes(body)
     }
 
-    public borrowing func withServerTrafficSecret<Result, Failure: Error>(
+    public borrowing func withServerTrafficSecret<Result: ~Copyable, Failure: Error>(
         _ body: (Span<UInt8>) throws(Failure) -> Result
     ) throws(Failure) -> Result {
         try serverTrafficSecret.withBorrowedBytes(body)
+    }
+
+    public borrowing func makeClientFinishedVerifyData(
+        transcriptHash: Span<UInt8>
+    ) throws(TLS13KeyScheduleError) -> OwnedBytes {
+        try TLS13KeySchedule.finishedVerifyData(
+            trafficSecret: clientTrafficSecret,
+            transcriptHash: transcriptHash,
+            cipherSuite: cipherSuite
+        )
+    }
+
+    public borrowing func makeServerFinishedVerifyData(
+        transcriptHash: Span<UInt8>
+    ) throws(TLS13KeyScheduleError) -> OwnedBytes {
+        try TLS13KeySchedule.finishedVerifyData(
+            trafficSecret: serverTrafficSecret,
+            transcriptHash: transcriptHash,
+            cipherSuite: cipherSuite
+        )
     }
 
     public consuming func makeApplicationSecrets(

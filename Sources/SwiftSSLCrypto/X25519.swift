@@ -70,7 +70,7 @@ public struct X25519PrivateKey: ~Copyable, Sendable {
         }
     }
 
-    public borrowing func withBorrowedBytes<Result, Failure: Error>(
+    public borrowing func withBorrowedBytes<Result: ~Copyable, Failure: Error>(
         _ body: (Span<UInt8>) throws(Failure) -> Result
     ) throws(Failure) -> Result {
         try storage.withBorrowedBytes(body)
@@ -101,7 +101,7 @@ public struct X25519PublicKey: Sendable, Equatable {
 
     public var span: Span<UInt8> { storage.span }
 
-    public borrowing func withBorrowedBytes<Result, Failure: Error>(
+    public borrowing func withBorrowedBytes<Result: ~Copyable, Failure: Error>(
         _ body: (Span<UInt8>) throws(Failure) -> Result
     ) throws(Failure) -> Result {
         try body(storage.span)
@@ -123,7 +123,7 @@ public struct X25519SharedSecret: ~Copyable, Sendable {
         }
     }
 
-    public borrowing func withBorrowedBytes<Result, Failure: Error>(
+    public borrowing func withBorrowedBytes<Result: ~Copyable, Failure: Error>(
         _ body: (Span<UInt8>) throws(Failure) -> Result
     ) throws(Failure) -> Result {
         try storage.withBorrowedBytes(body)

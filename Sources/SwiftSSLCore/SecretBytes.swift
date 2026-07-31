@@ -46,7 +46,7 @@ public struct SecretBytes: ~Copyable {
         }
     }
 
-    public borrowing func withBorrowedBytes<Result, Failure: Error>(
+    public borrowing func withBorrowedBytes<Result: ~Copyable, Failure: Error>(
         _ body: (Span<UInt8>) throws(Failure) -> Result
     ) throws(Failure) -> Result {
         let buffer = UnsafeBufferPointer(start: pointer, count: count)

@@ -115,6 +115,43 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
         )
     }
 
+    static func finishedVerifyData(
+        trafficSecret: borrowing SecretBytes,
+        transcriptHash: Span<UInt8>,
+        cipherSuite: TLSCipherSuite
+    ) throws(TLS13KeyScheduleError) -> OwnedBytes {
+        let emptyHash = Self.hashEmptyMessageBytes(cipherSuite: cipherSuite)
+        let finishedKey = try Self.deriveSecret(
+            secret: trafficSecret,
+            label: "finished",
+            transcriptHash: emptyHash.span,
+            cipherSuite: cipherSuite
+        )
+        let hashByteCount = Self.hashByteCount(for: cipherSuite)
+        guard transcriptHash.count == hashByteCount else {
+            throw .invalidTranscriptHashLength(expected: hashByteCount, actual: transcriptHash.count)
+        }
+        var output = ContiguousArray<UInt8>(repeating: 0, count: hashByteCount)
+        let outputByteCount = output.count
+        do {
+            try finishedKey.withBorrowedBytes { key in
+                try output.withUnsafeMutableBufferPointer { buffer throws(CryptoInputError) in
+                    var destination = MutableSpan(_unsafeStart: buffer.baseAddress!, count: outputByteCount)
+                    switch cipherSuite {
+                    case .aes256GCM_SHA384:
+                        try HMACSHA384.authenticate(transcriptHash, using: key, into: &destination)
+                    case .aes128GCM_SHA256, .chacha20Poly1305_SHA256:
+                        try HMACSHA256.authenticate(transcriptHash, using: key, into: &destination)
+                    }
+                }
+            }
+        } catch {
+            wipe(&output)
+            throw .cryptographicFailure
+        }
+        return OwnedBytes(consuming: output)
+    }
+
     private static func expand(
         secret: borrowing SecretBytes,
         info: Span<UInt8>,
@@ -249,6 +286,25 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
             }
         } catch {
             throw .cryptographicFailure
+        }
+        return OwnedBytes(consuming: output)
+    }
+
+    private static func hashEmptyMessageBytes(
+        cipherSuite: TLSCipherSuite
+    ) -> OwnedBytes {
+        let count = Self.hashByteCount(for: cipherSuite)
+        var output = ContiguousArray<UInt8>(repeating: 0, count: count)
+        var destination = output.mutableSpan
+        do {
+            switch cipherSuite {
+            case .aes256GCM_SHA384:
+                try SHA384.hash(ContiguousArray<UInt8>().span, into: &destination)
+            case .aes128GCM_SHA256, .chacha20Poly1305_SHA256:
+                try SHA256.hash(ContiguousArray<UInt8>().span, into: &destination)
+            }
+        } catch {
+            preconditionFailure("TLS hash output length is a compile-time invariant")
         }
         return OwnedBytes(consuming: output)
     }

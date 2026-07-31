@@ -23,6 +23,12 @@ final class TLS13KeyScheduleTests: XCTestCase {
         XCTAssertEqual(clientSecret.count, 32)
         XCTAssertNotEqual(Set(clientSecret), [0])
 
+        let serverFinished = try handshake.makeServerFinishedVerifyData(
+            transcriptHash: transcript.span
+        )
+        XCTAssertEqual(serverFinished.count, 32)
+        XCTAssertNotEqual(copy(serverFinished.span), clientSecret)
+
         let application = try handshake.makeApplicationSecrets(transcriptHash: transcript.span)
         var applicationSecret = ContiguousArray<UInt8>()
         try application.withServerTrafficSecret { secret in
