@@ -37,6 +37,28 @@ public struct X25519PrivateKey: ~Copyable, Sendable {
     public static let byteCount = 32
     private let storage: SecretBytes
 
+    public static func generate(
+        using entropy: borrowing any EntropySource
+    ) throws(X25519KeyGenerationError) -> X25519PrivateKey {
+        var bytes = ContiguousArray<UInt8>(repeating: 0, count: Self.byteCount)
+        do {
+            var destination = bytes.mutableSpan
+            try entropy.fill(&destination)
+        } catch {
+            throw .entropy(error)
+        }
+        do {
+            return try X25519PrivateKey(bytes: bytes.span)
+        } catch {
+            throw .memoryFailure
+        }
+    }
+
+    public static func generate() throws(X25519KeyGenerationError) -> X25519PrivateKey {
+        let entropy = SystemEntropySource()
+        return try Self.generate(using: entropy)
+    }
+
     public init(bytes: Span<UInt8>) throws(CryptoInputError) {
         guard bytes.count == Self.byteCount else {
             throw .invalidLength(expected: Self.byteCount, actual: bytes.count)

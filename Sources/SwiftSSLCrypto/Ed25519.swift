@@ -57,6 +57,111 @@ public enum Ed25519 {
     }
 }
 
+/// Ed25519 private seed owner implementing deterministic RFC 8032 signing.
+public struct Ed25519PrivateKey: ~Copyable, Sendable {
+    public static let seedByteCount = 32
+
+    private let seed: SecretBytes
+
+    public init(seed: Span<UInt8>) throws(CryptoInputError) {
+        guard seed.count == Self.seedByteCount else {
+            throw .invalidLength(expected: Self.seedByteCount, actual: seed.count)
+        }
+        do {
+            self.seed = try SecretBytes(copying: seed)
+        } catch {
+            throw .invalidLength(expected: Self.seedByteCount, actual: seed.count)
+        }
+    }
+
+    public borrowing func publicKey() throws(CryptoInputError) -> ContiguousArray<UInt8> {
+        let expanded = try Self.expand(seed: seed)
+        var scalar = expanded
+        scalar[0] &= 248
+        scalar[31] &= 63
+        scalar[31] |= 64
+        defer { Self.wipe(&scalar) }
+        return EdwardsPoint.scalarMultiplyBase(scalar.span).encoded
+    }
+
+    public borrowing func sign(message: Span<UInt8>) throws(CryptoInputError) -> ContiguousArray<UInt8> {
+        let expanded = try Self.expand(seed: seed)
+        var scalar = expanded
+        scalar[0] &= 248
+        scalar[31] &= 63
+        scalar[31] |= 64
+        var prefix = ContiguousArray(expanded[32..<64])
+        defer {
+            Self.wipe(&scalar)
+            Self.wipe(&prefix)
+        }
+
+        let publicKey = EdwardsPoint.scalarMultiplyBase(scalar.span).encoded
+        var nonceInput = ContiguousArray<UInt8>()
+        nonceInput.reserveCapacity(prefix.count + message.count)
+        nonceInput.append(contentsOf: prefix)
+        Self.append(&nonceInput, message)
+        var nonceDigest = try Self.hash(nonceInput.span)
+        defer { Self.wipe(&nonceDigest) }
+        let nonce = Scalar.reduce(nonceDigest.span)
+        let encodedR = EdwardsPoint.scalarMultiplyBase(nonce.span).encoded
+
+        var challengeInput = ContiguousArray<UInt8>()
+        challengeInput.reserveCapacity(encodedR.count + publicKey.count + message.count)
+        challengeInput.append(contentsOf: encodedR)
+        challengeInput.append(contentsOf: publicKey)
+        Self.append(&challengeInput, message)
+        var challengeDigest = try Self.hash(challengeInput.span)
+        defer { Self.wipe(&challengeDigest) }
+        let challenge = Scalar.reduce(challengeDigest.span)
+        let response = Scalar.addMod(
+            nonce,
+            Scalar.multiplyMod(challenge, Scalar.clamped(scalar))
+        )
+
+        var signature = ContiguousArray<UInt8>()
+        signature.reserveCapacity(Ed25519.signatureByteCount)
+        signature.append(contentsOf: encodedR)
+        signature.append(contentsOf: response)
+        return signature
+    }
+
+    private static func expand(seed: borrowing SecretBytes) throws(CryptoInputError) -> ContiguousArray<UInt8> {
+        var output = ContiguousArray<UInt8>(repeating: 0, count: SHA512.digestByteCount)
+        do {
+            try seed.withBorrowedBytes { bytes throws(CryptoInputError) in
+                var destination = output.mutableSpan
+                try SHA512.hash(bytes, into: &destination)
+            }
+        } catch {
+            throw .invalidSignature
+        }
+        return output
+    }
+
+    private static func hash(_ input: Span<UInt8>) throws(CryptoInputError) -> ContiguousArray<UInt8> {
+        var output = ContiguousArray<UInt8>(repeating: 0, count: SHA512.digestByteCount)
+        var destination = output.mutableSpan
+        try SHA512.hash(input, into: &destination)
+        return output
+    }
+
+    private static func append(_ target: inout ContiguousArray<UInt8>, _ source: Span<UInt8>) {
+        var index = 0
+        while index < source.count {
+            target.append(source[index])
+            index += 1
+        }
+    }
+
+    private static func wipe(_ bytes: inout ContiguousArray<UInt8>) {
+        bytes.withUnsafeMutableBufferPointer { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+            SecureWipe.erase(UnsafeMutableRawPointer(baseAddress), byteCount: buffer.count)
+        }
+    }
+}
+
 private struct Scalar {
     private static let modulus: ContiguousArray<UInt8> = hexBytes(
         "edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010"
@@ -94,6 +199,54 @@ private struct Scalar {
         while resultIndex < 32 {
             result[resultIndex] = remainder[resultIndex]
             resultIndex += 1
+        }
+        return result
+    }
+
+    static func clamped(_ bytes: ContiguousArray<UInt8>) -> ContiguousArray<UInt8> {
+        var result = ContiguousArray<UInt8>(repeating: 0, count: 32)
+        var index = 0
+        while index < 32 {
+            result[index] = bytes[index]
+            index += 1
+        }
+        return result
+    }
+
+    static func addMod(
+        _ lhs: ContiguousArray<UInt8>,
+        _ rhs: ContiguousArray<UInt8>
+    ) -> ContiguousArray<UInt8> {
+        var result = ContiguousArray<UInt8>(repeating: 0, count: 33)
+        var carry: UInt16 = 0
+        var index = 0
+        while index < 32 {
+            let value = UInt16(lhs[index]) + UInt16(rhs[index]) + carry
+            result[index] = UInt8(truncatingIfNeeded: value)
+            carry = value >> 8
+            index += 1
+        }
+        result[32] = UInt8(truncatingIfNeeded: carry)
+        while Self.compare(result, modulus) >= 0 {
+            Self.subtract(&result, modulus)
+        }
+        result.removeLast()
+        return result
+    }
+
+    static func multiplyMod(
+        _ lhs: ContiguousArray<UInt8>,
+        _ rhs: ContiguousArray<UInt8>
+    ) -> ContiguousArray<UInt8> {
+        var result = ContiguousArray<UInt8>(repeating: 0, count: 32)
+        var addend = lhs
+        var bit = 0
+        while bit < 256 {
+            if ((rhs[bit >> 3] >> UInt8(bit & 7)) & 1) != 0 {
+                result = Self.addMod(result, addend)
+            }
+            addend = Self.addMod(addend, addend)
+            bit += 1
         }
         return result
     }
@@ -253,6 +406,17 @@ private struct EdwardsPoint {
         let yLeft = y * other.z
         let yRight = other.y * z
         return xLeft.bytes == xRight.bytes && yLeft.bytes == yRight.bytes
+    }
+
+    var encoded: ContiguousArray<UInt8> {
+        let inverseZ = z.inverted()
+        let affineX = x * inverseZ
+        let affineY = y * inverseZ
+        var result = affineY.bytes
+        if affineX.isNegative {
+            result[31] |= 0x80
+        }
+        return result
     }
 
     private static func sqrtRatio(u: Field25519, v: Field25519) -> Field25519 {

@@ -4,6 +4,16 @@ import XCTest
 @testable import SwiftSSLCrypto
 
 final class X25519Tests: XCTestCase {
+    func testKeyGenerationUsesExplicitEntropySource() throws {
+        let privateBytes = bytes("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a")
+        let source = FixedEntropy(bytes: privateBytes)
+        let privateKey = try X25519PrivateKey.generate(using: source)
+
+        XCTAssertEqual(copyBytes(privateKey.publicKey().span), Array(bytes(
+            "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"
+        )))
+    }
+
     func testRFC7748AlicePublicKey() throws {
         let privateBytes = bytes("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a")
         let expectedPublic = bytes("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a")
@@ -120,5 +130,20 @@ final class X25519Tests: XCTestCase {
             index = next
         }
         return result
+    }
+
+    private struct FixedEntropy: EntropySource {
+        let bytes: ContiguousArray<UInt8>
+
+        func fill(_ destination: inout MutableSpan<UInt8>) throws(EntropyError) {
+            guard destination.count == bytes.count else {
+                throw .partialFill(expected: destination.count, actual: bytes.count)
+            }
+            var index = 0
+            while index < bytes.count {
+                destination[index] = bytes[index]
+                index += 1
+            }
+        }
     }
 }

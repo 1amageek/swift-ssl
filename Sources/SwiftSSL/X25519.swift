@@ -1,3 +1,4 @@
+import SwiftSSLCore
 import SwiftSSLCrypto
 
 /// RFC 7748 X25519 key agreement exposed by the SwiftSSL façade.
@@ -24,12 +25,52 @@ public struct X25519PrivateKey: ~Copyable, Sendable {
 
     fileprivate let implementation: SwiftSSLCrypto.X25519PrivateKey
 
+    public static func generate(
+        using entropy: borrowing any EntropySource
+    ) throws(X25519KeyGenerationError) -> X25519PrivateKey {
+        do {
+            return X25519PrivateKey(
+                implementation: try SwiftSSLCrypto.X25519PrivateKey.generate(using: entropy)
+            )
+        } catch let error {
+            switch error {
+            case .entropy(let value):
+                throw .entropy(value)
+            case .memoryFailure:
+                throw .memoryFailure
+            }
+        } catch {
+            throw .memoryFailure
+        }
+    }
+
+    public static func generate() throws(X25519KeyGenerationError) -> X25519PrivateKey {
+        do {
+            return X25519PrivateKey(
+                implementation: try SwiftSSLCrypto.X25519PrivateKey.generate()
+            )
+        } catch let error {
+            switch error {
+            case .entropy(let value):
+                throw .entropy(value)
+            case .memoryFailure:
+                throw .memoryFailure
+            }
+        } catch {
+            throw .memoryFailure
+        }
+    }
+
     public init(bytes: Span<UInt8>) throws(CryptoInputError) {
         do {
             implementation = try SwiftSSLCrypto.X25519PrivateKey(bytes: bytes)
         } catch {
             throw CryptoInputError(error)
         }
+    }
+
+    fileprivate init(implementation: consuming SwiftSSLCrypto.X25519PrivateKey) {
+        self.implementation = implementation
     }
 
     public borrowing func publicKey() -> X25519PublicKey {
