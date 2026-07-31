@@ -244,6 +244,10 @@ final class TLS13HandshakeMessageTests: XCTestCase {
             secondsSinceUnixEpoch: 1_720_000_000,
             nanoseconds: 0
         )
+        let serverVerificationInstant = try VerificationInstant(
+            secondsSinceUnixEpoch: 1_720_000_001,
+            nanoseconds: 0
+        )
         let ticket = ContiguousArray<UInt8>([0xA0, 0xB0, 0xC0])
         let nonce = ContiguousArray<UInt8>([0x01, 0x02, 0x03])
         let masterSecret = ContiguousArray<UInt8>(repeating: 0x55, count: 32)
@@ -285,7 +289,7 @@ final class TLS13HandshakeMessageTests: XCTestCase {
                 ephemeralKey: serverEphemeral,
                 certificateDER: deterministicCertificate().span,
                 signingKey: try Ed25519PrivateKey(seed: deterministicSeed().span),
-                verificationInstant: verificationInstant,
+                verificationInstant: serverVerificationInstant,
                 resumptionIdentity: ticket.span,
                 resumptionPSK: psk,
                 resumptionIssuedAt: verificationInstant,

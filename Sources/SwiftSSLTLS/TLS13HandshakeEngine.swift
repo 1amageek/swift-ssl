@@ -702,6 +702,7 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
     private let resumptionIssuedAt: VerificationInstant?
     private let resumptionLifetime: UInt32?
     private let resumptionAgeAdd: UInt32?
+    private let resumptionAgeToleranceMilliseconds: UInt32
     private var cipherSuite: TLSCipherSuite
     private var transcript: TLS13Transcript
     private var resumedHandshake: Bool
@@ -723,7 +724,8 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
         resumptionPSK: Span<UInt8>? = nil,
         resumptionIssuedAt: VerificationInstant? = nil,
         resumptionLifetime: UInt32? = nil,
-        resumptionAgeAdd: UInt32? = nil
+        resumptionAgeAdd: UInt32? = nil,
+        resumptionAgeToleranceMilliseconds: UInt32 = 10_000
     ) throws(TLS13HandshakeEngineError) {
         guard random.count == 32 else { throw .invalidConfiguration }
         let parsed: X509Certificate
@@ -749,6 +751,9 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
         }
         if let lifetime = resumptionLifetime {
             guard lifetime > 0 else { throw .invalidConfiguration }
+        }
+        guard resumptionAgeToleranceMilliseconds <= 60_000 else {
+            throw .invalidConfiguration
         }
         let configuredIdentity: OwnedBytes?
         let configuredPSK: SecretBytes?
@@ -790,6 +795,7 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
         self.resumptionIssuedAt = resumptionIssuedAt
         self.resumptionLifetime = resumptionLifetime
         self.resumptionAgeAdd = resumptionAgeAdd
+        self.resumptionAgeToleranceMilliseconds = resumptionAgeToleranceMilliseconds
         self.cipherSuite = .aes128GCM_SHA256
         resumedHandshake = false
         handshakeSecrets = nil
@@ -1146,7 +1152,11 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
                   lifetime: lifetime,
                   ageAdd: ageAdd
               ),
-              offeredIdentity.obfuscatedTicketAge == expectedAge else {
+              ticketAgeWithinTolerance(
+                  offered: offeredIdentity.obfuscatedTicketAge,
+                  expected: expectedAge,
+                  toleranceMilliseconds: resumptionAgeToleranceMilliseconds
+              ) else {
             return false
         }
 
@@ -1524,6 +1534,16 @@ private func expectedObfuscatedTicketAge(
     let lifetimeMilliseconds = UInt64(lifetime) * 1_000
     guard UInt64(adjusted) <= lifetimeMilliseconds else { return nil }
     return UInt32(truncatingIfNeeded: UInt64(adjusted) &+ UInt64(ageAdd))
+}
+
+private func ticketAgeWithinTolerance(
+    offered: UInt32,
+    expected: UInt32,
+    toleranceMilliseconds: UInt32
+) -> Bool {
+    let forward = offered &- expected
+    let backward = expected &- offered
+    return min(forward, backward) <= toleranceMilliseconds
 }
 
 private func engineTry<Result: ~Copyable>(
