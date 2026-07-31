@@ -136,6 +136,27 @@ public enum TLS13HandshakeCodec {
         }
     }
 
+    public static func parseEncryptedExtensions(
+        _ message: Span<UInt8>
+    ) throws(TLS13HandshakeError) {
+        let body = try readBody(message, expectedType: Self.encryptedExtensionsType)
+        var cursor = ByteCursor(body)
+        do {
+            let extensionLength = Int(try cursor.readUInt16BigEndian())
+            guard extensionLength == cursor.remainingCount else {
+                throw TLS13HandshakeError.malformedMessage
+            }
+            guard extensionLength == 0 else {
+                throw TLS13HandshakeError.unsupportedExtension(0)
+            }
+            try cursor.requireFullyConsumed()
+        } catch let error as TLS13HandshakeError {
+            throw error
+        } catch {
+            throw .malformedMessage
+        }
+    }
+
     public static func makeCertificate(
         certificateDER: Span<UInt8>
     ) throws(TLS13HandshakeError) -> OwnedBytes {

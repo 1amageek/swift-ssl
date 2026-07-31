@@ -21,7 +21,7 @@ flowchart TD
     Crypto["SwiftSSLCrypto\nSHA-2, HMAC/HKDF, AEAD, X25519, DRBG, and primitive contracts"]
     ASN1["SwiftSSLASN1\nstrict DER foundation"]
     X509["SwiftSSLX509\ncertificate-byte models"]
-    TLS["SwiftSSLTLS\nprofile and action models"]
+    TLS["SwiftSSLTLS\nTLS 1.3 engines, records, and actions"]
     QUIC["SwiftSSLQUIC\nordered QUIC TLS output models"]
     Facade["SwiftSSL\ncurated symmetric and X25519 surface"]
 
@@ -51,7 +51,7 @@ Entropy and clock interfaces live in `SwiftSSLCore`. Concrete platform adapters 
 | `SwiftSSLCrypto` | Hash, MAC, KDF, AEAD, key agreement, KEM, signatures, HPKE, fixed-width field/scalar arithmetic, algorithm identifiers and policy gates | Certificates, TLS negotiation, OS entropy selection, arbitrary public mutable big integers |
 | `SwiftSSLASN1` | Strict DER TLV parser/writer, OID and primitive codecs, RFC 7468 PEM boundaries, parse budgets | Certificate validation, BER normalization, algorithm policy, file I/O |
 | `SwiftSSLX509` | Immutable certificate/CRL/OCSP models, SPKI and private-key containers, path building, RFC 5280 policy, service identity, revocation evidence validation | Network fetching, global trust, UI, silent CN fallback |
-| `SwiftSSLTLS` | TLS 1.3 handshake and record layers, DTLS 1.3 framing/replay/flight state, transcript/key schedule, resumption, 0-RTT policy, ECH, alerts, explicit capability suspension | Socket I/O, event loops, DNS, persistent stores, private-key services, QUIC packet protection |
+| `SwiftSSLTLS` | TLS 1.3 handshake and record layers, DTLS 1.3 framing/replay/flight state, transcript/key schedule, resumption, 0-RTT policy, ECH, alerts, explicit capability suspension | Socket I/O, event loops, DNS, persistent stores, private-key services, QUIC packet protection; the current handshake engine is intentionally limited to the pinned X25519/Ed25519 AES-128-GCM profile |
 | `SwiftSSLQUIC` | Mapping TLS handshake bytes, encryption levels, alerts, and traffic-secret events to RFC 9001 | CRYPTO reassembly, QUIC packets, header protection, loss recovery, congestion control, QUIC key phase |
 | Platform adapters (future product) | Concrete entropy, clocks, persistence adapters, and diagnostics, each added only with real target verification | Boolean capability claims, protocol semantics, or target-specific weakening of ownership/concurrency contracts |
 | `SwiftSSL` | Curated compositions and stable user entry points; currently explicit SHA-256, HMAC-SHA-256, HKDF-SHA-256, and X25519 protocol adapters | Blanket module re-export, duplicate implementation, or hidden fallback |
@@ -163,7 +163,7 @@ The three transport profiles use distinct concrete action enums and concrete pub
 
 An output that mixes copyable actions with noncopyable secrets has one noncopyable transfer owner and an ordered descriptor tape. Each descriptor refers to exactly one action index or one fixed secret slot. Package-restricted construction rejects missing, duplicate, or out-of-range references before the output reaches a driver. Iteration preserves the declared order; taking a secret consumes that slot exactly once.
 
-A future capability request is a terminal suspension result, not an ordinary callback and not an effect that can be followed by more engine output before a response. Its token contains engine identity, a monotonically increasing sequence, and capability kind. Resumption must reject no-pending, duplicate, stale, wrong-kind, and wrong-state responses with typed errors. No callable capability-request placeholder is currently exposed because the protocol engine that owns this state does not yet exist.
+A future capability request is a terminal suspension result, not an ordinary callback and not an effect that can be followed by more engine output before a response. Its token contains engine identity, a monotonically increasing sequence, and capability kind. Resumption must reject no-pending, duplicate, stale, wrong-kind, and wrong-state responses with typed errors. The current synchronous profile does not expose asynchronous capability requests; those are still required for external private-key and trust-provider integration.
 
 Early data is not an established session. Acceptance is independently decided from resumption acceptance, requires an application replay classification and server replay approval, and is never automatically retransmitted.
 
