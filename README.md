@@ -36,7 +36,7 @@ The implementation target is deliberately smaller than BoringSSL's historical AP
 | Core | Owned and borrowed bytes, strict cursors/builders, secret ownership, constant-time utilities, typed errors | Foundation implemented; verification incomplete |
 | Symmetric crypto | AES-GCM, ChaCha20-Poly1305, AES block operations needed by GCM, SHA-256/384/512, HMAC, HKDF | AES-128/192/256-GCM, ChaCha20-Poly1305, SHA-256/384/512, HMAC-SHA-256/384/512, and HKDF-SHA-256/384/512 are implemented with vectors and typed failures |
 | Public-key crypto | X25519, NIST P-256/P-384/P-521, Ed25519, RSA-PSS, ML-KEM, ML-DSA, approved hybrid groups | RFC 7748 X25519 implementation and façade are present; remaining algorithms planned |
-| Formats | Strict DER, PEM, SPKI, PKCS #8, encrypted PKCS #8, PKCS #12, certificate containers | Strict DER cursor foundation implemented; remaining formats planned |
+| Formats | Strict DER, PEM, SPKI, PKCS #8, encrypted PKCS #8, PKCS #12, certificate containers | Strict DER primitives/writer and strict RFC 7468 PEM codec are implemented; SPKI and remaining formats planned |
 | PKI | X.509 parsing, path construction, policy processing, hostname verification, revocation inputs, trust-provider boundary | Byte-owner/model foundation only; engine planned |
 | TLS | TLS 1.3, resumption, 0-RTT policy, client authentication, key update, ECH, certificate compression, delegated credentials, raw public keys | Profile/action models only; engine planned |
 | Datagram | DTLS 1.3, replay windows, ACKs, retransmission state, connection IDs, DTLS-SRTP negotiation | Profile/action models only; engine planned |

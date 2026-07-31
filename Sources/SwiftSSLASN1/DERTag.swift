@@ -1,4 +1,4 @@
-public struct DERTag: Sendable, Hashable {
+public struct DERTag: Sendable, Hashable, Equatable {
     public let tagClass: DERTagClass
     public let isConstructed: Bool
     public let number: UInt
