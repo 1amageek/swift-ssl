@@ -83,20 +83,24 @@ Correctness tests live under `Tests/`. Long-running differential, interoperabili
 
 The performance release goal is a paired median speedup of at least `1.10x` over BoringSSL for every fixed supported headline workload on the same machine and compiler configuration. The lower bound of the paired 95% bootstrap confidence interval must also be at least `1.10`. Constant-time and memory-safety requirements remain hard gates. No result is reported until runner-owned fresh builds use read-only commit snapshots, an allowlisted environment, verified arm64/SDK/Release code generation, equivalent inputs and CPU features, convergence, paired sampling, and complete output validation.
 
-| Benchmark | Swift result | BoringSSL result | Ratio | Evidence |
-|---|---:|---:|---:|---|
-| SHA-256 one-shot, 64 B | Not measured yet | Not measured yet | — | Formal raw artifact required |
-| SHA-256 one-shot, 1 KiB | Not measured yet | Not measured yet | — | Formal raw artifact required |
-| SHA-256 one-shot, 16 KiB | Not measured yet | Not measured yet | — | Formal raw artifact required |
+| Benchmark | Swift median ns/op | BoringSSL median ns/op | Ratio | 95% bootstrap CI |
+|---|---:|---:|---:|---:|
+| SHA-256 one-shot, 64 B | 33.270145 | 36.317875 | 1.093875x | 1.083631–1.098883 |
+| SHA-256 one-shot, 1 KiB | 355.468311 | 306.041342 | 0.861176x | 0.859270–0.862071 |
+| SHA-256 one-shot, 16 KiB | 5641.698608 | 4738.278817 | 0.839864x | 0.839507–0.840313 |
 
-Formal benchmark status (2026-07-31): no performance result is recorded yet. The
-requested run was rejected before either worker was built because the one-minute
-load per logical CPU was `0.938058`, above the runner's `0.25` validity gate. The
-invalid precondition artifact is retained at
-`.test-artifacts/benchmark/20260731T113521Z-native-sha256.json`. This is an
-environmental invalidation, not a Swift-versus-BoringSSL measurement; no speedup
-claim, including the `1.10x` target, can be inferred from it. Re-run the formal
-command on an otherwise quiescent machine before publishing benchmark numbers.
+Formal benchmark status (2026-08-01 JST): the runner completed 30 paired
+samples per workload on an Apple M4 Max (arm64, macOS 27.0) using Swift
+toolchain `org.swift.64202607231a` and BoringSSL commit
+`ae49d2681a56ca7b8609f6039a770fda2a8eb550`. The raw artifact is retained at
+`.test-artifacts/benchmark/20260801T-formal-sha256-v2.json` (ignored by Git).
+The result is valid measurement evidence, but the release gate failed: the
+required lower confidence bound is `1.10x`; the 64-byte workload reached only
+`1.093875x` (lower bound `1.083631x`), while 1 KiB and 16 KiB were slower than
+BoringSSL. Allocation/copy counts and WASM/Embedded timings were not measured.
+The prior high-load invalidation remains at
+`.test-artifacts/benchmark/20260731T113521Z-native-sha256.json` and is not part
+of these ratios.
 
 See [docs/VERIFICATION.md](docs/VERIFICATION.md) for gates and measurement rules.
 
