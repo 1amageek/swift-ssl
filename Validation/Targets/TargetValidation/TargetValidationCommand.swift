@@ -11,6 +11,7 @@ enum TargetValidationCommand {
     case aesGCM
     case chacha20Poly1305
     case x25519
+    case hpke
     case p256
     case p256ECDSA
     case hmacDRBG
@@ -50,6 +51,7 @@ enum TargetValidationCommand {
     try validateAESGCM()
     try validateChaCha20Poly1305()
     try validateX25519()
+    try validateHPKE()
     try validateP256()
     try validateHMACDRBG()
     try validateSHA384AndSHA512()
@@ -219,6 +221,62 @@ enum TargetValidationCommand {
       return true
     }
     guard matches else { throw Failure.x25519 }
+  }
+
+  private static func validateHPKE() throws {
+    let recipientPrivate = try SwiftSSLCrypto.X25519PrivateKey(bytes: ContiguousArray<UInt8>([
+      0x80, 0x57, 0x99, 0x1E, 0xEF, 0x8F, 0x1F, 0x1A,
+      0xF1, 0x8F, 0x4A, 0x94, 0x91, 0xD1, 0x6A, 0x1C,
+      0xE3, 0x33, 0xF6, 0x95, 0xD4, 0xDB, 0x8E, 0x38,
+      0xDA, 0x75, 0x97, 0x5C, 0x44, 0x78, 0xE0, 0xFB,
+    ]).span)
+    let info = ContiguousArray<UInt8>([
+      0x4F, 0x64, 0x65, 0x20, 0x6F, 0x6E, 0x20, 0x61,
+      0x20, 0x47, 0x72, 0x65, 0x63, 0x69, 0x61, 0x6E,
+      0x20, 0x55, 0x72, 0x6E,
+    ])
+    let entropy = FixedEntropy(bytes: ContiguousArray<UInt8>([
+      0xF4, 0xEC, 0x9B, 0x33, 0xB7, 0x92, 0xC3, 0x72,
+      0xC1, 0xD2, 0xC2, 0x06, 0x35, 0x07, 0xB6, 0x84,
+      0xEF, 0x92, 0x5B, 0x8C, 0x75, 0xA4, 0x2D, 0xBC,
+      0xBF, 0x57, 0xD6, 0x3C, 0xCD, 0x38, 0x16, 0x00,
+    ]))
+    var setup = try HPKEX25519.setupBaseSender(
+      recipientPublicKey: recipientPrivate.publicKey(),
+      info: info.span,
+      kdf: .sha256,
+      aead: .chaCha20Poly1305,
+      using: entropy
+    )
+    var recipient = try HPKEX25519.setupBaseRecipient(
+      encapsulation: setup.encapsulation.span,
+      recipientPrivateKey: recipientPrivate,
+      info: info.span,
+      kdf: .sha256,
+      aead: .chaCha20Poly1305
+    )
+    var sender = setup.takeContext()
+    let plaintext = ContiguousArray<UInt8>([
+      0x42, 0x65, 0x61, 0x75, 0x74, 0x79, 0x20, 0x69,
+      0x73, 0x20, 0x74, 0x72, 0x75, 0x74, 0x68, 0x2C,
+      0x20, 0x74, 0x72, 0x75, 0x74, 0x68, 0x20, 0x62,
+      0x65, 0x61, 0x75, 0x74, 0x79,
+    ])
+    let aad = ContiguousArray<UInt8>([0x43, 0x6F, 0x75, 0x6E, 0x74, 0x2D, 0x30])
+    let ciphertext = try sender.seal(
+      plaintext: plaintext.span,
+      authenticatedData: aad.span
+    )
+    let opened = try recipient.open(
+      ciphertext: ciphertext.span,
+      authenticatedData: aad.span
+    )
+    guard copy(opened.span) == plaintext,
+      sender.sequenceNumber == 1,
+      recipient.sequenceNumber == 1
+    else {
+      throw Failure.hpke
+    }
   }
 
   private static func validateP256() throws {
