@@ -96,6 +96,11 @@ var targets: [Target] = [
     swiftSettings: ownershipSettings
   ),
   .testTarget(
+    name: "SwiftSSLX509Tests",
+    dependencies: ["SwiftSSLCore", "SwiftSSLASN1", "SwiftSSLX509"],
+    swiftSettings: ownershipSettings
+  ),
+  .testTarget(
     name: "SwiftSSLASN1Tests",
     dependencies: ["SwiftSSLCore", "SwiftSSLASN1"],
     swiftSettings: ownershipSettings

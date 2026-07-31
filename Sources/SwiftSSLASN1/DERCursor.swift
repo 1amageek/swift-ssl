@@ -4,11 +4,13 @@ public struct DERCursor: ~Escapable {
     private static let maximumLengthByteCount = 4
 
     private let bytes: Span<UInt8>
+    private let baseOffset: Int
     private var cursor: ByteCursor
 
     @_lifetime(copy bytes)
-    public init(_ bytes: Span<UInt8>) {
+    public init(_ bytes: Span<UInt8>, baseOffset: Int = 0) {
         self.bytes = bytes
+        self.baseOffset = baseOffset
         cursor = ByteCursor(bytes)
     }
 
@@ -47,6 +49,7 @@ public struct DERCursor: ~Escapable {
         )
         return DERElementView(
             tag: tag,
+            encodedOffset: baseOffset + elementOffset,
             headerByteCount: contentOffset - elementOffset,
             encodedBytes: encoded
         )

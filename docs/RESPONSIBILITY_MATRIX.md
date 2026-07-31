@@ -50,7 +50,7 @@ Status values are `required`, `policy-gated`, `experimental`, `later`, and `excl
 | Strict DER TLV and primitive codecs | Required | Canonical encoding, complete consumption, checked arithmetic, explicit budgets |
 | RFC 7468 PEM | Required | Known labels, strict Base64, decoded DER owner; malformed blocks are typed failures |
 | BER-to-DER repair | Excluded | No silent compatibility normalization |
-| SPKI and PKCS #8 | Required | Algorithm-specific validation and canonical output |
+| SPKI and PKCS #8 | Required | Strict structural parsers now own immutable DER plus checked key ranges; algorithm-specific key validation and canonical output remain in crypto/X.509 consumers |
 | Encrypted PKCS #8 | Required | Explicit modern encryption profiles and password handling policy |
 | PKCS #12 | Required | Certificate/key interchange without reproducing legacy OpenSSL APIs |
 | CMS/PKCS #7 certificate containers | Required subset | Parse and emit the certificate-container responsibility needed by current ecosystems |
@@ -114,7 +114,7 @@ No row below is complete unless the evidence column explicitly says that every c
 | HMAC-DRBG | SP 800-90A-style instantiate, generate, additional-input update, reseed, request limit, and noncopyable `SecretBytes` state | Independent deterministic vectors, request-limit failure before mutation, Native/WASI/Embedded WASI target validation | Entropy fault/reseed corpus, sanitizer/code-generation review, measured allocation/copy counts, formal benchmark, and security review |
 | Remaining cryptography | Responsibility protocols and typed error boundaries only | Native compilation | Concrete implementations, official vectors, negative/differential/target/performance gates |
 | ASN.1 | Strict DER cursor/TLV, canonical primitive codecs, bounded writer, and strict RFC 7468 PEM codec | Native unit tests for cursor, primitive values, transactional writer failures, canonical Base64, CRLF, malformed input, and output limits | SPKI/PKCS #8/PKCS #12/CMS codecs, fuzzing and full target evidence |
-| X.509 | Certificate byte owner and trust-level model only | Native compilation | Certificate parsing, validation, path building, identity, revocation, interoperability |
+| X.509 | Certificate byte owner, SPKI, and unencrypted PKCS #8 structural parsers | Native X509 tests for X25519 SPKI and PKCS #8 ranges/version failures | Certificate parsing, signature validation, path building, identity, revocation, interoperability |
 | TLS/DTLS | Sealed profile and checked action-batch models only | Native model tests and target-validation path | Handshake/record/key-schedule engines, capability suspension, full state/interop/target evidence |
 | QUIC TLS integration | Profile actions, checked batch, noncopyable traffic-secret event, and ordered action/secret step output | Nine focused Native tests plus Native/WASI/Embedded WASI target-validation execution | TLS engine integration, capability correlation, RFC vectors, interoperability |
 | Platform adapters | Capability protocols only; no adapter product | Protocol compilation | Real entropy/clock/store adapters and per-target semantics |
