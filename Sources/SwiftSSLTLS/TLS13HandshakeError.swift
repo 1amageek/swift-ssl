@@ -7,6 +7,7 @@ public enum TLS13HandshakeError: Error, Sendable, Equatable {
     case unsupportedCipherSuite(UInt16)
     case unsupportedExtension(UInt16)
     case invalidKeyShare
+    case invalidPreSharedKey
     case invalidFinished
     case certificateFailure
     case signatureFailure

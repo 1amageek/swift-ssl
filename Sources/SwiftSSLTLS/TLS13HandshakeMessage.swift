@@ -6,6 +6,7 @@ public struct TLS13ClientHello: Sendable, Hashable {
     public let random: OwnedBytes
     public let keyShare: OwnedBytes
     public let cipherSuite: TLSCipherSuite
+    public let preSharedKey: TLS13PreSharedKeyExtension?
 }
 
 public struct TLS13ServerHello: Sendable, Hashable {
@@ -26,7 +27,8 @@ public enum TLS13HandshakeCodec {
     public static func makeClientHello(
         random: Span<UInt8>,
         keyShare: Span<UInt8>,
-        cipherSuite: TLSCipherSuite = .aes128GCM_SHA256
+        cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
+        preSharedKey: TLS13PreSharedKeyExtension? = nil
     ) throws(TLS13HandshakeError) -> OwnedBytes {
         guard random.count == 32, keyShare.count == 32 else {
             throw .invalidKeyShare
@@ -34,7 +36,7 @@ public enum TLS13HandshakeCodec {
         guard TLSCipherSuite(rawValue: cipherSuite.rawValue) != nil else {
             throw .unsupportedCipherSuite(cipherSuite.rawValue)
         }
-        var body = try Self.makeBuilder(maximumByteCount: 512, minimumCapacity: 128)
+        var body = try Self.makeBuilder(maximumByteCount: 2 * 65_535, minimumCapacity: 128)
         do {
             try body.appendUInt16BigEndian(0x0303)
             try body.append(random)
@@ -43,9 +45,23 @@ public enum TLS13HandshakeCodec {
             try body.appendUInt16BigEndian(cipherSuite.rawValue)
             try body.append(1)
             try body.append(0)
-            var extensions = try Self.makeBuilder(maximumByteCount: 128, minimumCapacity: 48)
+            var extensions = try Self.makeBuilder(maximumByteCount: 2 * 65_535, minimumCapacity: 48)
             try appendSupportedVersionsClient(to: &extensions)
             try appendKeyShare(to: &extensions, keyShare: keyShare)
+            if let preSharedKey {
+                let value: OwnedBytes
+                do {
+                    value = try preSharedKey.encodedValue()
+                } catch {
+                    throw TLS13HandshakeError.invalidPreSharedKey
+                }
+                try extensions.appendUInt16BigEndian(TLS13PreSharedKeyExtension.extensionType)
+                try extensions.appendUInt16BigEndian(UInt16(value.count))
+                try extensions.append(value.span)
+            }
+            guard extensions.count <= UInt16.max else {
+                throw TLS13HandshakeError.invalidPreSharedKey
+            }
             try body.appendUInt16BigEndian(UInt16(extensions.count))
             try body.append(extensions.finish().span)
             return finish(type: Self.clientHelloType, body: body.finish())
@@ -72,8 +88,13 @@ public enum TLS13HandshakeCodec {
             let extensionsLength = Int(try cursor.readUInt16BigEndian())
             let extensions = try cursor.readSpan(count: extensionsLength)
             try cursor.requireFullyConsumed()
-            let keyShare = try parseClientExtensions(extensions)
-            return TLS13ClientHello(random: random, keyShare: keyShare, cipherSuite: cipherSuite)
+            let parsed = try parseClientExtensions(extensions)
+            return TLS13ClientHello(
+                random: random,
+                keyShare: parsed.keyShare,
+                cipherSuite: cipherSuite,
+                preSharedKey: parsed.preSharedKey
+            )
         } catch let error as TLS13HandshakeError {
             throw error
         } catch {
@@ -338,25 +359,38 @@ public enum TLS13HandshakeCodec {
         try builder.append(keyShare)
     }
 
-    private static func parseClientExtensions(_ bytes: Span<UInt8>) throws(TLS13HandshakeError) -> OwnedBytes {
+    private static func parseClientExtensions(
+        _ bytes: Span<UInt8>
+    ) throws(TLS13HandshakeError) -> (keyShare: OwnedBytes, preSharedKey: TLS13PreSharedKeyExtension?) {
         var cursor = ByteCursor(bytes)
         var keyShare: OwnedBytes?
+        var preSharedKey: TLS13PreSharedKeyExtension?
+        var sawPreSharedKey = false
         do {
             while !cursor.isAtEnd {
                 let type = try cursor.readUInt16BigEndian()
                 let length = Int(try cursor.readUInt16BigEndian())
                 let value = try cursor.readSpan(count: length)
+                guard !sawPreSharedKey else { throw TLS13HandshakeError.malformedMessage }
                 switch type {
                 case 0x002B:
                     guard value.count == 3, value[0] == 2, value[1] == 0x03, value[2] == 0x04 else { throw TLS13HandshakeError.malformedMessage }
                 case 0x0033:
                     keyShare = try parseKeyShare(value)
+                case TLS13PreSharedKeyExtension.extensionType:
+                    preSharedKey = try TLS13PreSharedKeyExtension.parse(value)
+                    sawPreSharedKey = true
                 default:
                     throw TLS13HandshakeError.unsupportedExtension(type)
                 }
             }
             guard let keyShare else { throw TLS13HandshakeError.invalidKeyShare }
-            return keyShare
+            return (keyShare, preSharedKey)
+        } catch let error as TLS13HandshakeError {
+            throw error
+        } catch let error as TLS13PSKError {
+            _ = error
+            throw .invalidPreSharedKey
         } catch {
             throw .malformedMessage
         }

@@ -167,6 +167,33 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
         )
     }
 
+    static func deriveResumptionBinderKey(
+        preSharedKey: borrowing SecretBytes,
+        cipherSuite: TLSCipherSuite
+    ) throws(TLS13KeyScheduleError) -> SecretBytes {
+        let hashByteCount = Self.hashByteCount(for: cipherSuite)
+        let zeroSalt = ContiguousArray<UInt8>(repeating: 0, count: hashByteCount)
+        let earlySecret: SecretBytes
+        do {
+            earlySecret = try preSharedKey.withBorrowedBytes { key in
+                try Self.extract(
+                    salt: zeroSalt.span,
+                    inputKeyMaterial: key,
+                    cipherSuite: cipherSuite
+                )
+            }
+        } catch {
+            throw .cryptographicFailure
+        }
+        let emptyHash = try Self.hashEmptyMessage(cipherSuite: cipherSuite)
+        return try Self.deriveSecret(
+            secret: earlySecret,
+            label: "res binder",
+            transcriptHash: emptyHash.span,
+            cipherSuite: cipherSuite
+        )
+    }
+
     static func finishedVerifyData(
         trafficSecret: borrowing SecretBytes,
         transcriptHash: Span<UInt8>,
