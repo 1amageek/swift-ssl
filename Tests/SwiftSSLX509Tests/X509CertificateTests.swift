@@ -12,6 +12,10 @@ final class X509CertificateTests: XCTestCase {
         XCTAssertEqual(parsed.subjectPublicKeyInfo.algorithm, .x25519)
         XCTAssertEqual(parsed.validity.notBefore, "240101000000Z")
         XCTAssertEqual(parsed.validity.notAfter, "250101000000Z")
+        let inside = try VerificationInstant(secondsSinceUnixEpoch: 1_704_067_200, nanoseconds: 0)
+        let outside = try VerificationInstant(secondsSinceUnixEpoch: 1_735_689_601, nanoseconds: 0)
+        XCTAssertTrue(parsed.validity.contains(inside))
+        XCTAssertFalse(parsed.validity.contains(outside))
         var tbsByteCount = 0
         try parsed.withTBSCertificateBytes { tbs in
             tbsByteCount = tbs.count
@@ -19,6 +23,22 @@ final class X509CertificateTests: XCTestCase {
         XCTAssertEqual(tbsByteCount, 92)
         try parsed.withSignatureBytes { signature in
             XCTAssertEqual(copy(signature), [1, 2])
+        }
+    }
+
+    func testRejectsInvalidCalendarDate() throws {
+        var certificate = makeCertificate()
+        let marker = Array("240101000000Z".utf8)
+        guard let start = find(marker, in: certificate) else {
+            XCTFail("fixture date was not found")
+            return
+        }
+        certificate[start + 2] = 0x33
+        do {
+            _ = try X509Certificate(der: certificate.span)
+            XCTFail("invalid calendar date was accepted")
+        } catch {
+            XCTAssertEqual(error, .invalidValidity)
         }
     }
 
@@ -108,6 +128,25 @@ final class X509CertificateTests: XCTestCase {
             index = next
         }
         return result
+    }
+
+    private func find(_ needle: [UInt8], in haystack: ContiguousArray<UInt8>) -> Int? {
+        guard needle.count <= haystack.count else { return nil }
+        var start = 0
+        while start <= haystack.count - needle.count {
+            var matches = true
+            var index = 0
+            while index < needle.count {
+                if haystack[start + index] != needle[index] {
+                    matches = false
+                    break
+                }
+                index += 1
+            }
+            if matches { return start }
+            start += 1
+        }
+        return nil
     }
 
     private func copy(_ span: Span<UInt8>) -> [UInt8] {
