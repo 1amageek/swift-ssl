@@ -79,6 +79,15 @@ The performance release goal is a paired median speedup of at least `1.10x` over
 | SHA-256 one-shot, 1 KiB | Not measured yet | Not measured yet | — | Formal raw artifact required |
 | SHA-256 one-shot, 16 KiB | Not measured yet | Not measured yet | — | Formal raw artifact required |
 
+Formal benchmark status (2026-07-31): no performance result is recorded yet. The
+requested run was rejected before either worker was built because the one-minute
+load per logical CPU was `0.938058`, above the runner's `0.25` validity gate. The
+invalid precondition artifact is retained at
+`.test-artifacts/benchmark/20260731T113521Z-native-sha256.json`. This is an
+environmental invalidation, not a Swift-versus-BoringSSL measurement; no speedup
+claim, including the `1.10x` target, can be inferred from it. Re-run the formal
+command on an otherwise quiescent machine before publishing benchmark numbers.
+
 See [docs/VERIFICATION.md](docs/VERIFICATION.md) for gates and measurement rules.
 
 ## Documentation
