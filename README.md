@@ -34,7 +34,7 @@ The implementation target is deliberately smaller than BoringSSL's historical AP
 | Area | Included profile | Status |
 |---|---|---|
 | Core | Owned and borrowed bytes, strict cursors/builders, secret ownership, constant-time utilities, typed errors | Foundation implemented; verification incomplete |
-| Symmetric crypto | AES-GCM, ChaCha20-Poly1305, AES block operations needed by GCM, SHA-256/384/512, HMAC, HKDF | AES-128/192/256-GCM, SHA-256, HMAC-SHA-256, and HKDF-SHA-256 implemented; remaining algorithms planned |
+| Symmetric crypto | AES-GCM, ChaCha20-Poly1305, AES block operations needed by GCM, SHA-256/384/512, HMAC, HKDF | AES-128/192/256-GCM, ChaCha20-Poly1305, SHA-256/384/512, HMAC-SHA-256/384/512, and HKDF-SHA-256/384/512 are implemented with vectors and typed failures |
 | Public-key crypto | X25519, NIST P-256/P-384/P-521, Ed25519, RSA-PSS, ML-KEM, ML-DSA, approved hybrid groups | Planned |
 | Formats | Strict DER, PEM, SPKI, PKCS #8, encrypted PKCS #8, PKCS #12, certificate containers | Strict DER cursor foundation implemented; remaining formats planned |
 | PKI | X.509 parsing, path construction, policy processing, hostname verification, revocation inputs, trust-provider boundary | Byte-owner/model foundation only; engine planned |
@@ -43,7 +43,7 @@ The implementation target is deliberately smaller than BoringSSL's historical AP
 | QUIC | RFC 9001 handshake adapter and traffic-secret events; QUIC packet protection remains owned by the QUIC stack | Ordered action/secret output model implemented; engine planned |
 | Additional modern constructions | HPKE and narrowly scoped protocol constructions required by the modern profile | Planned |
 | Platform composition | Entropy and clock capabilities supplied explicitly per operation | Protocols only; concrete adapters are not yet provided |
-| Public façade | Curated application-facing API without blanket lower-module exports | Explicit AES-GCM, SHA-256, HMAC-SHA-256, and HKDF-SHA-256 protocol adapters |
+| Public façade | Curated application-facing API without blanket lower-module exports | Explicit AES-GCM, ChaCha20-Poly1305, SHA-256, HMAC-SHA-256, and HKDF-SHA-256 protocol adapters |
 
 The following are intentionally absent: SSL, TLS 1.0-1.2, DTLS 1.0-1.2, renegotiation, record compression, CBC cipher suites, RC4, DES/3DES, Blowfish, CAST, MD4, MD5, SHA-1 handshake signatures, DSA, legacy finite-field DH, the C API/ABI, `BIO`, `ENGINE`, `ex_data`, and the thread-local error queue.
 
@@ -68,6 +68,10 @@ Correctness tests live under `Tests/`. Long-running differential, interoperabili
 | Implemented primitive | Current evidence | Still required before completion |
 |---|---|---|
 | AES-GCM | AES-128/192/256 key schedules, GCM counter mode and GHASH; NIST empty, single-block, and additional-authenticated-data vectors; authentication failure leaves plaintext output untouched | Independent differential corpus, boundary/limit coverage, measured allocation/copy counts, target execution, sanitizer/code-generation review, and release benchmark |
+| ChaCha20-Poly1305 | RFC 8439 ChaCha20 block function and Poly1305, RFC known-answer vector, exact in-place operation, partial-overlap rejection, and authentication-failure no-write behavior; Native façade and target validation routes | Independent differential corpus, measured allocation/copy counts, target sanitizer/code-generation review, and release benchmark |
+| SHA-384/512 | FIPS 180-4 `abc` vectors, incremental clone equivalence, exact output-length failure, Native façade, WASI, and Embedded WASI target validation | Independent differential corpus, long-message boundary corpus, measured allocation/copy counts, sanitizer/code-generation review, and release benchmark |
+| HMAC-SHA-384/512 | RFC 4231 case 1, context verification, Native implementation and façade | Independent differential corpus, long-message boundary corpus, sanitizer/code-generation review, and release benchmark |
+| HKDF-SHA-384/512 | RFC 5869-shaped extract/expand fixtures, exact output sizes, Native implementation | Independent differential corpus, overlap/limit corpus, target execution, sanitizer/code-generation review, and release benchmark |
 | SHA-256 | Incremental/one-shot tests, boundary tests, million-byte vector, scalar/ARM64 differential test, production ARM64 multi-block codegen gate, Native/WASI/Embedded WASI execution | Independent committed differential corpus and release benchmark |
 | HMAC-SHA-256 | RFC 4231 cases 1, 2, 3, 4, 6, and 7; incremental equivalence; typed output failure; constant-time verification; three-target execution; ASan/TSan/UBSan; optimized wipe inspection | Independent committed differential corpus, measured allocation/copy counts, and release benchmark |
 | HKDF-SHA-256 | RFC 5869 SHA-256 cases 1, 2, and 3, additional fixed fixtures, maximum-length and overlap boundaries, Native/WASI/Embedded WASI execution, ASan/TSan/UBSan, and `-O`/`-Osize` code-generation inspection; caller-provided output, one-time prepared HMAC schedule, zero-heap optimized path, direct full-block writes, and façade route | Independent committed differential corpus, measured allocation/copy counts, and release benchmark |

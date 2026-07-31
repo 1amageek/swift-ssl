@@ -25,12 +25,12 @@ Status values are `required`, `policy-gated`, `experimental`, `later`, and `excl
 
 | Family | Algorithms/constructions | Status | Owner and notes |
 |---|---|---|---|
-| Hash | SHA-256, SHA-384, SHA-512 | Required | `SwiftSSLCrypto`; TLS and signature dependencies |
+| Hash | SHA-256, SHA-384, SHA-512 | Required | `SwiftSSLCrypto`; SHA-256/384/512 callable implementations are present; TLS and signature dependencies remain to be integrated |
 | SHA-3/XOF | SHA3-256/512, SHAKE128/256 | Required | `SwiftSSLCrypto`; PQ dependencies |
 | Additional hash | BLAKE2 variants still justified by modern callers | Later | Separate from TLS completion; no BoringSSL symbol compatibility |
-| MAC | HMAC-SHA-256/384/512 | Required | Keyed context with constant-time tag verification |
-| KDF | HKDF-SHA-256/384/512 | Required | Generic HKDF; TLS and HPKE labels are separate constructions |
-| AEAD | AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305 | Required | All TLS 1.3 cipher suites; open failure exposes no plaintext |
+| MAC | HMAC-SHA-256/384/512 | Required | `SwiftSSLCrypto` and façade implementations with constant-time tag verification |
+| KDF | HKDF-SHA-256/384/512 | Required | Extract/expand implementations; TLS and HPKE labels remain separate constructions |
+| AEAD | AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305 | Required | AES-GCM and ChaCha20-Poly1305 callable implementations; all TLS 1.3 cipher suites still require TLS engine integration; open failure exposes no plaintext |
 | Classical KEX | X25519, P-256, P-384, P-521 | Required | P-521 is required for a complete signature/key profile even when not default |
 | Classical signature | Ed25519; ECDSA P-256/384/521; RSA-PSS SHA-256/384/512 | Required | TLS 1.3 authentication and PKI |
 | Certificate compatibility verification | RSA PKCS #1 v1.5 with approved SHA-2 hashes | Policy-gated | Verification only for deployed PKI; never a TLS CertificateVerify signer |
