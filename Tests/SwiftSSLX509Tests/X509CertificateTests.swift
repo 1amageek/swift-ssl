@@ -75,6 +75,28 @@ final class X509CertificateTests: XCTestCase {
         }
     }
 
+    func testParsesV3ExtensionsAndOwnsExtensionValue() throws {
+        let certificate = makeCertificateWithExtensions()
+        let parsed = try X509Certificate(der: certificate.span)
+
+        XCTAssertEqual(parsed.extensions.count, 1)
+        XCTAssertEqual(parsed.extensions[0].objectIdentifier, [2, 5, 29, 19])
+        XCTAssertFalse(parsed.extensions[0].isCritical)
+        let extensionValue = parsed.extensions[0].value
+        XCTAssertEqual(copy(extensionValue.span), [])
+    }
+
+    func testRejectsDuplicateV3ExtensionObjectIdentifier() throws {
+        let certificate = makeCertificateWithDuplicateExtensions()
+
+        do {
+            _ = try X509Certificate(der: certificate.span)
+            XCTFail("duplicate extension was accepted")
+        } catch let error {
+            XCTAssertEqual(error, .extensions(.duplicateObjectIdentifier))
+        }
+    }
+
     private func makeCertificate() -> ContiguousArray<UInt8> {
         var tbs: ContiguousArray<UInt8> = [
             0x30, 0x5A,
@@ -101,6 +123,35 @@ final class X509CertificateTests: XCTestCase {
             0x30, 0x05, 0x06, 0x03, 0x2B, 0x65, 0x70,
             0x03, 0x03, 0x00, 0x01, 0x02
         ])
+        return result
+    }
+
+    private func makeCertificateWithExtensions() -> ContiguousArray<UInt8> {
+        var result = makeCertificate()
+        let extensions: [UInt8] = [
+            0xA3, 0x0B,
+            0x30, 0x09,
+            0x30, 0x07,
+            0x06, 0x03, 0x55, 0x1D, 0x13,
+            0x04, 0x00
+        ]
+        result.insert(contentsOf: extensions, at: 2 + 2 + 0x5A)
+        result[1] += UInt8(extensions.count)
+        result[3] += UInt8(extensions.count)
+        return result
+    }
+
+    private func makeCertificateWithDuplicateExtensions() -> ContiguousArray<UInt8> {
+        var result = makeCertificate()
+        let extensions: [UInt8] = [
+            0xA3, 0x14,
+            0x30, 0x12,
+            0x30, 0x07, 0x06, 0x03, 0x55, 0x1D, 0x13, 0x04, 0x00,
+            0x30, 0x07, 0x06, 0x03, 0x55, 0x1D, 0x13, 0x04, 0x00
+        ]
+        result.insert(contentsOf: extensions, at: 2 + 2 + 0x5A)
+        result[1] += UInt8(extensions.count)
+        result[3] += UInt8(extensions.count)
         return result
     }
 

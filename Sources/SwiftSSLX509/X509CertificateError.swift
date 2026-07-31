@@ -7,6 +7,7 @@ public enum X509CertificateError: Error, Sendable, Equatable {
     case value(DERValueError)
     case algorithm(DERAlgorithmIdentifierError)
     case publicKeyInfo(SubjectPublicKeyInfoError)
+    case extensions(X509ExtensionError)
     case resourceLimit(ResourceLimitError)
     case invalidVersion(UInt64)
     case invalidSerialNumber

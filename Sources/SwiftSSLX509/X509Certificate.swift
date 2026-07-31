@@ -8,6 +8,7 @@ public struct X509Certificate: Sendable, Hashable {
     public let signatureAlgorithm: DERAlgorithmIdentifier
     public let validity: X509Validity
     public let subjectPublicKeyInfo: SubjectPublicKeyInfo
+    public let extensions: ContiguousArray<X509Extension>
 
     private let der: OwnedBytes
     private let tbsRange: ByteRange
@@ -142,6 +143,7 @@ public struct X509Certificate: Sendable, Hashable {
         }
 
         var sawExtensions = false
+        var extensions = ContiguousArray<X509Extension>()
         while !tbs.isAtEnd {
             let optionalElement = try Self.tryReadElement(&tbs, budget: &budget)
             guard optionalElement.tag.tagClass == DERTagClass.contextSpecific else {
@@ -155,6 +157,11 @@ public struct X509Certificate: Sendable, Hashable {
                     throw .duplicateOptionalField
                 }
                 sawExtensions = true
+                do {
+                    extensions = try Self.parseExtensions(optionalElement, budget: &budget)
+                } catch let error {
+                    throw .extensions(error)
+                }
             default:
                 throw .invalidStructure
             }
@@ -201,6 +208,7 @@ public struct X509Certificate: Sendable, Hashable {
         self.signatureAlgorithm = outerSignatureAlgorithm
         self.validity = validity
         self.subjectPublicKeyInfo = spki
+        self.extensions = extensions
         let tbsRange: ByteRange
         do {
             tbsRange = try Self.makeRange(tbsElement)
@@ -308,6 +316,125 @@ public struct X509Certificate: Sendable, Hashable {
             notBefore: notBefore.contentBytes,
             notAfter: notAfter.contentBytes
         )
+    }
+
+    private static func parseExtensions(
+        _ element: DERElementView,
+        budget: inout ParsingBudget
+    ) throws(X509ExtensionError) -> ContiguousArray<X509Extension> {
+        let sequenceTag = DERTag(tagClass: .universal, isConstructed: true, number: 16)
+        var explicit = DERCursor(
+            element.contentBytes,
+            baseOffset: element.encodedOffset + element.headerByteCount
+        )
+        let sequence: DERElementView
+        do {
+            sequence = try explicit.readElement(using: &budget)
+            try explicit.requireFullyConsumed()
+        } catch let error {
+            throw Self.mapExtensionDER(error)
+        }
+        guard sequence.tag == sequenceTag else { throw .invalidStructure }
+        guard !sequence.contentBytes.isEmpty else { throw .invalidStructure }
+        var cursor = DERCursor(
+            sequence.contentBytes,
+            baseOffset: sequence.encodedOffset + sequence.headerByteCount
+        )
+        var result = ContiguousArray<X509Extension>()
+        while !cursor.isAtEnd {
+            let extensionElement: DERElementView
+            do {
+                extensionElement = try cursor.readElement(using: &budget)
+            } catch let error {
+                throw Self.mapExtensionDER(error)
+            }
+            guard extensionElement.tag == sequenceTag else { throw .invalidStructure }
+            do {
+                try budget.consumeExtension()
+            } catch let error {
+                throw .resourceLimit(error)
+            }
+            var body = DERCursor(
+                extensionElement.contentBytes,
+                baseOffset: extensionElement.encodedOffset + extensionElement.headerByteCount
+            )
+            let oidElement: DERElementView
+            do {
+                oidElement = try body.readElement(using: &budget)
+            } catch let error {
+                throw Self.mapExtensionDER(error)
+            }
+            let oid: ContiguousArray<UInt64>
+            do {
+                try budget.requireOIDByteCount(oidElement.contentBytes.count)
+                oid = try DERPrimitiveCodec.decodeObjectIdentifier(from: oidElement)
+            } catch let error as ResourceLimitError {
+                throw .resourceLimit(error)
+            } catch let error as DERValueError {
+                throw .value(error)
+            } catch {
+                throw .invalidStructure
+            }
+            for existing in result where existing.objectIdentifier == oid {
+                throw .duplicateObjectIdentifier
+            }
+            var critical = false
+            if !body.isAtEnd {
+                let next = try Self.readExtensionElement(&body, budget: &budget)
+                let booleanTag = DERTag(tagClass: .universal, isConstructed: false, number: 1)
+                if next.tag == booleanTag {
+                    do {
+                        critical = try DERPrimitiveCodec.decodeBoolean(from: next)
+                    } catch let error {
+                        throw .value(error)
+                    }
+                    guard critical else { throw .invalidStructure }
+                } else {
+                    guard next.tag.number == 4,
+                          next.tag.tagClass == .universal,
+                          !next.tag.isConstructed else {
+                        throw .invalidStructure
+                    }
+                    result.append(X509Extension(objectIdentifier: oid, isCritical: false, value: OwnedBytes(copying: next.contentBytes)))
+                    do {
+                        try body.requireFullyConsumed()
+                    } catch let error {
+                        throw Self.mapExtensionDER(error)
+                    }
+                    continue
+                }
+            }
+            let valueElement = try Self.readExtensionElement(&body, budget: &budget)
+            guard valueElement.tag == DERTag(tagClass: .universal, isConstructed: false, number: 4) else {
+                throw .invalidStructure
+            }
+            do {
+                try body.requireFullyConsumed()
+            } catch let error {
+                throw Self.mapExtensionDER(error)
+            }
+            result.append(X509Extension(objectIdentifier: oid, isCritical: critical, value: OwnedBytes(copying: valueElement.contentBytes)))
+        }
+        return result
+    }
+
+    @_lifetime(copy cursor)
+    private static func readExtensionElement(
+        _ cursor: inout DERCursor,
+        budget: inout ParsingBudget
+    ) throws(X509ExtensionError) -> DERElementView {
+        do {
+            return try cursor.readElement(using: &budget)
+        } catch let error {
+            throw Self.mapExtensionDER(error)
+        }
+    }
+
+    private static func mapExtensionDER(_ error: DERError) -> X509ExtensionError {
+        if case let .resourceLimit(resourceLimit) = error {
+            return .resourceLimit(resourceLimit)
+        }
+        return .der(error)
     }
 
     @_lifetime(copy cursor)
