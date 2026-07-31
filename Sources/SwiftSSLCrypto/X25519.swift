@@ -182,7 +182,7 @@ private enum X25519Montgomery {
     }
 }
 
-private struct Field25519 {
+struct Field25519 {
     private static let base: Int64 = 65_536
     private var limbs: [Int64]
 

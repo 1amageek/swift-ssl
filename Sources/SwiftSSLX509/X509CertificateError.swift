@@ -12,6 +12,8 @@ public enum X509CertificateError: Error, Sendable, Equatable {
     case invalidSerialNumber
     case invalidValidity
     case invalidSignatureValue
+    case unsupportedSignatureAlgorithm
+    case signatureVerificationFailed
     case duplicateOptionalField
     case invalidRange(ByteError)
 }

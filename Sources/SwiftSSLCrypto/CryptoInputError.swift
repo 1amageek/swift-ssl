@@ -7,4 +7,5 @@ public enum CryptoInputError: Error, Sendable, Equatable {
     case contextTooLong(limit: Int, actual: Int)
     case inputTooLong(limit: UInt64)
     case invalidPeerKey
+    case invalidSignature
 }

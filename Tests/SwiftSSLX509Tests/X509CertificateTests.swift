@@ -22,6 +22,39 @@ final class X509CertificateTests: XCTestCase {
         }
     }
 
+    func testVerifiesEd25519CertificateSignature() throws {
+        let certificate = makeSignedEd25519Certificate()
+        let parsed: X509Certificate
+        do {
+            parsed = try X509Certificate(der: certificate.span)
+        } catch {
+            XCTFail("signed certificate parse failed: \(error)")
+            return
+        }
+
+        XCTAssertNoThrow(try parsed.verifySignature())
+        XCTAssertEqual(parsed.subjectPublicKeyInfo.algorithm, .ed25519)
+    }
+
+    func testRejectsModifiedEd25519CertificateSignature() throws {
+        var certificate = makeSignedEd25519Certificate()
+        certificate[certificate.count - 1] ^= 0x01
+        let parsed: X509Certificate
+        do {
+            parsed = try X509Certificate(der: certificate.span)
+        } catch {
+            XCTFail("signed certificate parse failed: \(error)")
+            return
+        }
+
+        do {
+            try parsed.verifySignature()
+            XCTFail("modified certificate signature was accepted")
+        } catch {
+            XCTAssertEqual(error, .signatureVerificationFailed)
+        }
+    }
+
     private func makeCertificate() -> ContiguousArray<UInt8> {
         var tbs: ContiguousArray<UInt8> = [
             0x30, 0x5A,
@@ -48,6 +81,32 @@ final class X509CertificateTests: XCTestCase {
             0x30, 0x05, 0x06, 0x03, 0x2B, 0x65, 0x70,
             0x03, 0x03, 0x00, 0x01, 0x02
         ])
+        return result
+    }
+
+    private func makeSignedEd25519Certificate() -> ContiguousArray<UInt8> {
+        var result = ContiguousArray<UInt8>()
+        result.reserveCapacity(169)
+        result.append(contentsOf: bytes(
+            "3081a6305a020101300506032b65703000301e170d3234303130313030303030305a" +
+            "170d3235303130313030303030305a3000302a300506032b6570032100" +
+            "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a" +
+            "300506032b6570034100" +
+            "37dfbf24eb692e0be9243a10e90e7a420528f6dcd6032898dca956d51ce3a286b" +
+            "15596380832a60cc57d2a84f843c774ffe0a7b462a9556f76751a870d5c7901"
+        ))
+        return result
+    }
+
+    private func bytes(_ value: String) -> ContiguousArray<UInt8> {
+        var result = ContiguousArray<UInt8>()
+        result.reserveCapacity(value.count / 2)
+        var index = value.startIndex
+        while index < value.endIndex {
+            let next = value.index(index, offsetBy: 2)
+            result.append(UInt8(value[index..<next], radix: 16)!)
+            index = next
+        }
         return result
     }
 

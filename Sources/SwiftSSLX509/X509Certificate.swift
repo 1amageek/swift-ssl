@@ -1,5 +1,6 @@
 import SwiftSSLCore
 import SwiftSSLASN1
+import SwiftSSLCrypto
 
 public struct X509Certificate: Sendable, Hashable {
     public let version: UInt64
@@ -103,6 +104,9 @@ public struct X509Certificate: Sendable, Hashable {
         do {
             let serialSpan = serialElement.contentBytes
             guard !serialSpan.isEmpty, serialSpan[0] & 0x80 == 0 else {
+                throw X509CertificateError.invalidSerialNumber
+            }
+            guard serialSpan.count == 1 || serialSpan[0] != 0 || serialSpan[1] & 0x80 != 0 else {
                 throw X509CertificateError.invalidSerialNumber
             }
             serial = OwnedBytes(copying: serialSpan)
@@ -230,6 +234,36 @@ public struct X509Certificate: Sendable, Hashable {
             preconditionFailure("X509Certificate stores a validated signature range")
         }
         return try body(bytes)
+    }
+
+    /// Verifies the certificate signature for the supported signature algorithms.
+    public borrowing func verifySignature() throws(X509CertificateError) {
+        guard signatureAlgorithm.objectIdentifier == [1, 3, 101, 112],
+              signatureAlgorithm.parameters == .absent,
+              subjectPublicKeyInfo.algorithm == .ed25519,
+              subjectPublicKeyInfo.algorithmIdentifier.parameters == .absent else {
+            throw .unsupportedSignatureAlgorithm
+        }
+
+        let valid: Bool
+        do {
+            valid = try withTBSCertificateBytes { tbs throws(CryptoInputError) in
+                try withSignatureBytes { signature throws(CryptoInputError) in
+                    try subjectPublicKeyInfo.withPublicKeyBytes { publicKey throws(CryptoInputError) in
+                        try Ed25519.verify(
+                            signature: signature,
+                            message: tbs,
+                            publicKey: publicKey
+                        )
+                    }
+                }
+            }
+        } catch {
+            throw .signatureVerificationFailed
+        }
+        guard valid else {
+            throw .signatureVerificationFailed
+        }
     }
 
     public static let defaultParsingLimits: ParsingLimits = {
