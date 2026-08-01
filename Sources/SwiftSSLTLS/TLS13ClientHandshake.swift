@@ -18,7 +18,7 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
         cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
         resumptionState: consuming TLS13ResumptionState? = nil
     ) throws(TLS13HandshakeEngineError) {
-        core = try TLS13ClientHandshakeCore(
+        let core = try TLS13ClientHandshakeCore(
             random: random,
             ephemeralKey: ephemeralKey,
             expectedServerPublicKey: expectedServerPublicKey,
@@ -26,6 +26,30 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
             cipherSuite: cipherSuite,
             resumptionState: resumptionState
         )
+        self.init(core: core)
+    }
+
+    public init(
+        random: Span<UInt8>,
+        keyExchange: consuming TLS13X25519MLKEM768ClientKeyExchange,
+        expectedServerPublicKey: Span<UInt8>,
+        verificationInstant: VerificationInstant,
+        cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
+        resumptionState: consuming TLS13ResumptionState? = nil
+    ) throws(TLS13HandshakeEngineError) {
+        let core = try TLS13ClientHandshakeCore(
+            random: random,
+            keyExchange: keyExchange,
+            expectedServerPublicKey: expectedServerPublicKey,
+            verificationInstant: verificationInstant,
+            cipherSuite: cipherSuite,
+            resumptionState: resumptionState
+        )
+        self.init(core: core)
+    }
+
+    private init(core: consuming TLS13ClientHandshakeCore) {
+        self.core = core
         handshakeRead = nil
         handshakeWrite = nil
         applicationRead = nil
@@ -229,7 +253,8 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
     ) throws(TLS13HandshakeEngineError) -> OwnedBytes {
         let ranges = try TLS13HandshakeWire.recordRanges(input)
         guard ranges.count == 1,
-              var protector = applicationRead.take() else {
+            var protector = applicationRead.take()
+        else {
             throw .malformedInput
         }
         do {
@@ -250,7 +275,8 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
     ) throws(TLS13HandshakeEngineError) -> OwnedBytes {
         let ranges = try TLS13HandshakeWire.recordRanges(input)
         guard ranges.count == 1,
-              var protector = applicationRead.take() else {
+            var protector = applicationRead.take()
+        else {
             throw .malformedInput
         }
         do {

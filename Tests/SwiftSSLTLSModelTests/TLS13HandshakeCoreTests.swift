@@ -1,15 +1,108 @@
-import XCTest
 import SwiftSSLCore
 import SwiftSSLCrypto
+import XCTest
+
 @testable import SwiftSSLTLS
 
 final class TLS13HandshakeCoreTests: XCTestCase {
+    func testHybridClientServerHandshakeCompletesThroughCore() throws {
+        var pair = try makeHybridCorePair()
+
+        let clientHelloOutput = try pair.client.start()
+        let parsedClientHello = try TLS13HandshakeCodec.parseClientHello(
+            clientHelloOutput.bytes.span
+        )
+        XCTAssertEqual(parsedClientHello.namedGroup, .x25519MLKEM768)
+        XCTAssertEqual(parsedClientHello.keyShare.count, 1_216)
+
+        let serverOutput = try pair.server.receiveHandshakeMessage(
+            clientHelloOutput.bytes.span,
+            at: .initial
+        )
+        guard case .emitHandshakeBytes(.initial, let serverHelloRange) = serverOutput.actions[0],
+            case .emitHandshakeBytes(.handshake, let serverFlightRange) = serverOutput.actions[2]
+        else {
+            return XCTFail("hybrid server core emitted an invalid effect order")
+        }
+        let serverHello = OwnedBytes(
+            copying: try serverOutput.bytes.span(in: serverHelloRange)
+        )
+        let parsedServerHello = try TLS13HandshakeCodec.parseServerHello(serverHello.span)
+        XCTAssertEqual(parsedServerHello.namedGroup, .x25519MLKEM768)
+        XCTAssertEqual(parsedServerHello.keyShare.count, 1_120)
+        _ = try pair.client.receiveHandshakeMessage(serverHello.span, at: .initial)
+
+        let serverFlight = try serverOutput.bytes.span(in: serverFlightRange)
+        let messages = try TLS13HandshakeCodec.splitMessages(serverFlight)
+        var clientFinished: OwnedBytes?
+        for message in messages {
+            let output = try pair.client.receiveHandshakeMessage(message.span, at: .handshake)
+            for action in output.actions {
+                if case .emitHandshakeBytes(.handshake, let range) = action {
+                    clientFinished = OwnedBytes(copying: try output.bytes.span(in: range))
+                }
+            }
+        }
+        guard let clientFinished else {
+            return XCTFail("hybrid client core did not emit Finished")
+        }
+        _ = try pair.server.receiveHandshakeMessage(clientFinished.span, at: .handshake)
+
+        XCTAssertTrue(pair.client.isEstablished)
+        XCTAssertTrue(pair.server.isEstablished)
+    }
+
+    func testServerCoreRejectsUnexpectedNamedGroup() throws {
+        let instant = try VerificationInstant(
+            secondsSinceUnixEpoch: 1_720_000_000,
+            nanoseconds: 0
+        )
+        let clientKey = try X25519PrivateKey(
+            bytes: ContiguousArray(repeating: 0x11, count: 32).span
+        )
+        var client = try TLS13ClientHandshakeCore(
+            random: ContiguousArray(repeating: 0x01, count: 32).span,
+            ephemeralKey: clientKey,
+            expectedServerPublicKey: deterministicServerPublicKey().span,
+            verificationInstant: instant
+        )
+        let hybridServer = try TLS13X25519MLKEM768ServerKeyExchange.generate(
+            using: FixedEntropy(bytes: sequential(count: 32, seed: 0x50))
+        )
+        let signingKey = try Ed25519PrivateKey(seed: deterministicSeed().span)
+        var server = try TLS13ServerHandshakeCore(
+            random: ContiguousArray(repeating: 0x02, count: 32).span,
+            keyExchange: hybridServer,
+            keyExchangeEntropy: FixedEntropy(bytes: sequential(count: 32, seed: 0x70)),
+            certificateDER: deterministicCertificate().span,
+            signingKey: TLS13SigningKey(ed25519: signingKey),
+            verificationInstant: instant
+        )
+
+        let clientHello = try client.start()
+        do {
+            _ = try server.receiveHandshakeMessage(clientHello.bytes.span, at: .initial)
+            XCTFail("server accepted an unexpected named group")
+        } catch {
+            XCTAssertEqual(
+                error,
+                .keyExchange(
+                    .unexpectedNamedGroup(
+                        expected: .x25519MLKEM768,
+                        actual: .x25519
+                    ))
+            )
+        }
+    }
+
     func testRecordIndependentClientServerHandshakeCompletesWithMatchingSecrets() throws {
         var pair = try makeCorePair()
 
         let clientHelloOutput = try pair.client.start()
-        guard case .emitHandshakeBytes(.initial, let clientHelloRange) =
-                clientHelloOutput.actions.first else {
+        guard
+            case .emitHandshakeBytes(.initial, let clientHelloRange) =
+                clientHelloOutput.actions.first
+        else {
             return XCTFail("missing ClientHello action")
         }
         let clientHello = OwnedBytes(
@@ -21,8 +114,9 @@ final class TLS13HandshakeCoreTests: XCTestCase {
             at: .initial
         )
         guard serverOutput.actions.count == 4,
-              case .emitHandshakeBytes(.initial, let serverHelloRange) = serverOutput.actions[0],
-              case .emitHandshakeBytes(.handshake, let serverFlightRange) = serverOutput.actions[2] else {
+            case .emitHandshakeBytes(.initial, let serverHelloRange) = serverOutput.actions[0],
+            case .emitHandshakeBytes(.handshake, let serverFlightRange) = serverOutput.actions[2]
+        else {
             return XCTFail("server core emitted an invalid effect order")
         }
         let serverHello = OwnedBytes(
@@ -131,7 +225,8 @@ final class TLS13HandshakeCoreTests: XCTestCase {
             at: .initial
         )
         guard case .emitHandshakeBytes(.initial, let serverHelloRange) = serverOutput.actions[0],
-              case .emitHandshakeBytes(.handshake, let serverFlightRange) = serverOutput.actions[2] else {
+            case .emitHandshakeBytes(.handshake, let serverFlightRange) = serverOutput.actions[2]
+        else {
             return XCTFail("missing server flight")
         }
         let serverHello = OwnedBytes(copying: try serverOutput.bytes.span(in: serverHelloRange))
@@ -245,7 +340,8 @@ final class TLS13HandshakeCoreTests: XCTestCase {
             at: .initial
         )
         guard case .emitHandshakeBytes(.initial, let helloRange) = serverOutput.actions[0],
-              case .emitHandshakeBytes(.handshake, let flightRange) = serverOutput.actions[2] else {
+            case .emitHandshakeBytes(.handshake, let flightRange) = serverOutput.actions[2]
+        else {
             return XCTFail("missing resumed server flight")
         }
         let serverHello = OwnedBytes(copying: try serverOutput.bytes.span(in: helloRange))
@@ -322,6 +418,62 @@ final class TLS13HandshakeCoreTests: XCTestCase {
         return CorePair(client: client, server: server)
     }
 
+    private func makeHybridCorePair() throws -> CorePair {
+        let instant = try VerificationInstant(
+            secondsSinceUnixEpoch: 1_720_000_000,
+            nanoseconds: 0
+        )
+        let clientKeyExchange = try TLS13X25519MLKEM768ClientKeyExchange.generate(
+            mlkemEntropy: FixedEntropy(bytes: sequential(count: 64, seed: 0x10)),
+            x25519Entropy: FixedEntropy(bytes: sequential(count: 32, seed: 0x30))
+        )
+        let serverKeyExchange = try TLS13X25519MLKEM768ServerKeyExchange.generate(
+            using: FixedEntropy(bytes: sequential(count: 32, seed: 0x50))
+        )
+        let signingKey = try Ed25519PrivateKey(seed: deterministicSeed().span)
+        let client = try TLS13ClientHandshakeCore(
+            random: ContiguousArray(repeating: 0x01, count: 32).span,
+            keyExchange: clientKeyExchange,
+            expectedServerPublicKey: deterministicServerPublicKey().span,
+            verificationInstant: instant
+        )
+        let server = try TLS13ServerHandshakeCore(
+            random: ContiguousArray(repeating: 0x02, count: 32).span,
+            keyExchange: serverKeyExchange,
+            keyExchangeEntropy: FixedEntropy(bytes: sequential(count: 32, seed: 0x70)),
+            certificateDER: deterministicCertificate().span,
+            signingKey: TLS13SigningKey(ed25519: signingKey),
+            verificationInstant: instant
+        )
+        return CorePair(client: client, server: server)
+    }
+
+    private struct FixedEntropy: EntropySource {
+        let bytes: ContiguousArray<UInt8>
+
+        func fill(_ destination: inout MutableSpan<UInt8>) throws(EntropyError) {
+            guard destination.count == bytes.count else {
+                throw .partialFill(expected: destination.count, actual: bytes.count)
+            }
+            var index = 0
+            while index < bytes.count {
+                destination[index] = bytes[index]
+                index += 1
+            }
+        }
+    }
+
+    private func sequential(count: Int, seed: UInt8) -> ContiguousArray<UInt8> {
+        var result = ContiguousArray<UInt8>()
+        result.reserveCapacity(count)
+        var index = 0
+        while index < count {
+            result.append(seed &+ UInt8(truncatingIfNeeded: index))
+            index += 1
+        }
+        return result
+    }
+
     private func copySecrets(
         _ secrets: consuming TLS13TrafficSecretPair
     ) -> SecretSnapshot {
@@ -362,12 +514,12 @@ final class TLS13HandshakeCoreTests: XCTestCase {
 
     private func deterministicCertificate() -> ContiguousArray<UInt8> {
         bytes(
-            "3081a6305a020101300506032b65703000301e170d3234303130313030303030305a" +
-            "170d3235303130313030303030305a3000302a300506032b6570032100" +
-            "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a" +
-            "300506032b6570034100" +
-            "37dfbf24eb692e0be9243a10e90e7a420528f6dcd6032898dca956d51ce3a286b" +
-            "15596380832a60cc57d2a84f843c774ffe0a7b462a9556f76751a870d5c7901"
+            "3081a6305a020101300506032b65703000301e170d3234303130313030303030305a"
+                + "170d3235303130313030303030305a3000302a300506032b6570032100"
+                + "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+                + "300506032b6570034100"
+                + "37dfbf24eb692e0be9243a10e90e7a420528f6dcd6032898dca956d51ce3a286b"
+                + "15596380832a60cc57d2a84f843c774ffe0a7b462a9556f76751a870d5c7901"
         )
     }
 }

@@ -29,13 +29,17 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
         transcriptHash: Span<UInt8>
     ) throws(TLS13KeyScheduleError) -> TLS13HandshakeSecrets {
         let hashByteCount = Self.hashByteCount(for: cipherSuite)
-        // X25519 always produces a 32-byte shared secret; the hash size only
-        // controls the transcript and traffic-secret widths.
-        guard ecdheSharedSecret.count == X25519SharedSecret.byteCount else {
+        let isSupportedSecretLength =
+            ecdheSharedSecret.count
+            == TLS13NamedGroup.x25519.sharedSecretByteCount
+            || ecdheSharedSecret.count
+                == TLS13NamedGroup.x25519MLKEM768.sharedSecretByteCount
+        guard isSupportedSecretLength else {
             throw .invalidECDHESecretLength(actual: ecdheSharedSecret.count)
         }
         guard transcriptHash.count == hashByteCount else {
-            throw .invalidTranscriptHashLength(expected: hashByteCount, actual: transcriptHash.count)
+            throw .invalidTranscriptHashLength(
+                expected: hashByteCount, actual: transcriptHash.count)
         }
 
         let emptyHash = try Self.hashEmptyMessage(cipherSuite: cipherSuite)
@@ -94,7 +98,8 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
     ) throws(TLS13KeyScheduleError) -> SecretBytes {
         let hashByteCount = Self.hashByteCount(for: cipherSuite)
         guard transcriptHash.count == hashByteCount else {
-            throw .invalidTranscriptHashLength(expected: hashByteCount, actual: transcriptHash.count)
+            throw .invalidTranscriptHashLength(
+                expected: hashByteCount, actual: transcriptHash.count)
         }
         var info = ContiguousArray<UInt8>()
         info.reserveCapacity(2 + 1 + 6 + label.utf8.count + 1 + transcriptHash.count)
@@ -208,14 +213,16 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
         )
         let hashByteCount = Self.hashByteCount(for: cipherSuite)
         guard transcriptHash.count == hashByteCount else {
-            throw .invalidTranscriptHashLength(expected: hashByteCount, actual: transcriptHash.count)
+            throw .invalidTranscriptHashLength(
+                expected: hashByteCount, actual: transcriptHash.count)
         }
         var output = ContiguousArray<UInt8>(repeating: 0, count: hashByteCount)
         let outputByteCount = output.count
         do {
             try finishedKey.withBorrowedBytes { key in
                 try output.withUnsafeMutableBufferPointer { buffer throws(CryptoInputError) in
-                    var destination = MutableSpan(_unsafeStart: buffer.baseAddress!, count: outputByteCount)
+                    var destination = MutableSpan(
+                        _unsafeStart: buffer.baseAddress!, count: outputByteCount)
                     switch cipherSuite {
                     case .aes256GCM_SHA384:
                         try HMACSHA384.authenticate(transcriptHash, using: key, into: &destination)

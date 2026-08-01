@@ -91,6 +91,99 @@ final class X25519Tests: XCTestCase {
         }
     }
 
+    func testAllZeroPeerKeyDoesNotModifyInPlaceOutput() throws {
+        let privateBytes = bytes("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a")
+        let zeroPeer = ContiguousArray<UInt8>(repeating: 0, count: X25519PublicKey.byteCount)
+        let privateKey = try X25519PrivateKey(bytes: privateBytes.span)
+        var output = ContiguousArray<UInt8>(repeating: 0xA5, count: X25519SharedSecret.byteCount)
+        let original = output
+
+        do {
+            var destination = output.mutableSpan
+            try X25519.sharedSecret(
+                privateKey: privateKey,
+                peerPublicKeyBytes: zeroPeer.span,
+                into: &destination
+            )
+            XCTFail("all-zero peer key was accepted")
+        } catch {
+            XCTAssertEqual(error, .invalidPeerKey)
+        }
+        XCTAssertEqual(output, original)
+    }
+
+    func testInPlacePublicKeyMatchesOwnedPublicKey() throws {
+        let privateKey = try X25519PrivateKey(
+            bytes: bytes("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a").span
+        )
+        var output = ContiguousArray<UInt8>(
+            repeating: 0xA5,
+            count: X25519PublicKey.byteCount
+        )
+        var destination = output.mutableSpan
+        try privateKey.publicKey(into: &destination)
+
+        XCTAssertEqual(Array(output), copyBytes(privateKey.publicKey().span))
+    }
+
+    func testEncodedPeerInPlaceAgreementMatchesOwnedResult() throws {
+        let alice = try X25519PrivateKey(
+            bytes: bytes("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a").span
+        )
+        let bob = try X25519PrivateKey(
+            bytes: bytes("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").span
+        )
+        let bobPublicKey = bob.publicKey()
+        let owned = try X25519.sharedSecret(
+            privateKey: alice,
+            peerPublicKey: bobPublicKey
+        )
+        var output = ContiguousArray<UInt8>(
+            repeating: 0xA5,
+            count: X25519SharedSecret.byteCount
+        )
+        var destination = output.mutableSpan
+        try X25519.sharedSecret(
+            privateKey: alice,
+            peerPublicKeyBytes: bobPublicKey.span,
+            into: &destination
+        )
+
+        XCTAssertEqual(Array(output), owned.withBorrowedBytes { copyBytes($0) })
+    }
+
+    func testInPlaceLengthFailuresDoNotModifyOutput() throws {
+        let privateKey = try X25519PrivateKey(
+            bytes: ContiguousArray(repeating: 0x42, count: 32).span
+        )
+        let shortPeer = ContiguousArray<UInt8>(repeating: 0x24, count: 31)
+        var output = ContiguousArray<UInt8>(repeating: 0xA5, count: 32)
+        let original = output
+        do {
+            var destination = output.mutableSpan
+            try X25519.sharedSecret(
+                privateKey: privateKey,
+                peerPublicKeyBytes: shortPeer.span,
+                into: &destination
+            )
+            XCTFail("encoded-key agreement accepted a short peer key")
+        } catch {
+            XCTAssertEqual(error, .invalidLength(expected: 32, actual: 31))
+        }
+        XCTAssertEqual(output, original)
+
+        var shortPublicOutput = ContiguousArray<UInt8>(repeating: 0x5A, count: 31)
+        let originalPublicOutput = shortPublicOutput
+        do {
+            var destination = shortPublicOutput.mutableSpan
+            try privateKey.publicKey(into: &destination)
+            XCTFail("public-key derivation accepted a short output")
+        } catch {
+            XCTAssertEqual(error, .invalidLength(expected: 32, actual: 31))
+        }
+        XCTAssertEqual(shortPublicOutput, originalPublicOutput)
+    }
+
     func testKeyLengthValidation() {
         let invalid = ContiguousArray<UInt8>(repeating: 0, count: 31)
         do {

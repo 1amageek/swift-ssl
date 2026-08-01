@@ -32,6 +32,48 @@ public struct QUICTLSClientHandshake: QUICTLSClientHandshaking, ~Copyable, Senda
         } catch let error {
             throw .handshake(error)
         }
+        return try make(
+            core: core,
+            maximumBufferedByteCount: maximumBufferedByteCount,
+            maximumMessageByteCount: maximumMessageByteCount
+        )
+    }
+
+    public static func make(
+        random: Span<UInt8>,
+        keyExchange: consuming TLS13X25519MLKEM768ClientKeyExchange,
+        expectedServerPublicKey: Span<UInt8>,
+        verificationInstant: VerificationInstant,
+        cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
+        resumptionState: consuming TLS13ResumptionState? = nil,
+        maximumBufferedByteCount: Int = QUICCryptoStreamReassembler.defaultMaximumBufferedByteCount,
+        maximumMessageByteCount: Int = TLS13HandshakeMessageFramer.defaultMaximumMessageByteCount
+    ) throws(QUICTLSHandshakeError) -> Self {
+        let core: TLS13ClientHandshakeCore
+        do {
+            core = try TLS13ClientHandshakeCore(
+                random: random,
+                keyExchange: keyExchange,
+                expectedServerPublicKey: expectedServerPublicKey,
+                verificationInstant: verificationInstant,
+                cipherSuite: cipherSuite,
+                resumptionState: resumptionState
+            )
+        } catch let error {
+            throw .handshake(error)
+        }
+        return try make(
+            core: core,
+            maximumBufferedByteCount: maximumBufferedByteCount,
+            maximumMessageByteCount: maximumMessageByteCount
+        )
+    }
+
+    private static func make(
+        core: consuming TLS13ClientHandshakeCore,
+        maximumBufferedByteCount: Int,
+        maximumMessageByteCount: Int
+    ) throws(QUICTLSHandshakeError) -> Self {
         let initial = try makeStream(
             level: .initial,
             maximumBufferedByteCount: maximumBufferedByteCount,
@@ -43,7 +85,7 @@ public struct QUICTLSClientHandshake: QUICTLSClientHandshaking, ~Copyable, Senda
             maximumMessageByteCount: maximumMessageByteCount
         )
         return Self(
-            core: core,
+            core: consume core,
             initialStream: initial,
             handshakeStream: handshake
         )

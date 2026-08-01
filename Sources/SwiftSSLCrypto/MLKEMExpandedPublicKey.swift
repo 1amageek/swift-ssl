@@ -1,31 +1,47 @@
+import SwiftSSLCore
+
 /// Immutable, decoded ML-KEM public-key material used by encapsulation.
-struct MLKEMExpandedPublicKey: Sendable {
-  private let vector: ContiguousArray<MLKEMArithmetic.Coefficient>
-  private let matrix: ContiguousArray<MLKEMArithmetic.Coefficient>
-  private let publicKeyHash: ContiguousArray<UInt8>
+final class MLKEMExpandedPublicKey {
+  private let vector: MLKEMPolynomialStorage
+  private let matrix: MLKEMPolynomialStorage
+  private let publicKeyHash: UnsafeMutablePointer<UInt8>
   let dimension: Int
 
+  // Unsafe ownership invariants:
+  // - Construction consumes the unique polynomial owners after decoding.
+  // - No mutation API is exposed after publication.
+  // - Every coefficient access is a scoped immutable borrow from retained storage.
+  // - The 32-byte hash allocation is initialized before publication.
+  // - Its pointer never escapes; callers receive only a scoped immutable Span.
+  // - ARC retains all owners for each borrow and releases them exactly once.
   init(
-    copyingVector vector: borrowing MLKEMPolynomialStorage,
-    matrix: borrowing MLKEMPolynomialStorage,
+    consumingVector vector: consuming MLKEMPolynomialStorage,
+    matrix: consuming MLKEMPolynomialStorage,
     publicKeyHash: Span<UInt8>,
     dimension: Int
   ) {
     precondition(vector.polynomialCount == dimension)
     precondition(matrix.polynomialCount == dimension * dimension)
     precondition(publicKeyHash.count == 32)
-    self.vector = Self.copy(vector)
-    self.matrix = Self.copy(matrix)
-    self.publicKeyHash = Self.copy(publicKeyHash)
+    self.vector = vector
+    self.matrix = matrix
+    let hashPointer = UnsafeMutablePointer<UInt8>.allocate(capacity: 32)
+    hashPointer.initialize(repeating: 0, count: 32)
+    var hashIndex = 0
+    while hashIndex < 32 {
+      hashPointer[hashIndex] = publicKeyHash[hashIndex]
+      hashIndex += 1
+    }
+    self.publicKeyHash = hashPointer
     self.dimension = dimension
   }
 
   @inline(__always)
-  var hashSpan: Span<UInt8> {
-    @_lifetime(borrow self)
-    borrowing get {
-      publicKeyHash.span
-    }
+  borrowing func withHash<Result: ~Copyable, Failure: Error>(
+    _ body: (Span<UInt8>) throws(Failure) -> Result
+  ) throws(Failure) -> Result {
+    let buffer = UnsafeBufferPointer(start: publicKeyHash, count: 32)
+    return try body(Span(_unsafeElements: buffer))
   }
 
   @inline(__always)
@@ -34,12 +50,7 @@ struct MLKEMExpandedPublicKey: Sendable {
     _ body: (Span<MLKEMArithmetic.Coefficient>) throws(Failure) -> Result
   ) throws(Failure) -> Result {
     precondition(index >= 0 && index < dimension)
-    let start = index * MLKEMPolynomialStorage.coefficientCount
-    return try body(
-      vector.span.extracting(
-        start..<(start + MLKEMPolynomialStorage.coefficientCount)
-      )
-    )
+    return try vector.withPolynomial(at: index, body)
   }
 
   @inline(__always)
@@ -48,46 +59,15 @@ struct MLKEMExpandedPublicKey: Sendable {
     _ body: (Span<MLKEMArithmetic.Coefficient>) throws(Failure) -> Result
   ) throws(Failure) -> Result {
     precondition(index >= 0 && index < dimension * dimension)
-    let start = index * MLKEMPolynomialStorage.coefficientCount
-    return try body(
-      matrix.span.extracting(
-        start..<(start + MLKEMPolynomialStorage.coefficientCount)
-      )
-    )
+    return try matrix.withPolynomial(at: index, body)
   }
 
-  private static func copy(
-    _ source: borrowing MLKEMPolynomialStorage
-  ) -> ContiguousArray<MLKEMArithmetic.Coefficient> {
-    var result = ContiguousArray<MLKEMArithmetic.Coefficient>(
-      repeating: 0,
-      count: source.polynomialCount * MLKEMPolynomialStorage.coefficientCount
-    )
-    var destination = result.mutableSpan
-    var polynomialIndex = 0
-    while polynomialIndex < source.polynomialCount {
-      source.withPolynomial(at: polynomialIndex) { polynomial in
-        let destinationOffset =
-          polynomialIndex * MLKEMPolynomialStorage.coefficientCount
-        var coefficientIndex = 0
-        while coefficientIndex < MLKEMPolynomialStorage.coefficientCount {
-          destination[destinationOffset + coefficientIndex] = polynomial[coefficientIndex]
-          coefficientIndex += 1
-        }
-      }
-      polynomialIndex += 1
-    }
-    return result
-  }
-
-  private static func copy(_ source: Span<UInt8>) -> ContiguousArray<UInt8> {
-    var result = ContiguousArray<UInt8>()
-    result.reserveCapacity(source.count)
-    var index = 0
-    while index < source.count {
-      result.append(source[index])
-      index += 1
-    }
-    return result
+  deinit {
+    publicKeyHash.deinitialize(count: 32)
+    publicKeyHash.deallocate()
   }
 }
+
+// Polynomial storage is uniquely owned, fully initialized before publication,
+// and reachable only through immutable scoped borrows after construction.
+extension MLKEMExpandedPublicKey: @unchecked Sendable {}

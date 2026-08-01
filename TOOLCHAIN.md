@@ -14,7 +14,16 @@
 
 ## Build and execution checks
 
-Native correctness tests use Xcode with a bounded external timeout. Cross-target checks compile, link, and execute dedicated validation programs with the exact SDK identifier. Release cross-compilation can exceed the 120-second execution timeout. In that case, build the product first, then run the already-linked product under the bounded wrapper with `--skip-build`; a compile timeout is never reported as a runtime failure.
+Native correctness tests use Xcode with a bounded external timeout. In the
+recorded macOS 27 environment, the Xcode 26.6 and Xcode 27 launch sessions can
+block before test code starts while loading the test bundle. The validated
+exception is to let Xcode build the bundles and then invoke each XCTest bundle
+directly with the same Xcode and toolchain. Cross-target checks compile, link,
+and execute dedicated validation programs with the exact SDK identifier.
+Release cross-compilation can exceed the 120-second execution timeout. In that
+case, build the product first, then run the already-linked product under the
+bounded wrapper with `--skip-build`; a compile timeout is never reported as a
+runtime failure.
 
 ```sh
 TOOLCHAINS=org.swift.64202607231a xcrun swift --version
@@ -22,7 +31,8 @@ TOOLCHAINS=org.swift.64202607231a xcrun swift sdk list
 
 scripts/swift-test-timeout.sh 120 \
   env TOOLCHAINS=org.swift.64202607231a \
-  xcodebuild test \
+  DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcodebuild build-for-testing \
   -scheme swift-ssl-Package \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath .build/xcode-derived-data \
@@ -31,10 +41,39 @@ scripts/swift-test-timeout.sh 120 \
 
 scripts/swift-test-timeout.sh 120 \
   env TOOLCHAINS=org.swift.64202607231a \
+  DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcrun xctest \
+  .build/xcode-derived-data/Build/Products/Debug/SwiftSSLCoreTests.xctest
+
+# Repeat the bounded xctest command for SwiftSSLASN1Tests,
+# SwiftSSLX509Tests, SwiftSSLCryptoTests, and SwiftSSLTLSModelTests.
+
+scripts/swift-test-timeout.sh 120 \
+  env TOOLCHAINS=org.swift.64202607231a \
   swift run \
   --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm \
   --scratch-path .build/target-validation-wasi \
   swift-ssl-target-validation
+
+scripts/swift-test-timeout.sh 120 \
+  env TOOLCHAINS=org.swift.64202607231a \
+  swift run -c release \
+  --scratch-path .build/target-validation-hybrid-native \
+  swift-ssl-hybrid-target-validation
+
+scripts/swift-test-timeout.sh 120 \
+  env TOOLCHAINS=org.swift.64202607231a \
+  swift run -c release \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm \
+  --scratch-path .build/target-validation-hybrid-wasi \
+  swift-ssl-hybrid-target-validation
+
+scripts/swift-test-timeout.sh 120 \
+  env TOOLCHAINS=org.swift.64202607231a \
+  swift run -c release \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
+  --scratch-path .build/target-validation-hybrid-wasi-embedded \
+  swift-ssl-hybrid-target-validation
 
 scripts/swift-test-timeout.sh 120 \
   env TOOLCHAINS=org.swift.64202607231a \

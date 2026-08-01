@@ -11,6 +11,7 @@ enum TargetValidationCommand {
     case aesGCM
     case chacha20Poly1305
     case x25519
+    case hybridKeyExchange
     case hpke
     case p256
     case nistECDSA
@@ -20,6 +21,7 @@ enum TargetValidationCommand {
     case sha3
     case byteCursor
     case derCursor
+    case entropy
     case secretOwner
     case sha256
     case hmacSHA256
@@ -50,9 +52,11 @@ enum TargetValidationCommand {
   }
 
   static func main() throws {
+    try validateSystemEntropy()
     try validateAESGCM()
     try validateChaCha20Poly1305()
     try validateX25519()
+    try validateHybridKeyExchange()
     try validateHPKE()
     try validateP256()
     try validateRSAPSS()
@@ -74,6 +78,19 @@ enum TargetValidationCommand {
     try validateQUICInitial()
     try validateQUICCryptoStream()
     print("swift-ssl target validation: ok")
+  }
+
+  private static func validateSystemEntropy() throws {
+    var bytes = ContiguousArray<UInt8>(repeating: 0, count: 64)
+    var destination = bytes.mutableSpan
+    try SystemEntropySource().fill(&destination)
+    var combined: UInt8 = 0
+    var index = 0
+    while index < bytes.count {
+      combined |= bytes[index]
+      index += 1
+    }
+    guard combined != 0 else { throw Failure.entropy }
   }
 
   private static func validateAESGCM() throws {
@@ -256,6 +273,63 @@ enum TargetValidationCommand {
       return true
     }
     guard matches else { throw Failure.x25519 }
+  }
+
+  private static func validateHybridKeyExchange() throws {
+    var client = try TLS13X25519MLKEM768ClientKeyExchange.generate(
+      mlkemEntropy: FixedEntropy(bytes: sequential(count: 64, seed: 0x10)),
+      x25519Entropy: FixedEntropy(bytes: sequential(count: 32, seed: 0x30))
+    )
+    var server = try TLS13X25519MLKEM768ServerKeyExchange.generate(
+      using: FixedEntropy(bytes: sequential(count: 32, seed: 0x50))
+    )
+    let clientShare = client.withClientShare { OwnedBytes(copying: $0) }
+    let clientHello = try TLS13HandshakeCodec.makeClientHello(
+      random: ContiguousArray(repeating: 0x01, count: 32).span,
+      namedGroup: .x25519MLKEM768,
+      keyShare: clientShare.span
+    )
+    let parsedClientHello = try TLS13HandshakeCodec.parseClientHello(clientHello.span)
+    guard parsedClientHello.namedGroup == .x25519MLKEM768,
+      parsedClientHello.keyShare.count == 1_216
+    else {
+      throw Failure.hybridKeyExchange
+    }
+
+    let serverResult = try server.accept(
+      clientShare: parsedClientHello.keyShare.span,
+      using: FixedEntropy(bytes: sequential(count: 32, seed: 0x70))
+    )
+    let serverHello = try TLS13HandshakeCodec.makeServerHello(
+      random: ContiguousArray(repeating: 0x02, count: 32).span,
+      namedGroup: .x25519MLKEM768,
+      keyShare: serverResult.serverShare.span
+    )
+    let parsedServerHello = try TLS13HandshakeCodec.parseServerHello(serverHello.span)
+    guard parsedServerHello.namedGroup == .x25519MLKEM768,
+      parsedServerHello.keyShare.count == 1_120
+    else {
+      throw Failure.hybridKeyExchange
+    }
+    let clientSecret = try client.complete(serverShare: parsedServerHello.keyShare.span)
+    let clientSecretBytes = clientSecret.withBorrowedBytes { copy($0) }
+    let serverSecretBytes = serverResult.sharedSecret.withBorrowedBytes { copy($0) }
+    guard clientSecretBytes.count == 64,
+      clientSecretBytes == serverSecretBytes
+    else {
+      throw Failure.hybridKeyExchange
+    }
+  }
+
+  private static func sequential(count: Int, seed: UInt8) -> ContiguousArray<UInt8> {
+    var result = ContiguousArray<UInt8>()
+    result.reserveCapacity(count)
+    var index = 0
+    while index < count {
+      result.append(seed &+ UInt8(truncatingIfNeeded: index))
+      index += 1
+    }
+    return result
   }
 
   private static func validateHPKE() throws {

@@ -112,13 +112,16 @@ Hot paths define a budget before optimization.
 | HMAC update | 0 additional input copies; 0 heap allocations and 0 reference-count operations |
 | HKDF expand | 0 heap/container materializations of caller input; one fixed 64-byte HMAC key-schedule scratch per operation; two inline working SHA-256 contexts plus one wiped 32-byte inner digest per block; full digest blocks written directly to caller output; at most one additional wiped 32-byte temporary for a partial final block; optimized allocation count must be 0 |
 | AEAD seal/open | 0 input copies when nonoverlapping buffers are supplied; 0 heap allocations after context creation |
-| X25519 public-key derivation/shared-secret | No input-coordinate copies beyond the fixed 32-byte scalar/u-coordinate normalization; one owned public-key or shared-secret result; no escaping unsafe pointer |
+| X25519 in-place public-key derivation/shared-secret | 0 heap allocations after caller output creation; 0 dynamic bulk-copy bytes; encoded peer input remains borrowed; caller output is unchanged on length or all-zero-peer failure; no escaping unsafe pointer |
 | ML-KEM-768 key generation | 17 balanced allocations requesting 20,640 bytes; owned serialized/expanded keys and algorithm workspaces; 0 dynamic bulk-copy bytes beyond fixed process overhead |
 | ML-KEM-768 in-place encapsulation | 5 balanced aligned workspace allocations requesting 6,096 bytes; 0 general `malloc`; 0 caller-input/output materializations; 0 dynamic bulk-copy bytes |
 | ML-KEM-768 in-place decapsulation | 11 balanced aligned workspace/secret allocations requesting 9,808 bytes; 0 general `malloc`; 0 caller-input/output materializations; 0 dynamic bulk-copy bytes |
 | ML-KEM-1024 key generation | 17 balanced allocations requesting 31,008 bytes; owned serialized/expanded keys and algorithm workspaces; 0 dynamic bulk-copy bytes beyond fixed process overhead |
 | ML-KEM-1024 in-place encapsulation | 5 balanced aligned workspace allocations requesting 7,632 bytes; 0 general `malloc`; 0 caller-input/output materializations; 0 dynamic bulk-copy bytes |
 | ML-KEM-1024 in-place decapsulation | 11 balanced aligned workspace/secret allocations requesting 12,336 bytes; 0 general `malloc`; 0 caller-input/output materializations; 0 dynamic bulk-copy bytes |
+| X25519MLKEM768 client offer | 17 balanced allocations requesting 15,656 bytes for final owners, noncopyable key material, and ML-KEM workspaces; 0 dynamic bulk-copy bytes |
+| X25519MLKEM768 server accept | 15 balanced allocations requesting 14,464 bytes for final owners, noncopyable key material, and ML-KEM workspaces; borrowed client share; 0 dynamic bulk-copy bytes |
+| X25519MLKEM768 full round trip | 45 balanced allocations requesting 40,032 bytes; role-specific received shares remain borrowed; 0 dynamic bulk-copy bytes |
 | HMAC-DRBG generate | Caller-owned output; K/V remain in one `SecretBytes` owner; temporary HMAC messages and digests are wiped before return; entropy input is copied only into bounded seed material |
 | DER field access | 0 field copies after certificate parse; ranges borrow the certificate owner |
 | TLS complete inbound record | 0 record copies; plaintext written once into the action batch |

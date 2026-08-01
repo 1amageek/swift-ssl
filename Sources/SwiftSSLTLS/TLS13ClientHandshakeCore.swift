@@ -22,7 +22,7 @@ public struct TLS13ClientHandshakeCore:
     }
 
     private let random: OwnedBytes
-    private let ephemeralKey: X25519PrivateKey
+    private var keyExchange: TLS13ClientKeyExchangeState
     private let expectedServerPublicKey: Ed25519PublicKey
     private let verificationInstant: VerificationInstant
     private let cipherSuite: TLSCipherSuite
@@ -46,6 +46,62 @@ public struct TLS13ClientHandshakeCore:
         cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
         resumptionState: consuming TLS13ResumptionState? = nil
     ) throws(TLS13HandshakeEngineError) {
+        try self.init(
+            random: random,
+            keyExchange: TLS13ClientKeyExchangeState(
+                x25519: TLS13X25519ClientKeyExchange(privateKey: ephemeralKey)
+            ),
+            expectedServerPublicKey: expectedServerPublicKey,
+            verificationInstant: verificationInstant,
+            cipherSuite: cipherSuite,
+            resumptionState: consume resumptionState
+        )
+    }
+
+    public init(
+        random: Span<UInt8>,
+        keyExchange: consuming TLS13X25519ClientKeyExchange,
+        expectedServerPublicKey: Span<UInt8>,
+        verificationInstant: VerificationInstant,
+        cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
+        resumptionState: consuming TLS13ResumptionState? = nil
+    ) throws(TLS13HandshakeEngineError) {
+        try self.init(
+            random: random,
+            keyExchange: TLS13ClientKeyExchangeState(x25519: keyExchange),
+            expectedServerPublicKey: expectedServerPublicKey,
+            verificationInstant: verificationInstant,
+            cipherSuite: cipherSuite,
+            resumptionState: consume resumptionState
+        )
+    }
+
+    public init(
+        random: Span<UInt8>,
+        keyExchange: consuming TLS13X25519MLKEM768ClientKeyExchange,
+        expectedServerPublicKey: Span<UInt8>,
+        verificationInstant: VerificationInstant,
+        cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
+        resumptionState: consuming TLS13ResumptionState? = nil
+    ) throws(TLS13HandshakeEngineError) {
+        try self.init(
+            random: random,
+            keyExchange: TLS13ClientKeyExchangeState(x25519MLKEM768: keyExchange),
+            expectedServerPublicKey: expectedServerPublicKey,
+            verificationInstant: verificationInstant,
+            cipherSuite: cipherSuite,
+            resumptionState: consume resumptionState
+        )
+    }
+
+    private init(
+        random: Span<UInt8>,
+        keyExchange: consuming TLS13ClientKeyExchangeState,
+        expectedServerPublicKey: Span<UInt8>,
+        verificationInstant: VerificationInstant,
+        cipherSuite: TLSCipherSuite,
+        resumptionState: consuming TLS13ResumptionState?
+    ) throws(TLS13HandshakeEngineError) {
         guard random.count == 32 else {
             throw .invalidConfiguration
         }
@@ -64,7 +120,7 @@ public struct TLS13ClientHandshakeCore:
             throw .handshake(error)
         }
         self.random = OwnedBytes(copying: random)
-        self.ephemeralKey = ephemeralKey
+        self.keyExchange = consume keyExchange
         self.expectedServerPublicKey = validatedServerPublicKey
         self.verificationInstant = verificationInstant
         self.cipherSuite = cipherSuite
@@ -90,58 +146,64 @@ public struct TLS13ClientHandshakeCore:
     {
         guard case .idle = phase else { throw .invalidState }
         do {
-            let keyShare = ephemeralKey.publicKey()
-            let clientHello: OwnedBytes
-            if var state = resumptionState.take() {
-                guard state.cipherSuite == cipherSuite else {
-                    throw TLS13HandshakeEngineError.invalidConfiguration
+            let namedGroup = keyExchange.namedGroup
+            let clientHello = try keyExchange.withClientShare { keyShare in
+                let clientHello: OwnedBytes
+                if var state = resumptionState.take() {
+                    guard state.cipherSuite == cipherSuite else {
+                        throw TLS13HandshakeEngineError.invalidConfiguration
+                    }
+                    let psk = try state.consumePSK()
+                    let ticketAge = try state.obfuscatedTicketAge(at: verificationInstant)
+                    let identity = try state.withTicketBytes { ticket throws(TLS13PSKError) in
+                        try TLS13PSKIdentity(identity: ticket, obfuscatedTicketAge: ticketAge)
+                    }
+                    let binderLength = TLS13KeySchedule.hashByteCount(for: cipherSuite)
+                    let zeroBinder = try TLS13PSKBinder(
+                        value: ContiguousArray<UInt8>(repeating: 0, count: binderLength).span
+                    )
+                    let zeroExtension = try TLS13PreSharedKeyExtension(
+                        identities: ContiguousArray([identity]),
+                        binders: ContiguousArray([zeroBinder])
+                    )
+                    let zeroHello = try TLS13HandshakeCodec.makeClientHello(
+                        random: random.span,
+                        namedGroup: namedGroup,
+                        keyShare: keyShare,
+                        cipherSuite: cipherSuite,
+                        preSharedKey: zeroExtension
+                    )
+                    var binderTranscript = try TLS13Transcript()
+                    try binderTranscript.append(zeroHello.span)
+                    let transcriptHash = try binderTranscript.digest(for: cipherSuite)
+                    let binder = try TLS13PSKBinder.compute(
+                        preSharedKey: psk,
+                        cipherSuite: cipherSuite,
+                        transcriptHash: transcriptHash.span
+                    )
+                    let actualBinder = try TLS13PSKBinder(value: binder.span)
+                    let actualExtension = try TLS13PreSharedKeyExtension(
+                        identities: ContiguousArray([identity]),
+                        binders: ContiguousArray([actualBinder])
+                    )
+                    clientHello = try TLS13HandshakeCodec.makeClientHello(
+                        random: random.span,
+                        namedGroup: namedGroup,
+                        keyShare: keyShare,
+                        cipherSuite: cipherSuite,
+                        preSharedKey: actualExtension
+                    )
+                    resumptionPSK = consume psk
+                    offeredResumption = true
+                } else {
+                    clientHello = try TLS13HandshakeCodec.makeClientHello(
+                        random: random.span,
+                        namedGroup: namedGroup,
+                        keyShare: keyShare,
+                        cipherSuite: cipherSuite
+                    )
                 }
-                let psk = try state.consumePSK()
-                let ticketAge = try state.obfuscatedTicketAge(at: verificationInstant)
-                let identity = try state.withTicketBytes { ticket throws(TLS13PSKError) in
-                    try TLS13PSKIdentity(identity: ticket, obfuscatedTicketAge: ticketAge)
-                }
-                let binderLength = TLS13KeySchedule.hashByteCount(for: cipherSuite)
-                let zeroBinder = try TLS13PSKBinder(
-                    value: ContiguousArray<UInt8>(repeating: 0, count: binderLength).span
-                )
-                let zeroExtension = try TLS13PreSharedKeyExtension(
-                    identities: ContiguousArray([identity]),
-                    binders: ContiguousArray([zeroBinder])
-                )
-                let zeroHello = try TLS13HandshakeCodec.makeClientHello(
-                    random: random.span,
-                    keyShare: keyShare.span,
-                    cipherSuite: cipherSuite,
-                    preSharedKey: zeroExtension
-                )
-                var binderTranscript = try TLS13Transcript()
-                try binderTranscript.append(zeroHello.span)
-                let transcriptHash = try binderTranscript.digest(for: cipherSuite)
-                let binder = try TLS13PSKBinder.compute(
-                    preSharedKey: psk,
-                    cipherSuite: cipherSuite,
-                    transcriptHash: transcriptHash.span
-                )
-                let actualBinder = try TLS13PSKBinder(value: binder.span)
-                let actualExtension = try TLS13PreSharedKeyExtension(
-                    identities: ContiguousArray([identity]),
-                    binders: ContiguousArray([actualBinder])
-                )
-                clientHello = try TLS13HandshakeCodec.makeClientHello(
-                    random: random.span,
-                    keyShare: keyShare.span,
-                    cipherSuite: cipherSuite,
-                    preSharedKey: actualExtension
-                )
-                resumptionPSK = consume psk
-                offeredResumption = true
-            } else {
-                clientHello = try TLS13HandshakeCodec.makeClientHello(
-                    random: random.span,
-                    keyShare: keyShare.span,
-                    cipherSuite: cipherSuite
-                )
+                return clientHello
             }
             return try completeStart(with: clientHello)
         } catch let error {
@@ -186,7 +248,8 @@ public struct TLS13ClientHandshakeCore:
         for endpoint: TLSRole
     ) throws(TLS13HandshakeEngineError) -> TLS13TrafficSecret {
         guard case .established = phase,
-              var secrets = applicationSecrets.take() else {
+            var secrets = applicationSecrets.take()
+        else {
             throw .invalidState
         }
         do {
@@ -213,7 +276,8 @@ public struct TLS13ClientHandshakeCore:
         receivedAt: VerificationInstant
     ) throws(TLS13HandshakeEngineError) -> TLS13ResumptionState {
         guard case .established = phase,
-              let secrets = applicationSecrets.take() else {
+            let secrets = applicationSecrets.take()
+        else {
             throw .invalidState
         }
         do {
@@ -247,26 +311,24 @@ public struct TLS13ClientHandshakeCore:
         guard serverHello.cipherSuite == cipherSuite else {
             throw .unsupportedCipherSuite(serverHello.cipherSuite.rawValue)
         }
+        guard serverHello.namedGroup == keyExchange.namedGroup else {
+            throw .keyExchange(
+                .unexpectedNamedGroup(
+                    expected: keyExchange.namedGroup,
+                    actual: serverHello.namedGroup
+                ))
+        }
         guard !serverHello.selectedPreSharedKey || offeredResumption else {
             throw .handshake(.unexpectedMessage(type: TLS13HandshakeCodec.serverHelloType))
         }
         resumedHandshake = offeredResumption && serverHello.selectedPreSharedKey
         try appendTranscript(message)
 
-        let peerKey: X25519PublicKey
+        let sharedSecret: SecretBytes
         do {
-            peerKey = try X25519PublicKey(bytes: serverHello.keyShare.span)
+            sharedSecret = try keyExchange.complete(serverShare: serverHello.keyShare.span)
         } catch let error {
-            throw .crypto(error)
-        }
-        let sharedSecret: X25519SharedSecret
-        do {
-            sharedSecret = try X25519.sharedSecret(
-                privateKey: ephemeralKey,
-                peerPublicKey: peerKey
-            )
-        } catch let error {
-            throw .crypto(error)
+            throw .keyExchange(error)
         }
         let transcriptHash = try transcriptDigest()
         let schedule: TLS13KeySchedule
@@ -288,6 +350,9 @@ public struct TLS13ClientHandshakeCore:
                 )
             }
         }
+        // Swift 6.4's move-only checker cannot lower a noncopyable
+        // TLS13HandshakeSecrets return directly from the SecretBytes borrow closure.
+        // Materialize only the 32/64-byte combined secret, then wipe it after HKDF.
         var sharedBytes = ContiguousArray<UInt8>()
         defer { wipe(&sharedBytes) }
         sharedSecret.withBorrowedBytes { shared in
@@ -383,7 +448,8 @@ public struct TLS13ClientHandshakeCore:
 
         case TLS13HandshakeCodec.finishedType:
             guard sawEncryptedExtensions,
-                  resumedHandshake || sawCertificateVerify else {
+                resumedHandshake || sawCertificateVerify
+            else {
                 throw .malformedInput
             }
             return try receiveServerFinished(message)
@@ -546,7 +612,8 @@ public struct TLS13ClientHandshakeCore:
             switch error {
             case .byteRange(let byteError): throw .output(byteError)
             case .duplicateTrafficSecrets, .missingTrafficSecrets,
-                 .unreferencedTrafficSecrets: throw .invalidState
+                .unreferencedTrafficSecrets:
+                throw .invalidState
             }
         }
     }

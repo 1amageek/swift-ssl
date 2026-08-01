@@ -1,10 +1,71 @@
-import XCTest
 import SwiftSSLCore
 import SwiftSSLCrypto
 import SwiftSSLTLS
+import XCTest
+
 @testable import SwiftSSLQUIC
 
 final class QUICTLSHandshakeTests: XCTestCase {
+    func testHybridHandshakeCompletesThroughQUICCryptoStreams() throws {
+        var endpoints = try makeHybridEndpoints()
+
+        let clientStart = try snapshot(endpoints.client.start())
+        let clientHello = try XCTUnwrap(
+            clientStart.emissions.first(where: { $0.level == .initial })?.bytes
+        )
+        try endpoints.server.receiveCrypto(
+            level: .initial,
+            offset: 0,
+            bytes: clientHello.span
+        )
+        guard let serverStep = try endpoints.server.processNextMessage(at: .initial) else {
+            return XCTFail("hybrid server did not process ClientHello")
+        }
+        let serverFlight = try snapshot(serverStep)
+        let serverHello = try XCTUnwrap(
+            serverFlight.emissions.first(where: { $0.level == .initial })?.bytes
+        )
+        let encryptedFlight = try XCTUnwrap(
+            serverFlight.emissions.first(where: { $0.level == .handshake })?.bytes
+        )
+
+        try endpoints.client.receiveCrypto(
+            level: .initial,
+            offset: 0,
+            bytes: serverHello.span
+        )
+        guard let clientInitialStep = try endpoints.client.processNextMessage(at: .initial) else {
+            return XCTFail("hybrid client did not process ServerHello")
+        }
+        _ = try snapshot(clientInitialStep)
+        try endpoints.client.receiveCrypto(
+            level: .handshake,
+            offset: 0,
+            bytes: encryptedFlight.span
+        )
+
+        var clientFinished: OwnedBytes?
+        while let step = try endpoints.client.processNextMessage(at: .handshake) {
+            let current = try snapshot(step)
+            if let emitted = current.emissions.first(where: { $0.level == .handshake }) {
+                clientFinished = emitted.bytes
+            }
+        }
+        let finished = try XCTUnwrap(clientFinished)
+        try endpoints.server.receiveCrypto(
+            level: .handshake,
+            offset: 0,
+            bytes: finished.span
+        )
+        guard let confirmation = try endpoints.server.processNextMessage(at: .handshake) else {
+            return XCTFail("hybrid server did not process ClientFinished")
+        }
+        _ = try snapshot(confirmation)
+
+        XCTAssertTrue(endpoints.client.isEstablished)
+        XCTAssertTrue(endpoints.server.isEstablished)
+    }
+
     func testOutOfOrderCryptoFramesCompleteHandshakeWithDirectionalSecrets() throws {
         var endpoints = try makeEndpoints()
 
@@ -229,6 +290,62 @@ final class QUICTLSHandshakeTests: XCTestCase {
         return Endpoints(client: client, server: server)
     }
 
+    private func makeHybridEndpoints() throws -> Endpoints {
+        let instant = try VerificationInstant(
+            secondsSinceUnixEpoch: 1_720_000_000,
+            nanoseconds: 0
+        )
+        let clientKeyExchange = try TLS13X25519MLKEM768ClientKeyExchange.generate(
+            mlkemEntropy: FixedEntropy(bytes: sequential(count: 64, seed: 0x10)),
+            x25519Entropy: FixedEntropy(bytes: sequential(count: 32, seed: 0x30))
+        )
+        let serverKeyExchange = try TLS13X25519MLKEM768ServerKeyExchange.generate(
+            using: FixedEntropy(bytes: sequential(count: 32, seed: 0x50))
+        )
+        let signingKey = try Ed25519PrivateKey(seed: deterministicSeed().span)
+        let client = try QUICTLSClientHandshake.make(
+            random: ContiguousArray(repeating: 0x01, count: 32).span,
+            keyExchange: clientKeyExchange,
+            expectedServerPublicKey: deterministicServerPublicKey().span,
+            verificationInstant: instant
+        )
+        let server = try QUICTLSServerHandshake.make(
+            random: ContiguousArray(repeating: 0x02, count: 32).span,
+            keyExchange: serverKeyExchange,
+            keyExchangeEntropy: FixedEntropy(bytes: sequential(count: 32, seed: 0x70)),
+            certificateDER: deterministicCertificate().span,
+            signingKey: TLS13SigningKey(ed25519: signingKey),
+            verificationInstant: instant
+        )
+        return Endpoints(client: client, server: server)
+    }
+
+    private struct FixedEntropy: EntropySource {
+        let bytes: ContiguousArray<UInt8>
+
+        func fill(_ destination: inout MutableSpan<UInt8>) throws(EntropyError) {
+            guard destination.count == bytes.count else {
+                throw .partialFill(expected: destination.count, actual: bytes.count)
+            }
+            var index = 0
+            while index < bytes.count {
+                destination[index] = bytes[index]
+                index += 1
+            }
+        }
+    }
+
+    private func sequential(count: Int, seed: UInt8) -> ContiguousArray<UInt8> {
+        var result = ContiguousArray<UInt8>()
+        result.reserveCapacity(count)
+        var index = 0
+        while index < count {
+            result.append(seed &+ UInt8(truncatingIfNeeded: index))
+            index += 1
+        }
+        return result
+    }
+
     private func copy(_ span: Span<UInt8>) -> ContiguousArray<UInt8> {
         var result = ContiguousArray<UInt8>()
         result.reserveCapacity(span.count)
@@ -261,12 +378,12 @@ final class QUICTLSHandshakeTests: XCTestCase {
 
     private func deterministicCertificate() -> ContiguousArray<UInt8> {
         bytes(
-            "3081a6305a020101300506032b65703000301e170d3234303130313030303030305a" +
-            "170d3235303130313030303030305a3000302a300506032b6570032100" +
-            "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a" +
-            "300506032b6570034100" +
-            "37dfbf24eb692e0be9243a10e90e7a420528f6dcd6032898dca956d51ce3a286b" +
-            "15596380832a60cc57d2a84f843c774ffe0a7b462a9556f76751a870d5c7901"
+            "3081a6305a020101300506032b65703000301e170d3234303130313030303030305a"
+                + "170d3235303130313030303030305a3000302a300506032b6570032100"
+                + "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+                + "300506032b6570034100"
+                + "37dfbf24eb692e0be9243a10e90e7a420528f6dcd6032898dca956d51ce3a286b"
+                + "15596380832a60cc57d2a84f843c774ffe0a7b462a9556f76751a870d5c7901"
         )
     }
 }

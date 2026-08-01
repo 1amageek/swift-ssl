@@ -1,9 +1,10 @@
 import SwiftSSLCore
 
 /// FIPS 203 ML-KEM-1024 for applications requiring the strongest parameter set.
-public enum MLKEM1024: InPlaceKeyEncapsulationMechanism {
+public enum MLKEM1024: InPlaceEncodedPublicKeyEncapsulationMechanism {
   public static let encapsulationByteCount = Encapsulation.byteCount
   public static let sharedSecretByteCount = SharedSecret.byteCount
+  public static let publicKeyByteCount = PublicKey.byteCount
 
   public struct PublicKey: Sendable, Equatable {
     public static let byteCount = 1_568
@@ -148,6 +149,41 @@ public enum MLKEM1024: InPlaceKeyEncapsulationMechanism {
     try MLKEMSecretFactory.withRandom32ByteBlock(using: copy entropy) {
       bytes throws(KEMError) in
       try encapsulate(to: publicKey, message: bytes)
+    }
+  }
+
+  public static func encapsulate(
+    toEncodedPublicKey publicKey: Span<UInt8>,
+    using entropy: borrowing any EntropySource,
+    into encapsulation: inout MutableSpan<UInt8>,
+    sharedSecret: inout MutableSpan<UInt8>
+  ) throws(KEMError) {
+    guard encapsulation.count == Encapsulation.byteCount else {
+      throw .invalidEncapsulationLength(
+        expected: Encapsulation.byteCount,
+        actual: encapsulation.count
+      )
+    }
+    guard sharedSecret.count == SharedSecret.byteCount else {
+      throw .invalidSharedSecretLength(
+        expected: SharedSecret.byteCount,
+        actual: sharedSecret.count
+      )
+    }
+    try MLKEMCore.validateEncapsulationKey(publicKey, parameters: .mlKEM1024)
+    let expanded = try MLKEMCore.expandEncapsulationKey(
+      publicKey,
+      parameters: .mlKEM1024
+    )
+    try MLKEMSecretFactory.withRandom32ByteBlock(using: copy entropy) {
+      message throws(KEMError) in
+      try MLKEMCore.encapsulate(
+        parameters: .mlKEM1024,
+        expandedPublicKey: expanded,
+        message: message,
+        ciphertext: &encapsulation,
+        sharedSecret: &sharedSecret
+      )
     }
   }
 

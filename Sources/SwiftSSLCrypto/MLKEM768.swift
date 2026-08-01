@@ -1,9 +1,10 @@
 import SwiftSSLCore
 
 /// FIPS 203 ML-KEM-768, the default parameter set recommended by NIST.
-public enum MLKEM768: InPlaceKeyEncapsulationMechanism {
+public enum MLKEM768: InPlaceEncodedPublicKeyEncapsulationMechanism {
   public static let encapsulationByteCount = Encapsulation.byteCount
   public static let sharedSecretByteCount = SharedSecret.byteCount
+  public static let publicKeyByteCount = PublicKey.byteCount
 
   public struct PublicKey: Sendable, Equatable {
     public static let byteCount = 1_184
@@ -152,6 +153,41 @@ public enum MLKEM768: InPlaceKeyEncapsulationMechanism {
   }
 
   public static func encapsulate(
+    toEncodedPublicKey publicKey: Span<UInt8>,
+    using entropy: borrowing any EntropySource,
+    into encapsulation: inout MutableSpan<UInt8>,
+    sharedSecret: inout MutableSpan<UInt8>
+  ) throws(KEMError) {
+    guard encapsulation.count == Encapsulation.byteCount else {
+      throw .invalidEncapsulationLength(
+        expected: Encapsulation.byteCount,
+        actual: encapsulation.count
+      )
+    }
+    guard sharedSecret.count == SharedSecret.byteCount else {
+      throw .invalidSharedSecretLength(
+        expected: SharedSecret.byteCount,
+        actual: sharedSecret.count
+      )
+    }
+    try MLKEMCore.validateEncapsulationKey(publicKey, parameters: .mlKEM768)
+    let expanded = try MLKEMCore.expandEncapsulationKey(
+      publicKey,
+      parameters: .mlKEM768
+    )
+    try MLKEMSecretFactory.withRandom32ByteBlock(using: copy entropy) {
+      message throws(KEMError) in
+      try MLKEMCore.encapsulate(
+        parameters: .mlKEM768,
+        expandedPublicKey: expanded,
+        message: message,
+        ciphertext: &encapsulation,
+        sharedSecret: &sharedSecret
+      )
+    }
+  }
+
+  public static func encapsulate(
     to publicKey: borrowing PublicKey
   ) throws(KEMError) -> EncapsulationResult<Encapsulation, SharedSecret> {
     try encapsulate(to: publicKey, using: SystemEntropySource())
@@ -270,7 +306,8 @@ public enum MLKEM768: InPlaceKeyEncapsulationMechanism {
       expandedPrivateKey = generated.privateKey
     }
     guard let expandedPublicKey, let expandedPrivateKey else {
-      preconditionFailure("successful ML-KEM key generation must produce expanded key material")
+      preconditionFailure(
+        "successful ML-KEM key generation must produce expanded key material")
     }
     let privateKey = PrivateKey(
       storage: privateStorage,

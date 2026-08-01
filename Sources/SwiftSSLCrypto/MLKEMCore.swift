@@ -188,8 +188,8 @@ enum MLKEMCore {
     hash256(Span(_mutableSpan: encapsulationKey), into: &hashOutput)
     copy(z, outputOffset: publicKeyEnd + 32, into: &decapsulationKey)
     let expandedPublicKey = MLKEMExpandedPublicKey(
-      copyingVector: publicVector,
-      matrix: matrix,
+      consumingVector: consume publicVector,
+      matrix: consume matrix,
       publicKeyHash: Span(_mutableSpan: decapsulationKey).extracting(
         publicKeyEnd..<(publicKeyEnd + 32)
       ),
@@ -250,8 +250,8 @@ enum MLKEMCore {
     )
     sampleMatrix(rho: rho, parameters: parameters, into: &matrix)
     return MLKEMExpandedPublicKey(
-      copyingVector: publicVector,
-      matrix: matrix,
+      consumingVector: consume publicVector,
+      matrix: consume matrix,
       publicKeyHash: publicKeyHash,
       dimension: parameters.dimension
     )
@@ -270,11 +270,14 @@ enum MLKEMCore {
     precondition(sharedSecret.count == 32)
 
     var secretSampler = KeccakX2Core(sensitivity: .secret)
-    let keyAndRandomness = try hash512Secret(
-      first: message,
-      second: expandedPublicKey.hashSpan,
-      using: &secretSampler
-    )
+    let keyAndRandomness = try expandedPublicKey.withHash {
+      publicKeyHash throws(KEMError) in
+      try hash512Secret(
+        first: message,
+        second: publicKeyHash,
+        using: &secretSampler
+      )
+    }
     try keyAndRandomness.withBorrowedBytes { expanded throws(KEMError) in
       let candidateKey = expanded.extracting(0..<32)
       let randomness = expanded.extracting(32..<64)
@@ -311,11 +314,13 @@ enum MLKEMCore {
       )
     }
     let candidate = try message.withBorrowedBytes { plaintext throws(KEMError) in
-      try hash512Secret(
-        first: plaintext,
-        second: expandedPublicKey.hashSpan,
-        using: &secretSampler
-      )
+      try expandedPublicKey.withHash { publicKeyHash throws(KEMError) in
+        try hash512Secret(
+          first: plaintext,
+          second: publicKeyHash,
+          using: &secretSampler
+        )
+      }
     }
     let fallback = try expandedPrivateKey.withRejectionValue {
       rejectionValue throws(KEMError) in

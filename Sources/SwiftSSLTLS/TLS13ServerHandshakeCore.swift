@@ -20,7 +20,8 @@ public struct TLS13ServerHandshakeCore:
     }
 
     private let random: OwnedBytes
-    private let ephemeralKey: X25519PrivateKey
+    private var keyExchange: TLS13ServerKeyExchangeState
+    private let keyExchangeEntropy: any EntropySource
     private let certificate: CertificateBytes
     private let signingKey: TLS13SigningKey
     private let verificationInstant: VerificationInstant
@@ -50,6 +51,98 @@ public struct TLS13ServerHandshakeCore:
         resumptionAgeAdd: UInt32? = nil,
         resumptionAgeToleranceMilliseconds: UInt32 = 10_000
     ) throws(TLS13HandshakeEngineError) {
+        try self.init(
+            random: random,
+            keyExchange: TLS13ServerKeyExchangeState(
+                x25519: TLS13X25519ServerKeyExchange(privateKey: ephemeralKey)
+            ),
+            keyExchangeEntropy: SystemEntropySource(),
+            certificateDER: certificateDER,
+            signingKey: signingKey,
+            verificationInstant: verificationInstant,
+            resumptionIdentity: resumptionIdentity,
+            resumptionPSK: resumptionPSK,
+            resumptionIssuedAt: resumptionIssuedAt,
+            resumptionLifetime: resumptionLifetime,
+            resumptionAgeAdd: resumptionAgeAdd,
+            resumptionAgeToleranceMilliseconds: resumptionAgeToleranceMilliseconds
+        )
+    }
+
+    public init(
+        random: Span<UInt8>,
+        keyExchange: consuming TLS13X25519ServerKeyExchange,
+        keyExchangeEntropy: consuming any EntropySource = SystemEntropySource(),
+        certificateDER: Span<UInt8>,
+        signingKey: consuming TLS13SigningKey,
+        verificationInstant: VerificationInstant,
+        resumptionIdentity: Span<UInt8>? = nil,
+        resumptionPSK: Span<UInt8>? = nil,
+        resumptionIssuedAt: VerificationInstant? = nil,
+        resumptionLifetime: UInt32? = nil,
+        resumptionAgeAdd: UInt32? = nil,
+        resumptionAgeToleranceMilliseconds: UInt32 = 10_000
+    ) throws(TLS13HandshakeEngineError) {
+        try self.init(
+            random: random,
+            keyExchange: TLS13ServerKeyExchangeState(x25519: keyExchange),
+            keyExchangeEntropy: keyExchangeEntropy,
+            certificateDER: certificateDER,
+            signingKey: signingKey,
+            verificationInstant: verificationInstant,
+            resumptionIdentity: resumptionIdentity,
+            resumptionPSK: resumptionPSK,
+            resumptionIssuedAt: resumptionIssuedAt,
+            resumptionLifetime: resumptionLifetime,
+            resumptionAgeAdd: resumptionAgeAdd,
+            resumptionAgeToleranceMilliseconds: resumptionAgeToleranceMilliseconds
+        )
+    }
+
+    public init(
+        random: Span<UInt8>,
+        keyExchange: consuming TLS13X25519MLKEM768ServerKeyExchange,
+        keyExchangeEntropy: consuming any EntropySource = SystemEntropySource(),
+        certificateDER: Span<UInt8>,
+        signingKey: consuming TLS13SigningKey,
+        verificationInstant: VerificationInstant,
+        resumptionIdentity: Span<UInt8>? = nil,
+        resumptionPSK: Span<UInt8>? = nil,
+        resumptionIssuedAt: VerificationInstant? = nil,
+        resumptionLifetime: UInt32? = nil,
+        resumptionAgeAdd: UInt32? = nil,
+        resumptionAgeToleranceMilliseconds: UInt32 = 10_000
+    ) throws(TLS13HandshakeEngineError) {
+        try self.init(
+            random: random,
+            keyExchange: TLS13ServerKeyExchangeState(x25519MLKEM768: keyExchange),
+            keyExchangeEntropy: keyExchangeEntropy,
+            certificateDER: certificateDER,
+            signingKey: signingKey,
+            verificationInstant: verificationInstant,
+            resumptionIdentity: resumptionIdentity,
+            resumptionPSK: resumptionPSK,
+            resumptionIssuedAt: resumptionIssuedAt,
+            resumptionLifetime: resumptionLifetime,
+            resumptionAgeAdd: resumptionAgeAdd,
+            resumptionAgeToleranceMilliseconds: resumptionAgeToleranceMilliseconds
+        )
+    }
+
+    private init(
+        random: Span<UInt8>,
+        keyExchange: consuming TLS13ServerKeyExchangeState,
+        keyExchangeEntropy: consuming any EntropySource,
+        certificateDER: Span<UInt8>,
+        signingKey: consuming TLS13SigningKey,
+        verificationInstant: VerificationInstant,
+        resumptionIdentity: Span<UInt8>?,
+        resumptionPSK: Span<UInt8>?,
+        resumptionIssuedAt: VerificationInstant?,
+        resumptionLifetime: UInt32?,
+        resumptionAgeAdd: UInt32?,
+        resumptionAgeToleranceMilliseconds: UInt32
+    ) throws(TLS13HandshakeEngineError) {
         guard random.count == 32 else { throw .invalidConfiguration }
         let parsed: X509Certificate
         do {
@@ -66,7 +159,8 @@ public struct TLS13ServerHandshakeCore:
         guard (resumptionIdentity == nil) == (resumptionPSK == nil) else {
             throw .invalidConfiguration
         }
-        let hasAgeMetadata = resumptionIssuedAt != nil
+        let hasAgeMetadata =
+            resumptionIssuedAt != nil
             && resumptionLifetime != nil
             && resumptionAgeAdd != nil
         guard (resumptionIdentity == nil) == !hasAgeMetadata else {
@@ -109,7 +203,8 @@ public struct TLS13ServerHandshakeCore:
             throw .handshake(error)
         }
         self.random = OwnedBytes(copying: random)
-        self.ephemeralKey = ephemeralKey
+        self.keyExchange = consume keyExchange
+        self.keyExchangeEntropy = keyExchangeEntropy
         self.certificate = CertificateBytes(copying: certificateDER)
         self.signingKey = signingKey
         self.verificationInstant = verificationInstant
@@ -159,7 +254,8 @@ public struct TLS13ServerHandshakeCore:
         for endpoint: TLSRole
     ) throws(TLS13HandshakeEngineError) -> TLS13TrafficSecret {
         guard case .established = phase,
-              var secrets = applicationSecrets.take() else {
+            var secrets = applicationSecrets.take()
+        else {
             throw .invalidState
         }
         do {
@@ -187,6 +283,13 @@ public struct TLS13ServerHandshakeCore:
         let clientHello = try engineTry {
             try TLS13HandshakeCodec.parseClientHello(encodedClientHello)
         }
+        guard clientHello.namedGroup == keyExchange.namedGroup else {
+            throw .keyExchange(
+                .unexpectedNamedGroup(
+                    expected: keyExchange.namedGroup,
+                    actual: clientHello.namedGroup
+                ))
+        }
         cipherSuite = clientHello.cipherSuite
         resumedHandshake = try acceptResumption(
             clientHello: clientHello,
@@ -194,28 +297,26 @@ public struct TLS13ServerHandshakeCore:
         )
         try appendTranscript(encodedClientHello)
 
-        let clientPublicKey: X25519PublicKey
+        let keyExchangeResult: TLS13ServerKeyExchangeResult
         do {
-            clientPublicKey = try X25519PublicKey(bytes: clientHello.keyShare.span)
-        } catch let error {
-            throw .crypto(error)
-        }
-        let sharedSecret: X25519SharedSecret
-        do {
-            sharedSecret = try X25519.sharedSecret(
-                privateKey: ephemeralKey,
-                peerPublicKey: clientPublicKey
+            keyExchangeResult = try keyExchange.accept(
+                clientShare: clientHello.keyShare.span,
+                using: keyExchangeEntropy
             )
         } catch let error {
-            throw .crypto(error)
+            throw .keyExchange(error)
         }
-        let serverHello = try engineTry {
-            try TLS13HandshakeCodec.makeServerHello(
+        let serverHello: OwnedBytes
+        do {
+            serverHello = try TLS13HandshakeCodec.makeServerHello(
                 random: random.span,
-                keyShare: ephemeralKey.publicKey().span,
+                namedGroup: keyExchange.namedGroup,
+                keyShare: keyExchangeResult.serverShare.span,
                 cipherSuite: cipherSuite,
                 selectedPreSharedKey: resumedHandshake
             )
+        } catch let error {
+            throw .handshake(error)
         }
         try appendTranscript(serverHello.span)
         let helloHash = try transcriptDigest()
@@ -237,13 +338,16 @@ public struct TLS13ServerHandshakeCore:
                 )
             }
         }
+        // Swift 6.4's move-only checker cannot lower a noncopyable
+        // TLS13HandshakeSecrets return directly from the SecretBytes borrow closure.
+        // Materialize only the 32/64-byte combined secret, then wipe it after HKDF.
         var sharedBytes = ContiguousArray<UInt8>()
         defer { wipe(&sharedBytes) }
-        sharedSecret.withBorrowedBytes { bytes in
-            sharedBytes.reserveCapacity(bytes.count)
+        keyExchangeResult.sharedSecret.withBorrowedBytes { shared in
+            sharedBytes.reserveCapacity(shared.count)
             var index = 0
-            while index < bytes.count {
-                sharedBytes.append(bytes[index])
+            while index < shared.count {
+                sharedBytes.append(shared[index])
                 index += 1
             }
         }
@@ -343,7 +447,8 @@ public struct TLS13ServerHandshakeCore:
         _ message: Span<UInt8>
     ) throws(TLS13HandshakeEngineError) -> TLS13HandshakeCoreOutput {
         guard !message.isEmpty,
-              message[0] == TLS13HandshakeCodec.finishedType else {
+            message[0] == TLS13HandshakeCodec.finishedType
+        else {
             throw .malformedInput
         }
         let finished = try engineTry {
@@ -376,10 +481,11 @@ public struct TLS13ServerHandshakeCore:
         encodedClientHello: Span<UInt8>
     ) throws(TLS13HandshakeEngineError) -> Bool {
         guard let configuredIdentity = resumptionIdentity,
-              resumptionPSK != nil,
-              let issuedAt = resumptionIssuedAt,
-              let lifetime = resumptionLifetime,
-              let ageAdd = resumptionAgeAdd else {
+            resumptionPSK != nil,
+            let issuedAt = resumptionIssuedAt,
+            let lifetime = resumptionLifetime,
+            let ageAdd = resumptionAgeAdd
+        else {
             return false
         }
         return try verifyCoreResumption(
@@ -476,7 +582,8 @@ public struct TLS13ServerHandshakeCore:
             switch error {
             case .byteRange(let byteError): throw .output(byteError)
             case .duplicateTrafficSecrets, .missingTrafficSecrets,
-                 .unreferencedTrafficSecrets: throw .invalidState
+                .unreferencedTrafficSecrets:
+                throw .invalidState
             }
         }
     }
@@ -494,29 +601,32 @@ private func verifyCoreResumption(
     toleranceMilliseconds: UInt32
 ) throws(TLS13HandshakeEngineError) -> Bool {
     guard let offered = clientHello.preSharedKey,
-          offered.identities.count == 1,
-          offered.binders.count == 1 else {
+        offered.identities.count == 1,
+        offered.binders.count == 1
+    else {
         return false
     }
     let identity = offered.identities[0]
     let offeredBinder = offered.binders[0].value
     guard ConstantTime.equal(identity.identity.span, configuredIdentity.span),
-          let expectedAge = expectedObfuscatedTicketAge(
-              at: verificationInstant,
-              issuedAt: issuedAt,
-              lifetime: lifetime,
-              ageAdd: ageAdd
-          ),
-          ticketAgeWithinTolerance(
-              offered: identity.obfuscatedTicketAge,
-              expected: expectedAge,
-              toleranceMilliseconds: toleranceMilliseconds
-          ) else {
+        let expectedAge = expectedObfuscatedTicketAge(
+            at: verificationInstant,
+            issuedAt: issuedAt,
+            lifetime: lifetime,
+            ageAdd: ageAdd
+        ),
+        ticketAgeWithinTolerance(
+            offered: identity.obfuscatedTicketAge,
+            expected: expectedAge,
+            toleranceMilliseconds: toleranceMilliseconds
+        )
+    else {
         return false
     }
     let canonical = try engineTry {
         try TLS13HandshakeCodec.makeClientHello(
             random: clientHello.random.span,
+            namedGroup: clientHello.namedGroup,
             keyShare: clientHello.keyShare.span,
             cipherSuite: clientHello.cipherSuite,
             preSharedKey: offered
@@ -549,6 +659,7 @@ private func verifyCoreResumption(
     let zeroHello = try engineTry {
         try TLS13HandshakeCodec.makeClientHello(
             random: clientHello.random.span,
+            namedGroup: clientHello.namedGroup,
             keyShare: clientHello.keyShare.span,
             cipherSuite: clientHello.cipherSuite,
             preSharedKey: zeroExtension

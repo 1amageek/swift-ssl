@@ -42,6 +42,60 @@ public struct QUICTLSServerHandshake: QUICTLSServerHandshaking, ~Copyable, Senda
         } catch let error {
             throw .handshake(error)
         }
+        return try make(
+            core: core,
+            maximumBufferedByteCount: maximumBufferedByteCount,
+            maximumMessageByteCount: maximumMessageByteCount
+        )
+    }
+
+    public static func make(
+        random: Span<UInt8>,
+        keyExchange: consuming TLS13X25519MLKEM768ServerKeyExchange,
+        keyExchangeEntropy: consuming any EntropySource = SystemEntropySource(),
+        certificateDER: Span<UInt8>,
+        signingKey: consuming TLS13SigningKey,
+        verificationInstant: VerificationInstant,
+        resumptionIdentity: Span<UInt8>? = nil,
+        resumptionPSK: Span<UInt8>? = nil,
+        resumptionIssuedAt: VerificationInstant? = nil,
+        resumptionLifetime: UInt32? = nil,
+        resumptionAgeAdd: UInt32? = nil,
+        resumptionAgeToleranceMilliseconds: UInt32 = 10_000,
+        maximumBufferedByteCount: Int = QUICCryptoStreamReassembler.defaultMaximumBufferedByteCount,
+        maximumMessageByteCount: Int = TLS13HandshakeMessageFramer.defaultMaximumMessageByteCount
+    ) throws(QUICTLSHandshakeError) -> Self {
+        let core: TLS13ServerHandshakeCore
+        do {
+            core = try TLS13ServerHandshakeCore(
+                random: random,
+                keyExchange: keyExchange,
+                keyExchangeEntropy: keyExchangeEntropy,
+                certificateDER: certificateDER,
+                signingKey: signingKey,
+                verificationInstant: verificationInstant,
+                resumptionIdentity: resumptionIdentity,
+                resumptionPSK: resumptionPSK,
+                resumptionIssuedAt: resumptionIssuedAt,
+                resumptionLifetime: resumptionLifetime,
+                resumptionAgeAdd: resumptionAgeAdd,
+                resumptionAgeToleranceMilliseconds: resumptionAgeToleranceMilliseconds
+            )
+        } catch let error {
+            throw .handshake(error)
+        }
+        return try make(
+            core: core,
+            maximumBufferedByteCount: maximumBufferedByteCount,
+            maximumMessageByteCount: maximumMessageByteCount
+        )
+    }
+
+    private static func make(
+        core: consuming TLS13ServerHandshakeCore,
+        maximumBufferedByteCount: Int,
+        maximumMessageByteCount: Int
+    ) throws(QUICTLSHandshakeError) -> Self {
         let initial = try makeStream(
             level: .initial,
             maximumBufferedByteCount: maximumBufferedByteCount,
@@ -52,7 +106,11 @@ public struct QUICTLSServerHandshake: QUICTLSServerHandshaking, ~Copyable, Senda
             maximumBufferedByteCount: maximumBufferedByteCount,
             maximumMessageByteCount: maximumMessageByteCount
         )
-        return Self(core: core, initialStream: initial, handshakeStream: handshake)
+        return Self(
+            core: consume core,
+            initialStream: initial,
+            handshakeStream: handshake
+        )
     }
 
     private init(

@@ -23,17 +23,21 @@ enum TLS13HandshakeWire {
                 }
                 let start = cursor.offset
                 let type = try cursor.readByte()
-                guard type == TLS13ContentType.handshake.rawValue
-                        || type == TLS13ContentType.applicationData.rawValue else {
+                guard
+                    type == TLS13ContentType.handshake.rawValue
+                        || type == TLS13ContentType.applicationData.rawValue
+                else {
                     throw TLS13HandshakeEngineError.malformedInput
                 }
                 guard try cursor.readByte() == 0x03,
-                      try cursor.readByte() == 0x03 else {
+                    try cursor.readByte() == 0x03
+                else {
                     throw TLS13HandshakeEngineError.malformedInput
                 }
                 let length = Int(try cursor.readUInt16BigEndian())
                 guard length <= TLS13RecordProtector.maximumCiphertextByteCount,
-                      length <= cursor.remainingCount else {
+                    length <= cursor.remainingCount
+                else {
                     throw TLS13HandshakeEngineError.malformedInput
                 }
                 _ = try cursor.readSpan(count: length)
@@ -87,7 +91,8 @@ enum TLS13HandshakeWire {
         record: Span<UInt8>
     ) throws(TLS13HandshakeEngineError) -> Span<UInt8> {
         guard record.count >= TLS13RecordProtector.recordHeaderByteCount,
-              record[0] == handshakeContentType else {
+            record[0] == handshakeContentType
+        else {
             throw .malformedInput
         }
         return record.extracting(
@@ -102,7 +107,8 @@ enum TLS13HandshakeWire {
         guard message.count <= TLS13RecordProtector.maximumPlaintextByteCount else {
             throw .record(.invalidContentLength(actual: message.count))
         }
-        output.reserveCapacity(output.count + TLS13RecordProtector.recordHeaderByteCount + message.count)
+        output.reserveCapacity(
+            output.count + TLS13RecordProtector.recordHeaderByteCount + message.count)
         output.append(handshakeContentType)
         output.append(0x03)
         output.append(0x03)
@@ -244,6 +250,7 @@ func mapHandshakeEngineError(_ error: any Error) -> TLS13HandshakeEngineError {
     if let error = error as? TLS13HandshakeError { return .handshake(error) }
     if let error = error as? TLS13RecordError { return .record(error) }
     if let error = error as? TLS13KeyScheduleError { return .keySchedule(error) }
+    if let error = error as? TLS13KeyExchangeError { return .keyExchange(error) }
     if let error = error as? CryptoInputError { return .crypto(error) }
     if let error = error as? X25519KeyGenerationError { return .x25519(error) }
     if let error = error as? X509CertificateError { return .certificate(error) }
@@ -268,7 +275,8 @@ func expectedObfuscatedTicketAge(
     let milliseconds = seconds.partialValue.multipliedReportingOverflow(by: 1_000)
     guard !milliseconds.overflow else { return nil }
     let nanoseconds = Int64(instant.nanoseconds) - Int64(issuedAt.nanoseconds)
-    let adjusted = nanoseconds < 0
+    let adjusted =
+        nanoseconds < 0
         ? milliseconds.partialValue - 1
         : milliseconds.partialValue
     guard adjusted >= 0 else { return nil }

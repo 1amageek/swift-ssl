@@ -23,7 +23,7 @@ public struct TLS13ServerHandshake: TLS13ServerHandshaking, ~Copyable, Sendable 
         resumptionAgeAdd: UInt32? = nil,
         resumptionAgeToleranceMilliseconds: UInt32 = 10_000
     ) throws(TLS13HandshakeEngineError) {
-        core = try TLS13ServerHandshakeCore(
+        let core = try TLS13ServerHandshakeCore(
             random: random,
             ephemeralKey: ephemeralKey,
             certificateDER: certificateDER,
@@ -36,6 +36,42 @@ public struct TLS13ServerHandshake: TLS13ServerHandshaking, ~Copyable, Sendable 
             resumptionAgeAdd: resumptionAgeAdd,
             resumptionAgeToleranceMilliseconds: resumptionAgeToleranceMilliseconds
         )
+        self.init(core: core)
+    }
+
+    public init(
+        random: Span<UInt8>,
+        keyExchange: consuming TLS13X25519MLKEM768ServerKeyExchange,
+        keyExchangeEntropy: consuming any EntropySource = SystemEntropySource(),
+        certificateDER: Span<UInt8>,
+        signingKey: consuming TLS13SigningKey,
+        verificationInstant: VerificationInstant,
+        resumptionIdentity: Span<UInt8>? = nil,
+        resumptionPSK: Span<UInt8>? = nil,
+        resumptionIssuedAt: VerificationInstant? = nil,
+        resumptionLifetime: UInt32? = nil,
+        resumptionAgeAdd: UInt32? = nil,
+        resumptionAgeToleranceMilliseconds: UInt32 = 10_000
+    ) throws(TLS13HandshakeEngineError) {
+        let core = try TLS13ServerHandshakeCore(
+            random: random,
+            keyExchange: keyExchange,
+            keyExchangeEntropy: keyExchangeEntropy,
+            certificateDER: certificateDER,
+            signingKey: signingKey,
+            verificationInstant: verificationInstant,
+            resumptionIdentity: resumptionIdentity,
+            resumptionPSK: resumptionPSK,
+            resumptionIssuedAt: resumptionIssuedAt,
+            resumptionLifetime: resumptionLifetime,
+            resumptionAgeAdd: resumptionAgeAdd,
+            resumptionAgeToleranceMilliseconds: resumptionAgeToleranceMilliseconds
+        )
+        self.init(core: core)
+    }
+
+    private init(core: consuming TLS13ServerHandshakeCore) {
+        self.core = core
         handshakeRead = nil
         handshakeWrite = nil
         applicationRead = nil
@@ -226,7 +262,8 @@ public struct TLS13ServerHandshake: TLS13ServerHandshaking, ~Copyable, Sendable 
     ) throws(TLS13HandshakeEngineError) -> OwnedBytes {
         let ranges = try TLS13HandshakeWire.recordRanges(input)
         guard ranges.count == 1,
-              var protector = applicationRead.take() else {
+            var protector = applicationRead.take()
+        else {
             throw .malformedInput
         }
         do {
@@ -247,7 +284,8 @@ public struct TLS13ServerHandshake: TLS13ServerHandshaking, ~Copyable, Sendable 
     ) throws(TLS13HandshakeEngineError) -> OwnedBytes {
         let ranges = try TLS13HandshakeWire.recordRanges(input)
         guard ranges.count == 1,
-              var protector = applicationRead.take() else {
+            var protector = applicationRead.take()
+        else {
             throw .malformedInput
         }
         do {

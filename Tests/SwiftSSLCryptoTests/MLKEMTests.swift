@@ -209,6 +209,76 @@ final class MLKEMTests: XCTestCase {
     XCTAssertEqual(recovered, sharedSecret)
   }
 
+  func testMLKEM768EncodedPublicKeyInPlaceRoundTrip() throws {
+    let pair = try MLKEM768.keyPair(
+      d: ContiguousArray<UInt8>(repeating: 0x21, count: 32).span,
+      z: ContiguousArray<UInt8>(repeating: 0x32, count: 32).span
+    )
+    var encapsulation = ContiguousArray<UInt8>(
+      repeating: 0xA5,
+      count: MLKEM768.encapsulationByteCount
+    )
+    var sharedSecret = ContiguousArray<UInt8>(
+      repeating: 0x5A,
+      count: MLKEM768.sharedSecretByteCount
+    )
+    var encapsulationOutput = encapsulation.mutableSpan
+    var sharedSecretOutput = sharedSecret.mutableSpan
+    try MLKEM768.encapsulate(
+      toEncodedPublicKey: pair.publicKey.span,
+      using: FixedEntropy(bytes: ContiguousArray(repeating: 0x43, count: 32)),
+      into: &encapsulationOutput,
+      sharedSecret: &sharedSecretOutput
+    )
+
+    var recovered = ContiguousArray<UInt8>(repeating: 0, count: 32)
+    var recoveredOutput = recovered.mutableSpan
+    try MLKEM768.decapsulate(
+      encapsulation.span,
+      using: pair.privateKey,
+      into: &recoveredOutput
+    )
+    XCTAssertEqual(recovered, sharedSecret)
+  }
+
+  func testMLKEM1024EncodedPublicKeyRejectsInvalidLengthWithoutMutation() throws {
+    let shortPublicKey = ContiguousArray<UInt8>(
+      repeating: 0,
+      count: MLKEM1024.PublicKey.byteCount - 1
+    )
+    var encapsulation = ContiguousArray<UInt8>(
+      repeating: 0xA5,
+      count: MLKEM1024.encapsulationByteCount
+    )
+    var sharedSecret = ContiguousArray<UInt8>(
+      repeating: 0x5A,
+      count: MLKEM1024.sharedSecretByteCount
+    )
+    let originalEncapsulation = encapsulation
+    let originalSharedSecret = sharedSecret
+    do {
+      var encapsulationOutput = encapsulation.mutableSpan
+      var sharedSecretOutput = sharedSecret.mutableSpan
+      try MLKEM1024.encapsulate(
+        toEncodedPublicKey: shortPublicKey.span,
+        using: FixedEntropy(bytes: ContiguousArray(repeating: 0x63, count: 32)),
+        into: &encapsulationOutput,
+        sharedSecret: &sharedSecretOutput
+      )
+      XCTFail("encoded-key encapsulation accepted a short public key")
+    } catch {
+      XCTAssertEqual(
+        error,
+        .invalidPublicKeyLength(
+          expected: MLKEM1024.PublicKey.byteCount,
+          actual: MLKEM1024.PublicKey.byteCount - 1
+        )
+      )
+    }
+    XCTAssertEqual(encapsulation, originalEncapsulation)
+    XCTAssertEqual(sharedSecret, originalSharedSecret)
+  }
+
   func testMLKEMInPlaceLengthFailuresDoNotModifyOutputs() throws {
     let pair = try MLKEM768.keyPair(
       d: ContiguousArray<UInt8>(repeating: 0x11, count: 32).span,

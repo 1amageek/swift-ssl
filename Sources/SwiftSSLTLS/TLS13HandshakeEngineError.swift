@@ -9,6 +9,7 @@ public enum TLS13HandshakeEngineError: Error, Sendable, Equatable {
     case handshake(TLS13HandshakeError)
     case record(TLS13RecordError)
     case keySchedule(TLS13KeyScheduleError)
+    case keyExchange(TLS13KeyExchangeError)
     case crypto(CryptoInputError)
     case x25519(X25519KeyGenerationError)
     case certificate(X509CertificateError)

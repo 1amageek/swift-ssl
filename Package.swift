@@ -9,6 +9,7 @@ let ownershipSettings: [SwiftSetting] = [
   .enableExperimentalFeature("InoutLifetimeDependence"),
   .enableExperimentalFeature("LifetimeDependenceMutableAccessors"),
   .enableExperimentalFeature("Lifetimes"),
+  .enableExperimentalFeature("Extern"),
 ]
 
 var nistValidationSettings = ownershipSettings
@@ -40,6 +41,10 @@ var products: [Product] = [
   .executable(
     name: "swift-ssl-target-validation",
     targets: ["SwiftSSLTargetValidation"]
+  ),
+  .executable(
+    name: "swift-ssl-hybrid-target-validation",
+    targets: ["SwiftSSLHybridTargetValidation"]
   ),
   .executable(
     name: "swift-ssl-facade-validation",
@@ -103,6 +108,12 @@ var targets: [Target] = [
       "SwiftSSLQUIC",
     ],
     path: "Validation/Targets/TargetValidation",
+    swiftSettings: ownershipSettings
+  ),
+  .executableTarget(
+    name: "SwiftSSLHybridTargetValidation",
+    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLTLS"],
+    path: "Validation/Targets/HybridTargetValidation",
     swiftSettings: ownershipSettings
   ),
   .executableTarget(
@@ -176,6 +187,20 @@ if ProcessInfo.processInfo.environment["SWIFT_SSL_ENABLE_BENCHMARKS"] == "1" {
       name: "SwiftSSLMLKEMBenchmark",
       dependencies: ["SwiftSSL"],
       path: "Benchmarks/MLKEM/SwiftWorker",
+      swiftSettings: ownershipSettings
+    )
+  )
+  products.append(
+    .executable(
+      name: "swift-ssl-tls-hybrid-benchmark",
+      targets: ["SwiftSSLTLSHybridBenchmark"]
+    )
+  )
+  targets.append(
+    .executableTarget(
+      name: "SwiftSSLTLSHybridBenchmark",
+      dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLTLS"],
+      path: "Benchmarks/TLSHybrid/SwiftWorker",
       swiftSettings: ownershipSettings
     )
   )

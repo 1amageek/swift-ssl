@@ -1,0 +1,12 @@
+import SwiftSSLCore
+import SwiftSSLCrypto
+
+public enum TLS13KeyExchangeError: Error, Sendable, Equatable {
+    case invalidState
+    case unexpectedNamedGroup(expected: TLS13NamedGroup, actual: TLS13NamedGroup)
+    case invalidShareLength(expected: Int, actual: Int)
+    case kem(KEMError)
+    case crypto(CryptoInputError)
+    case x25519KeyGeneration(X25519KeyGenerationError)
+    case secretMemory(SecretMemoryError)
+}
