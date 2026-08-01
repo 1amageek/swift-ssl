@@ -9,7 +9,7 @@ public struct SHA3_512Context: ~Copyable, HashContext {
         core = KeccakCore(rateByteCount: 72, domainSeparator: 0x06)
     }
 
-    private init(core: KeccakCore) {
+    private init(core: consuming KeccakCore) {
         self.core = core
     }
 
@@ -17,16 +17,30 @@ public struct SHA3_512Context: ~Copyable, HashContext {
         try core.update(input)
     }
 
+    package mutating func update(byte: UInt8) throws(CryptoInputError) {
+        try core.update(byte: byte)
+    }
+
     public borrowing func clone() -> SHA3_512Context {
-        SHA3_512Context(core: core)
+        SHA3_512Context(core: core.clone())
     }
 
     public consuming func finalize(
+        into output: inout MutableSpan<UInt8>
+    ) throws(CryptoInputError) {
+        try finalizeInPlace(into: &output)
+    }
+
+    package mutating func finalizeInPlace(
         into output: inout MutableSpan<UInt8>
     ) throws(CryptoInputError) {
         guard output.count == Self.digestByteCount else {
             throw .invalidOutputLength(expected: Self.digestByteCount, actual: output.count)
         }
         core.finalize(into: &output)
+    }
+
+    package mutating func eraseSensitiveState() {
+        core.erase()
     }
 }

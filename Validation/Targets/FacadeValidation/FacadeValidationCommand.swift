@@ -12,6 +12,7 @@ enum FacadeValidationCommand {
     case ed25519
     case p256
     case p256ECDSA
+    case mlKEM
     case errorContract
   }
 
@@ -24,8 +25,100 @@ enum FacadeValidationCommand {
     try validateHKDFSHA256()
     try validateEd25519()
     try validateP256()
+    try validateMLKEM()
     try validateFailureContracts()
     print("swift-ssl facade validation: ok")
+  }
+
+  private static func validateMLKEM() throws {
+    let keyEntropy = FixedEntropy(byte: 0x31)
+    let pair = try MLKEM768.generateKeyPair(using: keyEntropy)
+    let encapsulationEntropy = FixedEntropy(byte: 0x73)
+    let encapsulated = try MLKEM768.encapsulate(
+      to: pair.publicKey,
+      using: encapsulationEntropy
+    )
+    let expected = encapsulated.sharedSecret.withBorrowedBytes { bytes in
+      copy(bytes)
+    }
+    let recovered = try MLKEM768.decapsulate(
+      encapsulated.encapsulation,
+      using: pair.privateKey
+    )
+    guard recovered.withBorrowedBytes({ copy($0) }) == expected else {
+      throw Failure.mlKEM
+    }
+
+    var inPlaceEncapsulation = ContiguousArray<UInt8>(
+      repeating: 0xA5,
+      count: MLKEM768.encapsulationByteCount
+    )
+    var inPlaceSharedSecret = ContiguousArray<UInt8>(
+      repeating: 0xA5,
+      count: MLKEM768.sharedSecretByteCount
+    )
+    var encapsulationOutput = inPlaceEncapsulation.mutableSpan
+    var sharedSecretOutput = inPlaceSharedSecret.mutableSpan
+    try MLKEM768.encapsulate(
+      to: pair.publicKey,
+      using: encapsulationEntropy,
+      into: &encapsulationOutput,
+      sharedSecret: &sharedSecretOutput
+    )
+    guard
+      inPlaceEncapsulation == copy(encapsulated.encapsulation.span),
+      inPlaceSharedSecret == expected
+    else {
+      throw Failure.mlKEM
+    }
+
+    var inPlaceRecovered = ContiguousArray<UInt8>(
+      repeating: 0x5A,
+      count: MLKEM768.sharedSecretByteCount
+    )
+    var recoveredOutput = inPlaceRecovered.mutableSpan
+    try MLKEM768.decapsulate(
+      inPlaceEncapsulation.span,
+      using: pair.privateKey,
+      into: &recoveredOutput
+    )
+    guard inPlaceRecovered == expected else {
+      throw Failure.mlKEM
+    }
+
+    var shortEncapsulation = ContiguousArray<UInt8>(
+      repeating: 0xC3,
+      count: MLKEM768.encapsulationByteCount - 1
+    )
+    var untouchedSharedSecret = ContiguousArray<UInt8>(
+      repeating: 0x3C,
+      count: MLKEM768.sharedSecretByteCount
+    )
+    let originalShortEncapsulation = shortEncapsulation
+    let originalSharedSecret = untouchedSharedSecret
+    var observedError: KEMError?
+    do {
+      var shortOutput = shortEncapsulation.mutableSpan
+      var secretOutput = untouchedSharedSecret.mutableSpan
+      try MLKEM768.encapsulate(
+        to: pair.publicKey,
+        using: encapsulationEntropy,
+        into: &shortOutput,
+        sharedSecret: &secretOutput
+      )
+    } catch {
+      observedError = error
+    }
+    guard
+      observedError == .invalidEncapsulationLength(
+        expected: MLKEM768.encapsulationByteCount,
+        actual: MLKEM768.encapsulationByteCount - 1
+      ),
+      shortEncapsulation == originalShortEncapsulation,
+      untouchedSharedSecret == originalSharedSecret
+    else {
+      throw Failure.errorContract
+    }
   }
 
   private static func validateAESGCM() throws {
@@ -460,6 +553,18 @@ enum FacadeValidationCommand {
       index += 1
     }
     return result
+  }
+
+  private struct FixedEntropy: EntropySource {
+    let byte: UInt8
+
+    func fill(_ destination: inout MutableSpan<UInt8>) throws(EntropyError) {
+      var index = 0
+      while index < destination.count {
+        destination[index] = byte
+        index += 1
+      }
+    }
   }
 
   private static func requireHashContext<Context: ~Copyable & HashContext>(

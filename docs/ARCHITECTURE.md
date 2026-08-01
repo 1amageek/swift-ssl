@@ -18,12 +18,12 @@ The current package graph is:
 ```mermaid
 flowchart TD
     Core["SwiftSSLCore\nbytes, ownership, limits, capabilities"]
-    Crypto["SwiftSSLCrypto\nSHA-2, HMAC/HKDF, AEAD, X25519, DRBG, and primitive contracts"]
+    Crypto["SwiftSSLCrypto\nSHA-2/3, HMAC/HKDF, AEAD, X25519, ML-KEM, DRBG, and primitive contracts"]
     ASN1["SwiftSSLASN1\nstrict DER foundation"]
     X509["SwiftSSLX509\ncertificate-byte models"]
     TLS["SwiftSSLTLS\nTLS 1.3 engines, records, and actions"]
     QUIC["SwiftSSLQUIC\nordered QUIC TLS output models"]
-    Facade["SwiftSSL\ncurated symmetric and X25519 surface"]
+    Facade["SwiftSSL\ncurated crypto and ML-KEM surface"]
 
     Core --> Crypto
     Core --> ASN1
@@ -39,7 +39,7 @@ flowchart TD
     Crypto --> Facade
 ```
 
-Dependencies flow downward only. The façade currently exposes curated SHA-256, HMAC-SHA-256, HKDF-SHA-256, and X25519 entry points and does not re-export lower modules. As application-facing TLS composition is implemented, the façade may gain explicit dependencies without turning into a blanket module export.
+Dependencies flow downward only. The façade exposes curated symmetric, hash, MAC, KDF, X25519, Ed25519, ML-KEM, and verification-only P-256 entry points and does not re-export lower modules. As application-facing TLS composition is implemented, the façade may gain explicit dependencies without turning into a blanket module export.
 
 Entropy and clock interfaces live in `SwiftSSLCore`. Concrete platform adapters are intentionally absent until they have real implementations and target-specific verification. They are composed by purpose—entropy for cryptographic operations, wall time for certificate verification, and monotonic time for DTLS—rather than through one all-capabilities container. Cryptographic and protocol modules never import platform implementations.
 
@@ -54,7 +54,7 @@ Entropy and clock interfaces live in `SwiftSSLCore`. Concrete platform adapters 
 | `SwiftSSLTLS` | TLS 1.3 handshake and record layers, DTLS 1.3 framing/replay/flight state, transcript/key schedule, ticket/state/PSK binder primitives, resumption, 0-RTT policy, ECH, alerts, explicit capability suspension | Socket I/O, event loops, DNS, persistent stores, private-key services, QUIC packet protection; the current handshake engine is intentionally limited to the pinned X25519/Ed25519 credential profile and full-handshake path while supporting all three TLS 1.3 AEAD suites |
 | `SwiftSSLQUIC` | Mapping TLS handshake bytes, encryption levels, alerts, and traffic-secret events to RFC 9001 | CRYPTO reassembly, QUIC packets, header protection, loss recovery, congestion control, QUIC key phase |
 | Platform adapters (future product) | Concrete entropy, clocks, persistence adapters, and diagnostics, each added only with real target verification | Boolean capability claims, protocol semantics, or target-specific weakening of ownership/concurrency contracts |
-| `SwiftSSL` | Curated compositions and stable user entry points; currently explicit SHA-256, HMAC-SHA-256, HKDF-SHA-256, and X25519 protocol adapters | Blanket module re-export, duplicate implementation, or hidden fallback |
+| `SwiftSSL` | Curated compositions and stable user entry points for the implemented symmetric, hash, MAC, KDF, X25519, Ed25519, ML-KEM, and verification-only P-256 capabilities | Blanket module re-export, duplicate implementation, or hidden fallback |
 
 ## 4. Ownership and zero-copy model
 

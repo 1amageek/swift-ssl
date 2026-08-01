@@ -7,7 +7,7 @@ public struct SHAKE128Context: ~Copyable, ExtendableOutputFunctionContext {
         core = KeccakCore(rateByteCount: 168, domainSeparator: 0x1F)
     }
 
-    private init(core: KeccakCore) {
+    private init(core: consuming KeccakCore) {
         self.core = core
     }
 
@@ -16,7 +16,7 @@ public struct SHAKE128Context: ~Copyable, ExtendableOutputFunctionContext {
     }
 
     public borrowing func clone() -> SHAKE128Context {
-        SHAKE128Context(core: core)
+        SHAKE128Context(core: core.clone())
     }
 
     public consuming func finalize(

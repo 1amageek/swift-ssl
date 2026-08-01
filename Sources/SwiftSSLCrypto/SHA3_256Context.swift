@@ -9,7 +9,7 @@ public struct SHA3_256Context: ~Copyable, HashContext {
         core = KeccakCore(rateByteCount: 136, domainSeparator: 0x06)
     }
 
-    private init(core: KeccakCore) {
+    private init(core: consuming KeccakCore) {
         self.core = core
     }
 
@@ -18,7 +18,7 @@ public struct SHA3_256Context: ~Copyable, HashContext {
     }
 
     public borrowing func clone() -> SHA3_256Context {
-        SHA3_256Context(core: core)
+        SHA3_256Context(core: core.clone())
     }
 
     public consuming func finalize(

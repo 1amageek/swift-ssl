@@ -193,6 +193,16 @@ def reachable_functions(
                 called = called_symbol(line)
                 if called in by_name and called not in visited_symbols:
                     pending.append(called)
+                for reference in re.finditer(
+                    r'@(?:"([^"]+)"|([-.$A-Za-z0-9_]+))',
+                    line,
+                ):
+                    referenced = reference.group(1) or reference.group(2)
+                    if (
+                        referenced in by_name
+                        and referenced not in visited_symbols
+                    ):
+                        pending.append(referenced)
     return tuple(reachable)
 
 
@@ -3384,7 +3394,7 @@ def comparison_result(
 ) -> str | None:
     for result, expression in assignments.items():
         match = re.fullmatch(
-            rf"icmp {predicate} i(?:32|64) "
+            rf"icmp(?:\s+samesign)? {predicate}(?:\s+\w+)* i(?:32|64) "
             rf"({SSA}|-?\d+),\s*({SSA}|-?\d+)",
             expression,
         )
@@ -3851,6 +3861,19 @@ def verify_unrolled_wipe_loop(
         effective_count,
         "-8",
     )
+    if chunk_end is None:
+        count_width = integer_width(function, assignments, effective_count)
+        nonnegative_chunk_mask = {
+            32: "2147483640",
+            64: "9223372036854775800",
+        }.get(count_width)
+        if nonnegative_chunk_mask is not None:
+            chunk_end = binary_result(
+                assignments,
+                "and",
+                effective_count,
+                nonnegative_chunk_mask,
+            )
     if remainder is None or chunk_end is None:
         return False
 
@@ -4068,27 +4091,8 @@ def verify_unrolled_wipe_loop(
     if not start_incomings:
         return False
     start_values = {value for value, _ in start_incomings}
-    if start_values != {"0", address_next}:
+    if start_values not in ({"0", address_next}, {"0", chunk_end}):
         return False
-
-    remainder_is_zero = comparison_result(
-        assignments,
-        "eq",
-        remainder,
-        "0",
-    )
-    remainder_branch = (
-        branch_for_condition(function, remainder_is_zero)
-        if remainder_is_zero
-        else None
-    )
-    if (
-        remainder_branch is None
-        or remainder_branch[2] != epilogue
-        or remainder_branch[1] == epilogue
-    ):
-        return False
-    remainder_block = remainder_branch[0]
 
     small_count = comparison_result(
         assignments,
@@ -4096,37 +4100,69 @@ def verify_unrolled_wipe_loop(
         effective_count,
         "8",
     )
-    small_branch = (
-        branch_for_condition(function, small_count)
-        if small_count
-        else None
-    )
-    if small_branch is None:
-        return False
-    small_block, small_path, large_path = small_branch
+    if small_count is not None:
+        small_branch = branch_for_condition(function, small_count)
+        if small_branch is None:
+            return False
+        small_block, small_path, large_path = small_branch
+    else:
+        large_count = comparison_result(
+            assignments,
+            "ugt",
+            effective_count,
+            "7",
+        )
+        large_branch = (
+            branch_for_condition(function, large_count)
+            if large_count
+            else None
+        )
+        if large_branch is None:
+            return False
+        small_block, large_path, small_path = large_branch
     if not all_paths_reach_block(
         function,
         positive_successor,
         small_block,
     ):
         return False
-    if not all_paths_reach_block(function, small_path, remainder_block):
-        return False
     if not all_paths_reach_block(function, large_path, main):
-        return False
-    if not all_paths_reach_block(
-        function,
-        main_completed,
-        remainder_block,
-    ):
         return False
     if main in reachable_blocks(function, small_path):
         return False
     if main not in reachable_blocks(function, large_path):
         return False
-    for completion in (remainder_branch[1], epilogue_completed):
-        if not all_paths_return_without_effects(function, completion):
-            return False
+
+    remainder_dispatches = []
+    for result, expression in assignments.items():
+        match = re.fullmatch(
+            rf"icmp eq(?:\s+\w+)* i(?:32|64) "
+            rf"({SSA}|-?\d+),\s*({SSA}|-?\d+)",
+            expression,
+        )
+        if match is None or set(match.groups()) != {remainder, "0"}:
+            continue
+        branch = branch_for_condition(function, result)
+        if branch is not None:
+            remainder_dispatches.append(branch)
+
+    def validates_remainder_dispatch(start: str) -> bool:
+        for block, completed, continued in remainder_dispatches:
+            if not all_paths_reach_block(function, start, block):
+                continue
+            if not all_paths_return_without_effects(function, completed):
+                continue
+            if not all_paths_reach_block(function, continued, epilogue):
+                continue
+            return True
+        return False
+
+    if not validates_remainder_dispatch(small_path):
+        return False
+    if not validates_remainder_dispatch(main_completed):
+        return False
+    if not all_paths_return_without_effects(function, epilogue_completed):
+        return False
     return True
 
 
@@ -4154,7 +4190,7 @@ def verify_direct_secure_wipe_body(function: Function) -> None:
         symbol = called_symbol(line)
         if symbol is not None and symbol != "llvm.trap":
             raise VerificationError(
-                f"{function.name}: SecureWipe calls an unverified function"
+                f"{function.name}: SecureWipe calls an unverified function: {symbol}"
             )
         parsed = assignment(line)
         if parsed is not None:
@@ -4171,7 +4207,7 @@ def verify_direct_secure_wipe_body(function: Function) -> None:
             ):
                 raise VerificationError(
                     f"{function.name}: SecureWipe contains an "
-                    "unverified assignment"
+                    f"unverified assignment: {expression}"
                 )
             continue
         if re.match(r"\s*store\b", line):
@@ -4662,6 +4698,44 @@ def _raises(operation) -> bool:
 
 
 def run_self_tests() -> None:
+    callback = Function(
+        "callback",
+        'define void @"callback"() {',
+        ("entry:", "  ret void"),
+    )
+    shared_thunk = Function(
+        "shared-thunk",
+        'define void @"shared-thunk"(ptr %callback) {',
+        ("entry:", "  ret void"),
+    )
+    thunk_root = Function(
+        "thunk-root",
+        'define void @"thunk-root"() {',
+        (
+            "entry:",
+            (
+                '  call void @"shared-thunk"('
+                'ptr @"callback")'
+            ),
+            "  ret void",
+        ),
+    )
+    reachable_through_callback = {
+        function.name
+        for function in reachable_functions(
+            (thunk_root, shared_thunk, callback),
+            (thunk_root,),
+        )
+    }
+    if reachable_through_callback != {
+        "thunk-root",
+        "shared-thunk",
+        "callback",
+    }:
+        raise VerificationError(
+            "Self-test failed to follow a referenced function argument"
+        )
+
     duplicate_deinit = Function(
         "duplicate",
         "",
@@ -5931,6 +6005,131 @@ def run_self_tests() -> None:
         raise VerificationError(
             "Self-test rejected an exact unrolled wipe loop"
         )
+
+    optimized_unrolled_wipe_lines = (
+        "entry:",
+        "  %negative = icmp slt i64 %1, 0",
+        "  br i1 %negative, label %trap, label %nonnegative",
+        "nonnegative:",
+        "  %zero = icmp eq i64 %1, 0",
+        "  br i1 %zero, label %exit, label %dispatch",
+        "dispatch:",
+        "  %chunk.end = and i64 %1, 9223372036854775800",
+        "  %remainder = and i64 %1, 7",
+        "  %large = icmp samesign ugt i64 %1, 7",
+        "  br i1 %large, label %main, label %small.dispatch",
+        "main:",
+        "  %index = phi i64 [ %index.next, %main ], [ 0, %dispatch ]",
+        "  %address.0 = getelementptr inbounds nuw i8, ptr %0, i64 %index",
+        "  store atomic volatile i8 0, ptr %address.0 monotonic, align 1",
+        "  %address.1 = getelementptr i8, ptr %address.0, i64 1",
+        "  store atomic volatile i8 0, ptr %address.1 monotonic, align 1",
+        "  %address.2 = getelementptr i8, ptr %address.0, i64 2",
+        "  store atomic volatile i8 0, ptr %address.2 monotonic, align 1",
+        "  %address.3 = getelementptr i8, ptr %address.0, i64 3",
+        "  store atomic volatile i8 0, ptr %address.3 monotonic, align 1",
+        "  %address.4 = getelementptr i8, ptr %address.0, i64 4",
+        "  store atomic volatile i8 0, ptr %address.4 monotonic, align 1",
+        "  %address.5 = getelementptr i8, ptr %address.0, i64 5",
+        "  store atomic volatile i8 0, ptr %address.5 monotonic, align 1",
+        "  %address.6 = getelementptr i8, ptr %address.0, i64 6",
+        "  store atomic volatile i8 0, ptr %address.6 monotonic, align 1",
+        "  %address.7 = getelementptr i8, ptr %address.0, i64 7",
+        "  store atomic volatile i8 0, ptr %address.7 monotonic, align 1",
+        "  %index.next = add nuw nsw i64 %index, 8",
+        "  %main.done = icmp eq i64 %index.next, %chunk.end",
+        "  br i1 %main.done, label %main.dispatch, label %main",
+        "small.dispatch:",
+        "  %small.empty = icmp eq i64 %remainder, 0",
+        "  br i1 %small.empty, label %exit, label %tail.setup",
+        "main.dispatch:",
+        "  %main.empty = icmp eq i64 %remainder, 0",
+        "  br i1 %main.empty, label %exit, label %tail.setup",
+        "tail.setup:",
+        (
+            "  %tail.start = phi i64 "
+            "[ 0, %small.dispatch ], [ %chunk.end, %main.dispatch ]"
+        ),
+        "  br label %tail",
+        "tail:",
+        "  %tail.counter = phi i64 [ %tail.counter.next, %tail ], [ 0, %tail.setup ]",
+        "  %tail.index = phi i64 [ %tail.index.next, %tail ], [ %tail.start, %tail.setup ]",
+        "  %tail.address = getelementptr inbounds i8, ptr %0, i64 %tail.index",
+        "  store atomic volatile i8 0, ptr %tail.address monotonic, align 1",
+        "  %tail.index.next = add i64 %tail.index, 1",
+        "  %tail.counter.next = add i64 %tail.counter, 1",
+        "  %tail.done = icmp eq i64 %tail.counter.next, %remainder",
+        "  br i1 %tail.done, label %exit, label %tail",
+        "exit:",
+        "  ret void",
+        "trap:",
+        "  call void @llvm.trap()",
+        "  unreachable",
+    )
+
+    def optimized_unrolled_wipe_fixture(
+        name: str,
+        replacements: tuple[tuple[str, str], ...] = (),
+    ) -> Function:
+        replacement_map = dict(replacements)
+        return Function(
+            name,
+            f'define swiftcc void @"{name}"(ptr %0, i64 %1) {{',
+            tuple(
+                replacement_map.get(line, line)
+                for line in optimized_unrolled_wipe_lines
+            ),
+        )
+
+    optimized_unrolled_wipe = optimized_unrolled_wipe_fixture(
+        "optimized-unrolled-wipe"
+    )
+    if _raises(
+        lambda: verify_direct_secure_wipe_body(optimized_unrolled_wipe)
+    ):
+        raise VerificationError(
+            "Self-test rejected the optimized unrolled wipe CFG"
+        )
+
+    for invalid_unrolled, reason in (
+        (
+            optimized_unrolled_wipe_fixture(
+                "optimized-wrong-chunk-mask",
+                ((
+                    "  %chunk.end = and i64 %1, 9223372036854775800",
+                    "  %chunk.end = and i64 %1, 9223372036854775792",
+                ),),
+            ),
+            "wrong nonnegative chunk mask",
+        ),
+        (
+            optimized_unrolled_wipe_fixture(
+                "optimized-reversed-large-guard",
+                ((
+                    "  %large = icmp samesign ugt i64 %1, 7",
+                    "  %large = icmp samesign ugt i64 7, %1",
+                ),),
+            ),
+            "reversed samesign large-count guard",
+        ),
+        (
+            optimized_unrolled_wipe_fixture(
+                "optimized-small-tail-bypass",
+                ((
+                    "  br i1 %small.empty, label %exit, label %tail.setup",
+                    "  br i1 %small.empty, label %exit, label %exit",
+                ),),
+            ),
+            "small-count tail bypass",
+        ),
+    ):
+        if not _raises(
+            lambda invalid_unrolled=invalid_unrolled:
+                verify_direct_secure_wipe_body(invalid_unrolled)
+        ):
+            raise VerificationError(
+                f"Self-test accepted optimized unrolled wipe {reason}"
+            )
 
     unrolled_width_replacements = (
         (

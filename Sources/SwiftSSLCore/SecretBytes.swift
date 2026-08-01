@@ -35,6 +35,36 @@ public struct SecretBytes: ~Copyable {
         count = byteCount.value
     }
 
+    // Unsafe boundary invariants:
+    // - This value is the unique owner of an initialized byteCount-byte allocation.
+    // - entropy is borrowed only while synchronously filling the allocation.
+    // - The mutable span and its pointer cannot escape EntropySource.fill.
+    // - Failure erases and releases the allocation before propagating the typed error.
+    // - Success transfers exactly-once erase and deallocation responsibility to deinit.
+    public init(
+        randomByteCount byteCount: SecretByteCount,
+        using entropy: borrowing any EntropySource
+    ) throws(EntropyError) {
+        let pointer = UnsafeMutablePointer<UInt8>.allocate(capacity: byteCount.value)
+        pointer.initialize(repeating: 0, count: byteCount.value)
+
+        do {
+            var span = MutableSpan(_unsafeStart: pointer, count: byteCount.value)
+            try entropy.fill(&span)
+        } catch {
+            SecureWipe.erase(
+                UnsafeMutableRawPointer(pointer),
+                byteCount: byteCount.value
+            )
+            pointer.deinitialize(count: byteCount.value)
+            pointer.deallocate()
+            throw error
+        }
+
+        self.pointer = pointer
+        count = byteCount.value
+    }
+
     public init(copying bytes: Span<UInt8>) throws(SecretMemoryError) {
         let byteCount = try SecretByteCount(bytes.count)
         self.init(byteCount: byteCount) { destination in

@@ -184,6 +184,49 @@ PYTHON
         --verify-wipe \
         "$label whole module" \
         "$whole_module_ir"
+
+    python3 - "$label" "$secure_wipe_ir" "$whole_module_ir" <<'PYTHON'
+import re
+import sys
+from pathlib import Path
+
+
+label = sys.argv[1]
+inputs = (
+    ("SecureWipe file", Path(sys.argv[2]).read_text(encoding="utf-8")),
+    ("whole module", Path(sys.argv[3]).read_text(encoding="utf-8")),
+)
+
+
+def function_bodies(ir, symbol_fragment):
+    pattern = re.compile(
+        r'^define[^\n]*"[^\n]*' + re.escape(symbol_fragment) + r'[^\n]*\n'
+        r'(.*?\n})',
+        re.MULTILINE | re.DOTALL,
+    )
+    return pattern.findall(ir)
+
+
+for source, ir in inputs:
+    for symbol_fragment, width in (
+        ("eraseUInt16Words", 16),
+        ("eraseUInt64Words", 64),
+    ):
+        bodies = function_bodies(ir, symbol_fragment)
+        if not bodies:
+            raise RuntimeError(
+                f"{label} {source}: missing production symbol {symbol_fragment}"
+            )
+        if not any(
+            re.search(rf"store(?: atomic)? volatile i{width} 0, ptr ", body)
+            for body in bodies
+        ):
+            raise RuntimeError(
+                f"{label} {source}: {symbol_fragment} lacks volatile i{width} zero store"
+            )
+
+print(f"{label}: UInt16 and UInt64 volatile wipe widths verified")
+PYTHON
 }
 
 validate_crypto_ir() {

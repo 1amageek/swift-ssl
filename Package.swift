@@ -89,7 +89,7 @@ var targets: [Target] = [
   ),
   .target(
     name: "SwiftSSL",
-    dependencies: ["SwiftSSLCrypto"],
+    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto"],
     swiftSettings: ownershipSettings
   ),
   .executableTarget(
@@ -162,6 +162,20 @@ if ProcessInfo.processInfo.environment["SWIFT_SSL_ENABLE_BENCHMARKS"] == "1" {
       name: "SwiftSSLSHA256Benchmark",
       dependencies: ["SwiftSSLCore", "SwiftSSLCrypto"],
       path: "Benchmarks/SHA256/SwiftWorker",
+      swiftSettings: ownershipSettings
+    )
+  )
+  products.append(
+    .executable(
+      name: "swift-ssl-mlkem-benchmark",
+      targets: ["SwiftSSLMLKEMBenchmark"]
+    )
+  )
+  targets.append(
+    .executableTarget(
+      name: "SwiftSSLMLKEMBenchmark",
+      dependencies: ["SwiftSSL"],
+      path: "Benchmarks/MLKEM/SwiftWorker",
       swiftSettings: ownershipSettings
     )
   )

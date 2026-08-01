@@ -7,7 +7,7 @@ public struct SHAKE256Context: ~Copyable, ExtendableOutputFunctionContext {
         core = KeccakCore(rateByteCount: 136, domainSeparator: 0x1F)
     }
 
-    private init(core: KeccakCore) {
+    private init(core: consuming KeccakCore) {
         self.core = core
     }
 
@@ -15,8 +15,20 @@ public struct SHAKE256Context: ~Copyable, ExtendableOutputFunctionContext {
         try core.update(input)
     }
 
+    package mutating func update(byte: UInt8) throws(CryptoInputError) {
+        try core.update(byte: byte)
+    }
+
+    package mutating func squeeze(into output: inout MutableSpan<UInt8>) {
+        core.squeeze(into: &output)
+    }
+
+    package mutating func erase() {
+        core.erase()
+    }
+
     public borrowing func clone() -> SHAKE256Context {
-        SHAKE256Context(core: core)
+        SHAKE256Context(core: core.clone())
     }
 
     public consuming func finalize(
