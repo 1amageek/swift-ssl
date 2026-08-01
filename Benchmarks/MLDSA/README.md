@@ -101,7 +101,20 @@ tests, and failure-preservation tests.
 
 ## Result status
 
-Formal timing and memory artifacts are generated only after this implementation
-and both runners are committed. Until those committed artifacts exist, the
-exploratory measurements are not release evidence and no formal result is
-reported here.
+The formal Native memory artifact
+[`20260801T174946Z-native-mldsa65-memory.json`](Results/20260801T174946Z-native-mldsa65-memory.json)
+was measured from clean source commit
+`392cd9eb021a88f234de88a0365f4f60ed9257e1`. Its SHA-256 is
+`4fc194e98febebecc97b782e10a5511aec873c9f3e83d3e3a4dea70905358c71`.
+
+| Operation | Allocations/op | Allocated bytes/op | Dynamic bulk-copy bytes/op | Gate |
+|---|---:|---:|---:|---|
+| Key generation | 25 | 71,448 | 0 | Pass |
+| Signing | 62 | 59,248 | 40,960 | Pass |
+| Verification | 14 | 31,712 | 0 | Pass |
+
+All counters were deterministic and exactly linear at 1, 10, and 100
+operations across three fresh processes. Allocation and free slopes balance,
+and no per-operation `calloc` or `realloc` was observed.
+
+Formal timing remains pending. Exploratory timing is not release evidence.
