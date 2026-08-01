@@ -220,7 +220,7 @@ final class TLS13HandshakeMessageTests: XCTestCase {
         XCTAssertEqual(copy(postUpdateServerReceived.span), Array(postUpdateServerData))
     }
 
-    func testP256ECDSAClientServerHandshakeIsRejectedUntilReleaseGates() throws {
+    func testP256ECDSAClientServerHandshakeCompletes() throws {
         let certificate = makeECDSACertificate()
         let privateScalar = bytes(
             "0000000000000000000000000000000000000000000000000000000000000001"
@@ -231,36 +231,68 @@ final class TLS13HandshakeMessageTests: XCTestCase {
             secondsSinceUnixEpoch: 1_750_000_000,
             nanoseconds: 0
         )
-        do {
-            let client = try TLS13ClientHandshake(
-                random: ContiguousArray(repeating: 0x31, count: 32).span,
-                ephemeralKey: try X25519PrivateKey(
-                    bytes: ContiguousArray(repeating: 0x11, count: 32).span
-                ),
-                expectedServerPublicKey: expectedPublicKey.span,
-                verificationInstant: verificationInstant,
-                expectedServerSignatureScheme: .ecdsaP256SHA256
+        try assertECDSAHandshake(
+            certificate: certificate,
+            signingKey: .p256(signingKey),
+            expectedServerPublicKey: expectedPublicKey,
+            signatureScheme: .ecdsaP256SHA256,
+            verificationInstant: verificationInstant
+        )
+    }
+
+    func testP384ECDSAClientServerHandshakeCompletes() throws {
+        let certificate = makeP384ECDSACertificate()
+        let privateScalar = ContiguousArray<UInt8>(repeating: 0, count: P384PrivateKey.byteCount)
+        var scalar = privateScalar
+        scalar[scalar.count - 1] = 1
+        let signingKey = try P384PrivateKey(bytes: scalar.span)
+        let expectedPublicKey = ContiguousArray(copy(signingKey.publicKey().span))
+        try assertECDSAHandshake(
+            certificate: certificate,
+            signingKey: .p384(signingKey),
+            expectedServerPublicKey: expectedPublicKey,
+            signatureScheme: .ecdsaP384SHA384,
+            verificationInstant: try VerificationInstant(
+                secondsSinceUnixEpoch: 1_750_000_000,
+                nanoseconds: 0
             )
-            XCTAssertFalse(client.isEstablished)
-            XCTFail("P-256 TLS client selection was accepted before release gates")
-        } catch {
-            XCTAssertEqual(error as? TLS13HandshakeEngineError, .invalidConfiguration)
-        }
-        do {
-            let server = try TLS13ServerHandshake(
-                random: ContiguousArray(repeating: 0x32, count: 32).span,
-                ephemeralKey: try X25519PrivateKey(
-                    bytes: ContiguousArray(repeating: 0x22, count: 32).span
-                ),
-                certificateDER: certificate.span,
-                signingKey: .p256(signingKey),
-                verificationInstant: verificationInstant
+        )
+    }
+
+    func testP521ECDSAClientServerHandshakeCompletes() throws {
+        let certificate = makeP521ECDSACertificate()
+        var scalar = ContiguousArray<UInt8>(repeating: 0, count: P521PrivateKey.byteCount)
+        scalar[scalar.count - 1] = 1
+        let signingKey = try P521PrivateKey(bytes: scalar.span)
+        let expectedPublicKey = ContiguousArray(copy(signingKey.publicKey().span))
+        try assertECDSAHandshake(
+            certificate: certificate,
+            signingKey: .p521(signingKey),
+            expectedServerPublicKey: expectedPublicKey,
+            signatureScheme: .ecdsaP521SHA512,
+            verificationInstant: try VerificationInstant(
+                secondsSinceUnixEpoch: 1_750_000_000,
+                nanoseconds: 0
             )
-            XCTAssertFalse(server.isEstablished)
-            XCTFail("P-256 TLS server selection was accepted before release gates")
-        } catch {
-            XCTAssertEqual(error as? TLS13HandshakeEngineError, .invalidConfiguration)
-        }
+        )
+    }
+
+    func testP521TLS13SigningKeyRoundTripsTheCertificateVerifyInput() throws {
+        var scalar = ContiguousArray<UInt8>(repeating: 0, count: P521PrivateKey.byteCount)
+        scalar[scalar.count - 1] = 1
+        let key = try P521PrivateKey(bytes: scalar.span)
+        let publicKey = try P521PublicKey(bytes: key.publicKey().span)
+        let message = ContiguousArray<UInt8>(repeating: 0xA5, count: 98)
+        let signingKey = TLS13SigningKey.p521(key)
+        let signature = try signingKey.sign(message: message.span)
+        var digest = ContiguousArray<UInt8>(repeating: 0, count: SHA512.digestByteCount)
+        var destination = digest.mutableSpan
+        try SHA512.hash(message.span, into: &destination)
+        XCTAssertTrue(try P521ECDSA.verify(
+            signature: signature.span,
+            messageHash: digest.span,
+            publicKey: publicKey.span
+        ))
     }
 
     func testDeterministicHandshakeSupportsAllTLS13CipherSuites() throws {
@@ -494,6 +526,44 @@ final class TLS13HandshakeMessageTests: XCTestCase {
         return result
     }
 
+    private func assertECDSAHandshake(
+        certificate: ContiguousArray<UInt8>,
+        signingKey: consuming TLS13SigningKey,
+        expectedServerPublicKey: ContiguousArray<UInt8>,
+        signatureScheme: TLS13SignatureScheme,
+        verificationInstant: VerificationInstant
+    ) throws {
+        let clientEphemeral = try X25519PrivateKey(
+            bytes: ContiguousArray(repeating: 0x11, count: 32).span
+        )
+        let serverEphemeral = try X25519PrivateKey(
+            bytes: ContiguousArray(repeating: 0x22, count: 32).span
+        )
+        var client = try TLS13ClientHandshake(
+            random: ContiguousArray(repeating: 0x31, count: 32).span,
+            ephemeralKey: clientEphemeral,
+            expectedServerPublicKey: expectedServerPublicKey.span,
+            verificationInstant: verificationInstant,
+            expectedServerSignatureScheme: signatureScheme
+        )
+        var server = try TLS13ServerHandshake(
+            random: ContiguousArray(repeating: 0x32, count: 32).span,
+            ephemeralKey: serverEphemeral,
+            certificateDER: certificate.span,
+            signingKey: consume signingKey,
+            verificationInstant: verificationInstant
+        )
+
+        let clientHello = try client.start()
+        let serverFlight = try server.receive(clientHello.bytes.span)
+        let clientFinished = try client.receive(serverFlight.bytes.span)
+        let serverFinished = try server.receive(clientFinished.bytes.span)
+        XCTAssertTrue(client.isEstablished)
+        XCTAssertTrue(server.isEstablished)
+        XCTAssertTrue(clientFinished.actions.contains(.handshakeComplete))
+        XCTAssertTrue(serverFinished.actions.contains(.handshakeConfirmed))
+    }
+
     private func bytes(_ value: String) -> ContiguousArray<UInt8> {
         var result = ContiguousArray<UInt8>()
         var index = value.startIndex
@@ -518,6 +588,18 @@ final class TLS13HandshakeMessageTests: XCTestCase {
             "6578616d706c65300a06082a8648ce3d040302034700304402207d64b4f0d8d41a49" +
             "720e591dc1844556462cd8beb44558fa9f63156a76f2c6cc022063756eb89655ab0b" +
             "0b04032d184382dd99e0be5ce5cacc66374a36dc83f7ac23"
+        )
+    }
+
+    private func makeP384ECDSACertificate() -> ContiguousArray<UInt8> {
+        bytes(
+            "308201833082010aa003020102020101300a06082a8648ce3d0403033021311f301d06035504030c1673776966742d73736c2d703338342e6578616d706c65301e170d3235303130313030303030305a170d3335303130313030303030305a3021311f301d06035504030c1673776966742d73736c2d703338342e6578616d706c653076301006072a8648ce3d020106052b8104002203620004aa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab73617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7e819d7a431d7c90ea0e5fa316301430120603551d130101ff040830060101ff020101300a06082a8648ce3d040303036700306402302c8f2d979504b245044527bfeebf34bf0feb065599f5ec0243572bf6481d03487106199aa6ddf1f000b77d6f2718e0a302302efccfa841e832e46c38ec9a2f0268a7274421f49b4db42ceee560ad53d689ad24bb41d443964c77492b2f874012763c"
+        )
+    }
+
+    private func makeP521ECDSACertificate() -> ContiguousArray<UInt8> {
+        bytes(
+            "308201ce30820130a003020102020101300a06082a8648ce3d0403043021311f301d06035504030c1673776966742d73736c2d703532312e6578616d706c65301e170d3235303130313030303030305a170d3335303130313030303030305a3021311f301d06035504030c1673776966742d73736c2d703532312e6578616d706c6530819b301006072a8648ce3d020106052b81040023038186000400c6858e06b70404e9cd9e3ecb662395b4429c648139053fb521f828af606b4d3dbaa14b5e77efe75928fe1dc127a2ffa8de3348b3c1856a429bf97e7e31c2e5bd66011839296a789a3bc0045c8a5fb42c7d1bd998f54449579b446817afbd17273e662c97ee72995ef42640c550b9013fad0761353c7086a272c24088be94769fd16650a316301430120603551d130101ff040830060101ff020101300a06082a8648ce3d04030403818b00308187024200a71f81d5d29a1241748dc7717dcd56ee91e0869eb6f0e69eefd14ee9cda2f558f3841871e5fba2c035472632c8d5f3f42e02357822b8f85f5d9d5630264b465ccb02412bf9dcec5c8c46299209130519814a6a23def11dc84f5cca92c6eb641a5f47d28d940d1f90aa1d37c0ca934aec75066346b4060b19688e35e476329bdfca289ea0"
         )
     }
 

@@ -1,6 +1,6 @@
 # ADR 0031: P-384/P-521 ECDSA Validation Backend
 
-- Status: Accepted
+- Status: Superseded by explicit TLS CertificateVerify selection
 - Date: 2026-08-01
 
 ## Context
@@ -14,11 +14,12 @@ required for protocol authentication.
 
 ## Decision
 
-Expose P-384/P-521 ECDSA as explicit cryptographic validation surfaces. Cover
-the signing path with the RFC 6979 Appendix A.2.6/A.2.7 vectors and mutation
-tests, but keep TLS selection on Ed25519 until the release gates are recorded
-as passed. The protocol layer must not silently promote these primitives based
-on their presence in the module.
+Expose P-384/P-521 ECDSA as explicit cryptographic surfaces and connect them to
+the TLS CertificateVerify protocol through an explicit signing-key enum. The
+default remains Ed25519, while callers may select an ECDSA curve deliberately.
+The wire path is covered by X.509-backed TLS handshakes, but the arithmetic
+remains release-gated until constant-time, differential, sanitizer, allocation,
+performance, and interoperability evidence is recorded.
 
 ```mermaid
 flowchart LR
@@ -26,10 +27,9 @@ flowchart LR
     RFC --> Sign[Fixed-width P-384/P-521 signing]
     Sign --> Vector[RFC vector and round-trip tests]
     Vector --> Gates{Constant-time, differential, sanitizer, performance}
-    Gates -->|pending| Validation[Validation-only API]
-    Gates -->|passed| Future[Future TLS authentication selection]
-    Validation --> TLS[TLS constructor]
-    TLS --> Reject[Typed invalidConfiguration for non-Ed25519]
+    Gates -->|pending| Explicit[Explicit TLS selection with release gate]
+    Gates -->|passed| Qualified[Release-qualified TLS authentication]
+    Explicit --> TLS[TLS CertificateVerify]
 ```
 
 ## Consequences
@@ -38,6 +38,6 @@ flowchart LR
   candidates instead of reducing them modulo the group order.
 - Temporary DRBG inputs and state are erased before release; public signatures
   remain ordinary owned output.
-- P-384/P-521 signing is callable for differential and conformance work, but
-  the remaining gates are visible in the source marker and responsibility
-  matrix rather than hidden behind an implicit fallback.
+- P-384/P-521 signing is callable and exercised through the complete TLS
+  handshake path; the remaining gates are visible in the source marker and
+  responsibility matrix rather than hidden behind an implicit fallback.

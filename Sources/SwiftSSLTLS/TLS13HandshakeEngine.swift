@@ -50,13 +50,6 @@ public struct TLS13ClientHandshake: ~Copyable, Sendable {
         guard TLSCipherSuite(rawValue: cipherSuite.rawValue) != nil else {
             throw .unsupportedCipherSuite(cipherSuite.rawValue)
         }
-        // FIXME(INCOMPLETE_IMPLEMENTATION): P-256 certificate verification is
-        // available as a vector-tested validation path, but its variable-time
-        // arithmetic has not passed the release gates. Keep production TLS
-        // selection on the complete Ed25519 profile until those gates pass.
-        guard expectedServerSignatureScheme == .ed25519 else {
-            throw .invalidConfiguration
-        }
         do {
             transcript = try TLS13Transcript()
         } catch let error {
@@ -536,8 +529,35 @@ public struct TLS13ClientHandshake: ~Copyable, Sendable {
                     messageHash: digest.span,
                     publicKey: key
                 )
-            case .ecdsaP384SHA384, .ecdsaP521SHA512,
-                 .rsaPSSRSAESHA256, .rsaPSSRSAESHA384, .rsaPSSRSAESHA512,
+            case .ecdsaP384SHA384:
+                let rawSignature = try decodeECDSASignature(
+                    value.signature.span,
+                    componentByteCount: 48
+                )
+                var digest = ContiguousArray<UInt8>(repeating: 0, count: SHA384.digestByteCount)
+                var destination = digest.mutableSpan
+                try SHA384.hash(signedMessage, into: &destination)
+                let key = try P384PublicKey(bytes: expectedServerPublicKey.span)
+                return try P384ECDSA.verify(
+                    signature: rawSignature.span,
+                    messageHash: digest.span,
+                    publicKey: key.span
+                )
+            case .ecdsaP521SHA512:
+                let rawSignature = try decodeECDSASignature(
+                    value.signature.span,
+                    componentByteCount: 66
+                )
+                var digest = ContiguousArray<UInt8>(repeating: 0, count: SHA512.digestByteCount)
+                var destination = digest.mutableSpan
+                try SHA512.hash(signedMessage, into: &destination)
+                let key = try P521PublicKey(bytes: expectedServerPublicKey.span)
+                return try P521ECDSA.verify(
+                    signature: rawSignature.span,
+                    messageHash: digest.span,
+                    publicKey: key.span
+                )
+            case .rsaPSSRSAESHA256, .rsaPSSRSAESHA384, .rsaPSSRSAESHA512,
                  .rsaPSSPSSSHA256, .rsaPSSPSSSHA384, .rsaPSSPSSSHA512:
                 throw TLS13HandshakeEngineError.certificateVerifyFailure
             }
@@ -872,12 +892,6 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
             throw .certificateNotValid
         }
         guard parsed.subjectPublicKeyInfo.algorithm == signingKey.signatureScheme.keyAlgorithm else {
-            throw .invalidConfiguration
-        }
-        // FIXME(INCOMPLETE_IMPLEMENTATION): The generic signing-key codec is
-        // validation-only for P-256. TLS production selection remains limited
-        // to Ed25519 until constant-time and differential release gates pass.
-        guard signingKey.signatureScheme == .ed25519 else {
             throw .invalidConfiguration
         }
         guard (resumptionIdentity == nil) == (resumptionPSK == nil) else {
@@ -1415,6 +1429,16 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
                     signature.span,
                     componentByteCount: 32
                 )
+            case .ecdsaP384SHA384:
+                wireSignature = try encodeECDSASignature(
+                    signature.span,
+                    componentByteCount: 48
+                )
+            case .ecdsaP521SHA512:
+                wireSignature = try encodeECDSASignature(
+                    signature.span,
+                    componentByteCount: 66
+                )
             default:
                 throw .invalidConfiguration
             }
@@ -1450,11 +1474,16 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
         let r = derInteger(rawSignature.extracting(0..<componentByteCount))
         let s = derInteger(rawSignature.extracting(componentByteCount..<rawSignature.count))
         let bodyCount = 2 + r.count + 2 + s.count
-        guard bodyCount < 128 else { throw .certificateVerifyFailure }
+        guard bodyCount <= 255 else { throw .certificateVerifyFailure }
         var result = ContiguousArray<UInt8>()
-        result.reserveCapacity(bodyCount + 2)
+        result.reserveCapacity(bodyCount + 3)
         result.append(0x30)
-        result.append(UInt8(bodyCount))
+        if bodyCount < 128 {
+            result.append(UInt8(bodyCount))
+        } else {
+            result.append(0x81)
+            result.append(UInt8(bodyCount))
+        }
         result.append(0x02)
         result.append(UInt8(r.count))
         result.append(contentsOf: r)
