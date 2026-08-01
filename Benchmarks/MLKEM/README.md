@@ -142,3 +142,23 @@ It records the clean source commits and archives, tool and worker hashes,
 compile contracts, code-generation gates, interoperability transaction,
 quiescence observations, calibration, convergence, all 30 samples, and the
 10,000-resample paired confidence intervals.
+
+### Formal memory result
+
+The 2026-08-01 memory run used SwiftSSL commit
+`2cfb10d9969c9ca24592b6de86649ebf9b19331c` and passed all six declared
+allocation and dynamic-copy budgets.
+
+| Path | Allocation/free calls per operation | Requested bytes | General `malloc` | Dynamic bulk-copy bytes |
+|---|---:|---:|---:|---:|
+| ML-KEM-768 key generation | 17 / 17 | 20,640 | 6 | 0 |
+| ML-KEM-768 in-place encapsulation | 5 / 5 | 6,096 | 0 | 0 |
+| ML-KEM-768 in-place decapsulation | 11 / 11 | 9,808 | 0 | 0 |
+| ML-KEM-1024 key generation | 17 / 17 | 31,008 | 6 | 0 |
+| ML-KEM-1024 in-place encapsulation | 5 / 5 | 7,632 | 0 | 0 |
+| ML-KEM-1024 in-place decapsulation | 11 / 11 | 12,336 | 0 | 0 |
+
+The raw artifact is
+[`Results/20260801T122012Z-native-mlkem-memory.json`](Results/20260801T122012Z-native-mlkem-memory.json)
+with SHA-256
+`36658642dc4c2bc791288b55fd089f18ac6772cb4b50c0f1dca057a58ec339c5`.

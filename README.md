@@ -75,7 +75,7 @@ Correctness tests live under `Tests/`. Long-running differential, interoperabili
 | SHA3-256/512 and SHAKE128/256 | FIPS 202 empty-message and incremental SHA3 vectors; SHAKE output vectors; strict output-length validation; scoped incremental contexts | Independent differential corpus, long-message boundary corpus, target execution, sanitizer/code-generation review, and release benchmark |
 | X25519 | RFC 7748 Alice public-key vector, independent shared-secret vector, four deterministic field vectors, all-zero peer rejection, invalid-length failures, Native façade, WASI, and Embedded WASI target validation | Independent differential corpus, malformed-coordinate corpus, sanitizer/code-generation review, measured allocation/copy counts, and release benchmark |
 | Ed25519 | Owned noncopyable private seed, owned validated public key, separate signing/verification protocol capabilities, fixed-iteration scalar reduction, and mask-selected secret scalar multiplication | RFC 8032 signing/verification vector, modified-message and noncanonical-scalar failures, Native/WASI/Embedded façade verification, Native TLS/Core tests, dedicated Native/WASI/Embedded QUIC/TLS handshakes, focused ASan covering 11 Ed25519/Core/QUIC tests, and manual optimized ARM64 control-flow inspection | Broader RFC 8032 corpus, automated constant-time code-generation gate, TSan/UBSan, allocation/copy measurement, interoperability, and release benchmark |
-| ML-KEM-768/1024 | FIPS 203 key generation, encapsulation, decapsulation, implicit rejection, noncopyable erased private/shared-secret owners, expanded-key reuse, caller-owned output, SIMD NTT, and two-stream Keccak | NIST ACVP/TR1 fixtures, arithmetic differential and boundary tests, typed no-write failure tests, 24-test focused ASan, Native/WASI/Embedded WASI façade execution, six secure-wipe code-generation configurations, bidirectional pinned-BoringSSL interoperability, and a committed formal timing artifact whose six workloads pass the `1.10x` confidence-bound gate | Measured allocation/copy counts, broader external corpus, automated constant-time review, TSan/UBSan availability statement, and security review |
+| ML-KEM-768/1024 | FIPS 203 key generation, encapsulation, decapsulation, implicit rejection, noncopyable erased private/shared-secret owners, expanded-key reuse, caller-owned output, SIMD NTT, and two-stream Keccak | NIST ACVP/TR1 fixtures, arithmetic differential and boundary tests, typed no-write failure tests, 24-test focused ASan, Native/WASI/Embedded WASI façade execution, six secure-wipe code-generation configurations, bidirectional pinned-BoringSSL interoperability, a committed formal timing artifact whose six workloads pass the `1.10x` confidence-bound gate, and a committed formal allocation/dynamic-copy artifact | Broader external corpus, automated constant-time review, TSan/UBSan availability statement, and security review |
 | ECDSA P-256/P-384/P-521 verification | Verification-only fixed-width raw-signature arithmetic, typed owned public keys, strict DER signature decoding including P-521 long-form lengths, SHA-256/384/512 certificate verification, curve SPKI validation, and mutation failures | Independent raw-signature vectors; real X.509 certificates signed with ECDSA-with-SHA256, SHA384, and SHA512; malformed/modified signature failures; dedicated Native/WASI/Embedded Release validation of P-256/P-384/P-521 success and mutation routes | Broader independent differential corpus, measured allocation/copy counts, sanitizer coverage, formal benchmark, and security review; public-input verification has no secret-dependent timing contract |
 | RSA-PSS verification | Verification-only SHA-256/384/512 EMSA-PSS, canonical 2048–4096-bit public keys, bounded Montgomery public exponentiation, strict X.509 PSS parameters, and explicit failure contracts | Independent SHA-256/384/512 signatures including a 4096-bit SHA-512 fixture, 512 Montgomery differential cases, key/length/salt boundaries, signature mutations, real X.509 success/failure, focused ASan including the maximum modulus, and Native/WASI/Embedded WASI runtime validation | Broader external corpus, measured allocation/copy counts, formal benchmark, and security review |
 | X.509 path validation | Bounded unordered path search, issuer/subject DER-name matching, validity-window checks, trust-anchor boundary, BasicConstraints CA/pathLen, optional keyCertSign, and SAN-only hostname verification | Real P-256 leaf/root chain, SAN match, modified leaf signature failure, non-CA issuer rejection, hostname mismatch rejection, and bounded path behavior | RFC 5280 policy processing, name constraints, CRL/OCSP, CT, delegated credentials, and broader interoperability |
@@ -146,7 +146,33 @@ artifact is
 (SHA-256
 `7c6b21acdb079a55779d64b21cdf03accac1d8df75c18d67b3383f41cba83ec8`).
 This timing artifact does not claim allocation or logical-copy counts; those
-remain a separate release gate.
+are established separately below.
+
+### ML-KEM allocation and zero-copy evidence
+
+| Path | Allocation/free calls per operation | Requested bytes | General `malloc` | Dynamic bulk-copy bytes |
+|---|---:|---:|---:|---:|
+| ML-KEM-768 key generation | 17 / 17 | 20,640 | 6 | 0 |
+| ML-KEM-768 in-place encapsulation | 5 / 5 | 6,096 | 0 | 0 |
+| ML-KEM-768 in-place decapsulation | 11 / 11 | 9,808 | 0 | 0 |
+| ML-KEM-1024 key generation | 17 / 17 | 31,008 | 6 | 0 |
+| ML-KEM-1024 in-place encapsulation | 5 / 5 | 7,632 | 0 | 0 |
+| ML-KEM-1024 in-place decapsulation | 11 / 11 | 12,336 | 0 | 0 |
+
+The formal memory run uses the public entropy-injected APIs and caller-owned
+in-place outputs. Counts are exact linear slopes from 1, 10, and 100 operations
+in three fresh processes each. Encapsulation and decapsulation perform only
+balanced aligned workspace/secret allocations and no general `malloc`. Caller
+inputs remain borrowed and outputs are written directly; there is no
+per-operation dynamic `memcpy`/`memmove` byte traffic. This is a zero-copy
+caller-payload contract, not an allocation-free claim. Compiler-inlined scalar
+stores and algorithm-required result writes are outside the dynamic interposer
+and are not misreported as avoided work.
+
+The committed raw artifact is
+[`Benchmarks/MLKEM/Results/20260801T122012Z-native-mlkem-memory.json`](Benchmarks/MLKEM/Results/20260801T122012Z-native-mlkem-memory.json)
+(SHA-256
+`36658642dc4c2bc791288b55fd089f18ac6772cb4b50c0f1dca057a58ec339c5`).
 
 See [docs/VERIFICATION.md](docs/VERIFICATION.md) for gates and measurement rules.
 

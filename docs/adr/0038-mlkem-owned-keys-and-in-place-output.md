@@ -77,8 +77,11 @@ flowchart LR
 - Callers choose owned convenience results or exact-size in-place output
   without selecting an implementation backend.
 - Output ownership avoids façade-layer re-materialization on the in-place path;
-  internal polynomial workspaces remain explicit allocations and require a
-  separate allocation-count artifact before release qualification.
+  internal polynomial workspaces remain explicit allocations. The formal
+  allocation artifact records 5 balanced allocations for encapsulation and 11
+  for decapsulation, with no per-operation general `malloc` and no dynamic
+  bulk-copy bytes. Key generation records 17 balanced allocations because it
+  also constructs the owned serialized and expanded key results.
 - The optimized arm64 kernels are not semantic fallbacks. WASI and Embedded
   use the same algorithms and contracts with portable constant-control-flow
   arithmetic where the arm64 instruction selection is unavailable.
