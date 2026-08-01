@@ -30,6 +30,7 @@ enum TargetValidationCommand {
     case uint24Failure
     case dtlsReplay
     case quicInitial
+    case quicCryptoStream
   }
 
   private struct FixedEntropy: EntropySource {
@@ -69,6 +70,7 @@ enum TargetValidationCommand {
     try validateUInt24Failure()
     try validateDTLSReplay()
     try validateQUICInitial()
+    try validateQUICCryptoStream()
     print("swift-ssl target validation: ok")
   }
 
@@ -130,6 +132,37 @@ enum TargetValidationCommand {
     ])
     guard secrets.withClientKey({ key in copy(key) }) == expected else {
       throw Failure.quicInitial
+    }
+  }
+
+  private static func validateQUICCryptoStream() throws {
+    var stream = try QUICCryptoStreamReassembler(
+      encryptionLevel: .handshake,
+      maximumBufferedByteCount: 8
+    )
+    let tail: ContiguousArray<UInt8> = [3, 4]
+    let head: ContiguousArray<UInt8> = [1, 2]
+    try stream.receive(offset: 2, bytes: tail.span)
+    try stream.receive(offset: 0, bytes: head.span)
+    guard stream.withContiguousBytes({ copy($0) }) == [1, 2, 3, 4] else {
+      throw Failure.quicCryptoStream
+    }
+    try stream.discardContiguousBytes(count: 3)
+
+    let wrapped: ContiguousArray<UInt8> = [5, 6, 7, 8, 9, 10, 11]
+    try stream.receive(offset: 4, bytes: wrapped.span)
+    guard stream.withContiguousBytes({ copy($0) }) == [4, 5, 6, 7, 8, 9, 10, 11] else {
+      throw Failure.quicCryptoStream
+    }
+
+    let conflict: ContiguousArray<UInt8> = [0]
+    do {
+      try stream.receive(offset: 7, bytes: conflict.span)
+      throw Failure.quicCryptoStream
+    } catch let error as QUICCryptoStreamError {
+      guard error == .conflictingOverlap(offset: 7) else {
+        throw Failure.quicCryptoStream
+      }
     }
   }
 
