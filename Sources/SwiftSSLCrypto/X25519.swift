@@ -2,262 +2,262 @@ import SwiftSSLCore
 
 /// RFC 7748 X25519 key agreement using a fixed-radix field implementation.
 public enum X25519: InPlaceKeyAgreement, InPlaceEncodedKeyAgreement {
-    public typealias PublicKey = X25519PublicKey
-    public typealias PrivateKey = X25519PrivateKey
-    public typealias SharedSecret = X25519SharedSecret
-    public static let sharedSecretByteCount = X25519SharedSecret.byteCount
+  public typealias PublicKey = X25519PublicKey
+  public typealias PrivateKey = X25519PrivateKey
+  public typealias SharedSecret = X25519SharedSecret
+  public static let sharedSecretByteCount = X25519SharedSecret.byteCount
 
-    public static func sharedSecret(
-        privateKey: borrowing X25519PrivateKey,
-        peerPublicKey: borrowing X25519PublicKey
-    ) throws(CryptoInputError) -> X25519SharedSecret {
-        let byteCount: SecretByteCount
-        do {
-            byteCount = try SecretByteCount(X25519SharedSecret.byteCount)
-        } catch {
-            throw .invalidPeerKey
-        }
-        let secret = try SecretBytes(byteCount: byteCount) {
-            destination throws(CryptoInputError) in
-            try sharedSecret(
-                privateKey: privateKey,
-                peerPublicKey: peerPublicKey,
-                into: &destination
-            )
-        }
-        return X25519SharedSecret(consuming: secret)
+  public static func sharedSecret(
+    privateKey: borrowing X25519PrivateKey,
+    peerPublicKey: borrowing X25519PublicKey
+  ) throws(CryptoInputError) -> X25519SharedSecret {
+    let byteCount: SecretByteCount
+    do {
+      byteCount = try SecretByteCount(X25519SharedSecret.byteCount)
+    } catch {
+      throw .invalidPeerKey
     }
+    let secret = try SecretBytes(byteCount: byteCount) {
+      destination throws(CryptoInputError) in
+      try sharedSecret(
+        privateKey: privateKey,
+        peerPublicKey: peerPublicKey,
+        into: &destination
+      )
+    }
+    return X25519SharedSecret(consuming: secret)
+  }
 
-    public static func sharedSecret(
-        privateKey: borrowing X25519PrivateKey,
-        peerPublicKey: borrowing X25519PublicKey,
-        into sharedSecret: inout MutableSpan<UInt8>
-    ) throws(CryptoInputError) {
-        try peerPublicKey.withBorrowedBytes { peer throws(CryptoInputError) in
-            try Self.sharedSecret(
-                privateKey: privateKey,
-                peerPublicKeyBytes: peer,
-                into: &sharedSecret
-            )
-        }
+  public static func sharedSecret(
+    privateKey: borrowing X25519PrivateKey,
+    peerPublicKey: borrowing X25519PublicKey,
+    into sharedSecret: inout MutableSpan<UInt8>
+  ) throws(CryptoInputError) {
+    try peerPublicKey.withBorrowedBytes { peer throws(CryptoInputError) in
+      try Self.sharedSecret(
+        privateKey: privateKey,
+        peerPublicKeyBytes: peer,
+        into: &sharedSecret
+      )
     }
+  }
 
-    public static func sharedSecret(
-        privateKey: borrowing X25519PrivateKey,
-        peerPublicKeyBytes: Span<UInt8>,
-        into sharedSecret: inout MutableSpan<UInt8>
-    ) throws(CryptoInputError) {
-        guard peerPublicKeyBytes.count == X25519PublicKey.byteCount else {
-            throw .invalidLength(
-                expected: X25519PublicKey.byteCount,
-                actual: peerPublicKeyBytes.count
-            )
-        }
-        guard sharedSecret.count == sharedSecretByteCount else {
-            throw .invalidLength(
-                expected: sharedSecretByteCount,
-                actual: sharedSecret.count
-            )
-        }
-        let accepted = privateKey.withBorrowedBytes { scalar in
-            X25519Montgomery.scalarMultiply(
-                scalar: scalar,
-                uCoordinate: peerPublicKeyBytes,
-                into: &sharedSecret
-            )
-        }
-        guard accepted else {
-            throw .invalidPeerKey
-        }
+  public static func sharedSecret(
+    privateKey: borrowing X25519PrivateKey,
+    peerPublicKeyBytes: Span<UInt8>,
+    into sharedSecret: inout MutableSpan<UInt8>
+  ) throws(CryptoInputError) {
+    guard peerPublicKeyBytes.count == X25519PublicKey.byteCount else {
+      throw .invalidLength(
+        expected: X25519PublicKey.byteCount,
+        actual: peerPublicKeyBytes.count
+      )
     }
+    guard sharedSecret.count == sharedSecretByteCount else {
+      throw .invalidLength(
+        expected: sharedSecretByteCount,
+        actual: sharedSecret.count
+      )
+    }
+    let accepted = privateKey.withBorrowedBytes { scalar in
+      X25519Montgomery.scalarMultiply(
+        scalar: scalar,
+        uCoordinate: peerPublicKeyBytes,
+        into: &sharedSecret
+      )
+    }
+    guard accepted else {
+      throw .invalidPeerKey
+    }
+  }
 }
 
 public struct X25519PrivateKey: InPlacePublicKeyDerivation, ~Copyable, Sendable {
-    public static let byteCount = 32
-    public static let publicKeyByteCount = X25519PublicKey.byteCount
-    private let storage: SecretBytes
+  public static let byteCount = 32
+  public static let publicKeyByteCount = X25519PublicKey.byteCount
+  private let storage: SecretBytes
 
-    public static func generate(
-        using entropy: borrowing any EntropySource
-    ) throws(X25519KeyGenerationError) -> X25519PrivateKey {
-        let byteCount: SecretByteCount
-        do {
-            byteCount = try SecretByteCount(Self.byteCount)
-        } catch {
-            throw .memoryFailure
-        }
-        let storage: SecretBytes
-        do {
-            storage = try SecretBytes(
-                randomByteCount: byteCount,
-                using: entropy
-            )
-        } catch {
-            throw .entropy(error)
-        }
-        return X25519PrivateKey(consuming: storage)
+  public static func generate(
+    using entropy: borrowing any EntropySource
+  ) throws(X25519KeyGenerationError) -> X25519PrivateKey {
+    let byteCount: SecretByteCount
+    do {
+      byteCount = try SecretByteCount(Self.byteCount)
+    } catch {
+      throw .memoryFailure
     }
+    let storage: SecretBytes
+    do {
+      storage = try SecretBytes(
+        randomByteCount: byteCount,
+        using: entropy
+      )
+    } catch {
+      throw .entropy(error)
+    }
+    return X25519PrivateKey(consuming: storage)
+  }
 
-    public static func generate() throws(X25519KeyGenerationError) -> X25519PrivateKey {
-        let entropy = SystemEntropySource()
-        return try Self.generate(using: entropy)
-    }
+  public static func generate() throws(X25519KeyGenerationError) -> X25519PrivateKey {
+    let entropy = SystemEntropySource()
+    return try Self.generate(using: entropy)
+  }
 
-    public init(bytes: Span<UInt8>) throws(CryptoInputError) {
-        guard bytes.count == Self.byteCount else {
-            throw .invalidLength(expected: Self.byteCount, actual: bytes.count)
-        }
-        do {
-            storage = try SecretBytes(copying: bytes)
-        } catch {
-            throw .invalidLength(expected: Self.byteCount, actual: bytes.count)
-        }
+  public init(bytes: Span<UInt8>) throws(CryptoInputError) {
+    guard bytes.count == Self.byteCount else {
+      throw .invalidLength(expected: Self.byteCount, actual: bytes.count)
     }
+    do {
+      storage = try SecretBytes(copying: bytes)
+    } catch {
+      throw .invalidLength(expected: Self.byteCount, actual: bytes.count)
+    }
+  }
 
-    private init(consuming storage: consuming SecretBytes) {
-        self.storage = consume storage
-    }
+  private init(consuming storage: consuming SecretBytes) {
+    self.storage = consume storage
+  }
 
-    public borrowing func withBorrowedBytes<Result: ~Copyable, Failure: Error>(
-        _ body: (Span<UInt8>) throws(Failure) -> Result
-    ) throws(Failure) -> Result {
-        try storage.withBorrowedBytes(body)
-    }
+  public borrowing func withBorrowedBytes<Result: ~Copyable, Failure: Error>(
+    _ body: (Span<UInt8>) throws(Failure) -> Result
+  ) throws(Failure) -> Result {
+    try storage.withBorrowedBytes(body)
+  }
 
-    public borrowing func publicKey() -> X25519PublicKey {
-        let bytes = withBorrowedBytes { scalar in
-            X25519Montgomery.scalarMultiplyBase(scalar: scalar)
-        }
-        return X25519PublicKey(uncheckedBytes: bytes)
+  public borrowing func publicKey() -> X25519PublicKey {
+    let bytes = withBorrowedBytes { scalar in
+      X25519Montgomery.scalarMultiplyBase(scalar: scalar)
     }
+    return X25519PublicKey(uncheckedBytes: bytes)
+  }
 
-    public borrowing func publicKey(
-        into destination: inout MutableSpan<UInt8>
-    ) throws(CryptoInputError) {
-        guard destination.count == Self.publicKeyByteCount else {
-            throw .invalidLength(
-                expected: Self.publicKeyByteCount,
-                actual: destination.count
-            )
-        }
-        withBorrowedBytes { scalar in
-            X25519FixedBase.scalarMultiply(
-                scalar: scalar,
-                into: &destination
-            )
-        }
+  public borrowing func publicKey(
+    into destination: inout MutableSpan<UInt8>
+  ) throws(CryptoInputError) {
+    guard destination.count == Self.publicKeyByteCount else {
+      throw .invalidLength(
+        expected: Self.publicKeyByteCount,
+        actual: destination.count
+      )
     }
+    withBorrowedBytes { scalar in
+      X25519FixedBase.scalarMultiply(
+        scalar: scalar,
+        into: &destination
+      )
+    }
+  }
 }
 
 public struct X25519PublicKey: Sendable, Equatable {
-    public static let byteCount = 32
-    private let storage: OwnedBytes
+  public static let byteCount = 32
+  private let storage: OwnedBytes
 
-    public init(bytes: Span<UInt8>) throws(CryptoInputError) {
-        guard bytes.count == Self.byteCount else {
-            throw .invalidLength(expected: Self.byteCount, actual: bytes.count)
-        }
-        storage = OwnedBytes(copying: bytes)
+  public init(bytes: Span<UInt8>) throws(CryptoInputError) {
+    guard bytes.count == Self.byteCount else {
+      throw .invalidLength(expected: Self.byteCount, actual: bytes.count)
     }
+    storage = OwnedBytes(copying: bytes)
+  }
 
-    fileprivate init(uncheckedBytes bytes: ContiguousArray<UInt8>) {
-        storage = OwnedBytes(consuming: bytes)
-    }
+  fileprivate init(uncheckedBytes bytes: ContiguousArray<UInt8>) {
+    storage = OwnedBytes(consuming: bytes)
+  }
 
-    public var span: Span<UInt8> { storage.span }
+  public var span: Span<UInt8> { storage.span }
 
-    public borrowing func withBorrowedBytes<Result: ~Copyable, Failure: Error>(
-        _ body: (Span<UInt8>) throws(Failure) -> Result
-    ) throws(Failure) -> Result {
-        try body(storage.span)
-    }
+  public borrowing func withBorrowedBytes<Result: ~Copyable, Failure: Error>(
+    _ body: (Span<UInt8>) throws(Failure) -> Result
+  ) throws(Failure) -> Result {
+    try body(storage.span)
+  }
 }
 
 public struct X25519SharedSecret: ~Copyable, Sendable {
-    public static let byteCount = 32
-    private let storage: SecretBytes
+  public static let byteCount = 32
+  private let storage: SecretBytes
 
-    fileprivate init(consuming storage: consuming SecretBytes) {
-        self.storage = storage
-    }
+  fileprivate init(consuming storage: consuming SecretBytes) {
+    self.storage = storage
+  }
 
-    public borrowing func withBorrowedBytes<Result: ~Copyable, Failure: Error>(
-        _ body: (Span<UInt8>) throws(Failure) -> Result
-    ) throws(Failure) -> Result {
-        try storage.withBorrowedBytes(body)
-    }
+  public borrowing func withBorrowedBytes<Result: ~Copyable, Failure: Error>(
+    _ body: (Span<UInt8>) throws(Failure) -> Result
+  ) throws(Failure) -> Result {
+    try storage.withBorrowedBytes(body)
+  }
 }
 
 private enum X25519Montgomery {
-    static func scalarMultiplyBase(scalar: Span<UInt8>) -> ContiguousArray<UInt8> {
-        X25519FixedBase.scalarMultiply(scalar: scalar)
-    }
+  static func scalarMultiplyBase(scalar: Span<UInt8>) -> ContiguousArray<UInt8> {
+    X25519FixedBase.scalarMultiply(scalar: scalar)
+  }
 
-    static func scalarMultiply(
-        scalar: Span<UInt8>,
-        uCoordinate: Span<UInt8>,
-        into destination: inout MutableSpan<UInt8>
-    ) -> Bool {
-        scalarMultiplyField(scalar: scalar, uCoordinate: uCoordinate)
-            .encodeIfNonZero(into: &destination)
-    }
+  static func scalarMultiply(
+    scalar: Span<UInt8>,
+    uCoordinate: Span<UInt8>,
+    into destination: inout MutableSpan<UInt8>
+  ) -> Bool {
+    scalarMultiplyField(scalar: scalar, uCoordinate: uCoordinate)
+      .encodeIfNonZero(into: &destination)
+  }
 
-    private static func scalarMultiplyField(
-        scalar: Span<UInt8>,
-        uCoordinate: Span<UInt8>
-    ) -> X25519FieldElement {
-        let x1 = X25519FieldElement(bytes: uCoordinate)
-        var x2 = X25519FieldElement(one: true)
-        var z2 = X25519FieldElement()
-        var x3 = x1
-        var z3 = X25519FieldElement(one: true)
-        var swap: UInt64 = 0
-        var bit = 254
-        while bit >= 0 {
-            // RFC 7748 clamping is applied while reading the scalar. The loop
-            // never materializes a second secret buffer: bits 0...2 are zero,
-            // bit 254 is one, and bit 255 is outside the ladder range.
-            let bitValue: UInt64
-            if bit == 254 {
-                bitValue = 1
-            } else if bit < 3 {
-                bitValue = 0
-            } else {
-                bitValue = UInt64(
-                    (scalar[unchecked: bit >> 3] >> UInt8(bit & 7)) & 1
-                )
-            }
-            swap ^= bitValue
-            X25519FieldElement.conditionalSwap(&x2, &x3, swap)
-            X25519FieldElement.conditionalSwap(&z2, &z3, swap)
-            swap = bitValue
+  private static func scalarMultiplyField(
+    scalar: Span<UInt8>,
+    uCoordinate: Span<UInt8>
+  ) -> X25519FieldElement {
+    let x1 = X25519FieldElement(bytes: uCoordinate)
+    var x2 = X25519FieldElement(one: true)
+    var z2 = X25519FieldElement()
+    var x3 = x1
+    var z3 = X25519FieldElement(one: true)
+    var swap: UInt64 = 0
+    var bit = 254
+    while bit >= 0 {
+      // RFC 7748 clamping is applied while reading the scalar. The loop
+      // never materializes a second secret buffer: bits 0...2 are zero,
+      // bit 254 is one, and bit 255 is outside the ladder range.
+      let bitValue: UInt64
+      if bit == 254 {
+        bitValue = 1
+      } else if bit < 3 {
+        bitValue = 0
+      } else {
+        bitValue = UInt64(
+          (scalar[unchecked: bit >> 3] >> UInt8(bit & 7)) & 1
+        )
+      }
+      swap ^= bitValue
+      X25519FieldElement.conditionalSwap(&x2, &x3, swap)
+      X25519FieldElement.conditionalSwap(&z2, &z3, swap)
+      swap = bitValue
 
-            // Reuse four field temporaries so the five-limb values remain in
-            // registers across a ladder step instead of creating spill-heavy
-            // expression intermediates.
-            var difference3 = x3 - z3
-            var difference2 = x2 - z2
-            var sum2 = x2 + z2
-            var sum3 = x3 + z3
-            difference3 = difference3 * sum2
-            sum3 = sum3 * difference2
-            difference2 = difference2.squared()
-            sum2 = sum2.squared()
-            x3 = difference3 + sum3
-            sum3 = difference3 - sum3
-            x2 = sum2 * difference2
-            sum2 = sum2 - difference2
-            sum3 = sum3.squared()
-            difference3 = sum2.multiplied(bySmall: 121666)
-            x3 = x3.squared()
-            difference2 = difference2 + difference3
-            z3 = x1 * sum3
-            z2 = sum2 * difference2
-            bit -= 1
-        }
-        X25519FieldElement.conditionalSwap(&x2, &x3, swap)
-        X25519FieldElement.conditionalSwap(&z2, &z3, swap)
-        return x2 * z2.inverted()
+      // Reuse four field temporaries so the five-limb values remain in
+      // registers across a ladder step instead of creating spill-heavy
+      // expression intermediates.
+      var difference3 = x3 - z3
+      var difference2 = x2 - z2
+      var sum2 = x2 + z2
+      var sum3 = x3 + z3
+      difference3 = difference3 * sum2
+      sum3 = sum3 * difference2
+      difference2 = difference2.squared()
+      sum2 = sum2.squared()
+      x3 = difference3 + sum3
+      sum3 = difference3 - sum3
+      x2 = sum2 * difference2
+      sum2 = sum2 - difference2
+      sum3 = sum3.squared()
+      difference3 = sum2.multiplied(bySmall: 121666)
+      x3 = x3.squared()
+      difference2 = difference2 + difference3
+      z3 = x1 * sum3
+      z2 = sum2 * difference2
+      bit -= 1
     }
+    X25519FieldElement.conditionalSwap(&x2, &x3, swap)
+    X25519FieldElement.conditionalSwap(&z2, &z3, swap)
+    return x2 * z2.inverted()
+  }
 
 }

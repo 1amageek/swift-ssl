@@ -1,4 +1,5 @@
-@frozen public struct KEMKeyPair<
+@frozen
+public struct KEMKeyPair<
   PublicKey: Sendable,
   PrivateKey: ~Copyable & Sendable
 >: ~Copyable, Sendable {

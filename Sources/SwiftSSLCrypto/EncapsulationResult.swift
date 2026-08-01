@@ -1,4 +1,5 @@
-@frozen public struct EncapsulationResult<
+@frozen
+public struct EncapsulationResult<
   Encapsulation: Sendable,
   SharedSecret: ~Copyable & Sendable
 >: ~Copyable, Sendable {

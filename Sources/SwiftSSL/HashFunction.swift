@@ -14,8 +14,8 @@ public protocol HashFunction: Sendable {
   ) throws(CryptoInputError)
 }
 
-public extension HashFunction {
-  static func hash(
+extension HashFunction {
+  public static func hash(
     _ input: Span<UInt8>,
     into output: inout MutableSpan<UInt8>
   ) throws(CryptoInputError) {

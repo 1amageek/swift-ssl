@@ -23,8 +23,8 @@ public protocol MessageAuthenticationCode: Sendable {
   ) throws(CryptoInputError) -> Bool
 }
 
-public extension MessageAuthenticationCode {
-  static func authenticate(
+extension MessageAuthenticationCode {
+  public static func authenticate(
     _ message: Span<UInt8>,
     using key: Span<UInt8>,
     into output: inout MutableSpan<UInt8>
@@ -34,7 +34,7 @@ public extension MessageAuthenticationCode {
     try context.finalize(into: &output)
   }
 
-  static func isValidAuthenticationCode(
+  public static func isValidAuthenticationCode(
     _ authenticationCode: Span<UInt8>,
     authenticating message: Span<UInt8>,
     using key: Span<UInt8>
