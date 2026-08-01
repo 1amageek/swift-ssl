@@ -117,4 +117,20 @@ All counters were deterministic and exactly linear at 1, 10, and 100
 operations across three fresh processes. Allocation and free slopes balance,
 and no per-operation `calloc` or `realloc` was observed.
 
-Formal timing remains pending. Exploratory timing is not release evidence.
+The formal Native timing artifact
+[`20260801T175050Z-native-mldsa.json`](Results/20260801T175050Z-native-mldsa.json)
+was measured from clean SwiftSSL source commit
+`76c2bce2b3bcd3933b5efe91a50e3a98b8baa16b` and clean BoringSSL commit
+`ae49d2681a56ca7b8609f6039a770fda2a8eb550`. Its SHA-256 is
+`550ea6676dcf6e1e102e6a3893684dd2ebeaf51e2ee59d49e037ef34abff031c`.
+
+| Operation | Swift median ns/op | BoringSSL median ns/op | Median speedup | 95% bootstrap CI | Gate |
+|---|---:|---:|---:|---:|---|
+| Key generation | 43,970.823 | 52,303.088 | 1.1885x | 1.1875–1.1903x | Pass |
+| Signing | 141,255.908 | 162,381.079 | 1.1547x | 1.1456–1.1637x | Pass |
+| Verification | 18,650.249 | 36,402.081 | 1.9492x | 1.9429–1.9574x | Pass |
+
+All three lower confidence bounds exceed the `1.10x` target. The artifact also
+records successful bidirectional signature interoperability, mutated-signature
+rejection by both implementations, BoringSSL assembly use, 434 ML-DSA SIMD
+Montgomery instructions, and ARM SHA3 instruction counts in the Swift worker.
