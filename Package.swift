@@ -204,6 +204,20 @@ if ProcessInfo.processInfo.environment["SWIFT_SSL_ENABLE_BENCHMARKS"] == "1" {
       swiftSettings: ownershipSettings
     )
   )
+  products.append(
+    .executable(
+      name: "swift-ssl-mldsa-benchmark",
+      targets: ["SwiftSSLMLDSABenchmark"]
+    )
+  )
+  targets.append(
+    .executableTarget(
+      name: "SwiftSSLMLDSABenchmark",
+      dependencies: ["SwiftSSL"],
+      path: "Benchmarks/MLDSA/SwiftWorker",
+      swiftSettings: ownershipSettings
+    )
+  )
 }
 
 let package = Package(

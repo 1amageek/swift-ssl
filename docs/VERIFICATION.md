@@ -119,6 +119,9 @@ Hot paths define a budget before optimization.
 | ML-KEM-1024 key generation | 17 balanced allocations requesting 31,008 bytes; owned serialized/expanded keys and algorithm workspaces; 0 dynamic bulk-copy bytes beyond fixed process overhead |
 | ML-KEM-1024 in-place encapsulation | 5 balanced aligned workspace allocations requesting 7,632 bytes; 0 general `malloc`; 0 caller-input/output materializations; 0 dynamic bulk-copy bytes |
 | ML-KEM-1024 in-place decapsulation | 11 balanced aligned workspace/secret allocations requesting 12,336 bytes; 0 general `malloc`; 0 caller-input/output materializations; 0 dynamic bulk-copy bytes |
+| ML-DSA-65 key generation | 25 balanced allocations requesting 71,448 bytes for owned serialized/expanded keys and algorithm workspaces; 0 dynamic bulk-copy bytes |
+| ML-DSA-65 in-place signing, fixed fixture | 62 balanced allocations requesting 59,248 bytes; caller message/context remain borrowed and signature output remains caller-owned; eight algorithm-required 5,120-byte mask forks across deterministic rejection-sampling attempts; no COW or API-boundary materialization |
+| ML-DSA-65 verification | 14 balanced allocations requesting 31,712 bytes; signature/message/context remain borrowed; decoded `z` is consumed as its NTT workspace; 0 dynamic bulk-copy bytes |
 | X25519MLKEM768 client offer | 17 balanced allocations requesting 15,656 bytes for final owners, noncopyable key material, and ML-KEM workspaces; 0 dynamic bulk-copy bytes |
 | X25519MLKEM768 server accept | 15 balanced allocations requesting 14,464 bytes for final owners, noncopyable key material, and ML-KEM workspaces; borrowed client share; 0 dynamic bulk-copy bytes |
 | X25519MLKEM768 full round trip | 45 balanced allocations requesting 40,032 bytes; role-specific received shares remain borrowed; 0 dynamic bulk-copy bytes |

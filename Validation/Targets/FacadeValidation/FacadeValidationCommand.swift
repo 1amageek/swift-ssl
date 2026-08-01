@@ -13,6 +13,7 @@ enum FacadeValidationCommand {
     case p256
     case p256ECDSA
     case mlKEM
+    case mlDSA
     case errorContract
   }
 
@@ -26,6 +27,7 @@ enum FacadeValidationCommand {
     try validateEd25519()
     try validateP256()
     try validateMLKEM()
+    try validateMLDSA()
     try validateFailureContracts()
     print("swift-ssl facade validation: ok")
   }
@@ -118,6 +120,38 @@ enum FacadeValidationCommand {
       untouchedSharedSecret == originalSharedSecret
     else {
       throw Failure.errorContract
+    }
+  }
+
+  private static func validateMLDSA() throws {
+    let seed = ContiguousArray<UInt8>(repeating: 0x42, count: MLDSA65.seedByteCount)
+    let pair = try MLDSA65.keyPair(seed: seed.span)
+    let message = ContiguousArray("swift-ssl facade ML-DSA-65".utf8)
+    let context = ContiguousArray("validation".utf8)
+    let signature = try MLDSA65.sign(
+      message: message.span,
+      context: context.span,
+      using: pair.privateKey,
+      entropy: FixedEntropy(byte: 0x73)
+    )
+    guard try MLDSA65.verify(
+      signature: signature.span,
+      message: message.span,
+      context: context.span,
+      using: pair.publicKey
+    ) else {
+      throw Failure.mlDSA
+    }
+
+    var modified = message
+    modified[0] ^= 1
+    guard try !MLDSA65.verify(
+      signature: signature.span,
+      message: modified.span,
+      context: context.span,
+      using: pair.publicKey
+    ) else {
+      throw Failure.mlDSA
     }
   }
 

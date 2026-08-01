@@ -52,16 +52,18 @@ struct KeccakX2Core: ~Copyable {
     precondition(seed.count == 32 && sensitivity == .publicData)
     resetState()
 
-    var lane = 0
-    while lane < 4 {
-      var word: UInt64 = 0
-      var byte = 0
-      while byte < 8 {
-        word |= UInt64(seed[lane * 8 + byte]) << UInt64(byte * 8)
-        byte += 1
+    seed.bytes.withUnsafeBytes { bytes in
+      // The exact 32-byte seed remains borrowed for this synchronous scope.
+      // Four unaligned loads cover it completely without binding its memory.
+      var lane = 0
+      while lane < 4 {
+        let word = bytes.loadUnaligned(
+          fromByteOffset: lane * MemoryLayout<UInt64>.stride,
+          as: UInt64.self
+        )
+        state[lane] = SIMD2(repeating: UInt64(littleEndian: word))
+        lane += 1
       }
-      state[lane] = SIMD2(repeating: word)
-      lane += 1
     }
 
     state[4] = SIMD2(
@@ -89,21 +91,66 @@ struct KeccakX2Core: ~Copyable {
     precondition(secretSeed.count == 32 && sensitivity == .secret)
     resetState()
 
-    var lane = 0
-    while lane < 4 {
-      var word: UInt64 = 0
-      var byte = 0
-      while byte < 8 {
-        word |= UInt64(secretSeed[lane * 8 + byte]) << UInt64(byte * 8)
-        byte += 1
+    secretSeed.bytes.withUnsafeBytes { bytes in
+      // The exact 32-byte secret seed remains borrowed and initialized for all
+      // four bounded unaligned loads. No pointer is retained or rebound.
+      var lane = 0
+      while lane < 4 {
+        let word = bytes.loadUnaligned(
+          fromByteOffset: lane * MemoryLayout<UInt64>.stride,
+          as: UInt64.self
+        )
+        state[lane] = SIMD2(repeating: UInt64(littleEndian: word))
+        lane += 1
       }
-      state[lane] = SIMD2(repeating: word)
-      lane += 1
     }
 
     state[4] = SIMD2(
       Self.nonceLane(firstNonce),
       Self.nonceLane(secondNonce)
+    )
+    state[16] = SIMD2(repeating: UInt64(0x80) << 56)
+    permute()
+  }
+
+  init(
+    mlDSASecretSeed: Span<UInt8>,
+    firstNonce: UInt16,
+    secondNonce: UInt16
+  ) {
+    self.init(sensitivity: .secret)
+    reset(
+      mlDSASecretSeed: mlDSASecretSeed,
+      firstNonce: firstNonce,
+      secondNonce: secondNonce
+    )
+  }
+
+  mutating func reset(
+    mlDSASecretSeed: Span<UInt8>,
+    firstNonce: UInt16,
+    secondNonce: UInt16
+  ) {
+    precondition(mlDSASecretSeed.count == 64 && sensitivity == .secret)
+    resetState()
+
+    mlDSASecretSeed.bytes.withUnsafeBytes { bytes in
+      // The exact 64-byte secret seed remains borrowed and initialized for all
+      // eight bounded unaligned loads. No pointer is retained or rebound.
+      var lane = 0
+      while lane < 8 {
+        let word = bytes.loadUnaligned(
+          fromByteOffset: lane * MemoryLayout<UInt64>.stride,
+          as: UInt64.self
+        )
+        state[lane] = SIMD2(repeating: UInt64(littleEndian: word))
+        lane += 1
+      }
+    }
+
+    state[8] = SIMD2(
+      Self.mlDSANonceLane(firstNonce),
+      Self.mlDSANonceLane(secondNonce)
     )
     state[16] = SIMD2(repeating: UInt64(0x80) << 56)
     permute()
@@ -388,7 +435,7 @@ struct KeccakX2Core: ~Copyable {
 
     while firstCount < 256 || secondCount < 256 {
       var laneIndex = 0
-      while laneIndex < 21 {
+      while laneIndex < 21 && (firstCount < 256 || secondCount < 256) {
         let firstLane = state[laneIndex]
         let secondLane = state[laneIndex + 1]
         let thirdLane = state[laneIndex + 2]
@@ -445,6 +492,39 @@ struct KeccakX2Core: ~Copyable {
     }
   }
 
+  mutating func squeezeMLDSAMasks(
+    first: UnsafeMutablePointer<UInt8>,
+    second: UnsafeMutablePointer<UInt8>,
+    byteCount: Int
+  ) {
+    precondition(byteCount >= 0 && sensitivity == .secret)
+    // Unsafe boundary invariants:
+    // - both outputs own byteCount initialized bytes and are disjoint;
+    // - every store is guarded by byteCount and the fixed 136-byte rate;
+    // - neither pointer is retained or allowed to escape this synchronous call;
+    // - the owner wipes both outputs after their final decode.
+    var outputOffset = 0
+    while outputOffset < byteCount {
+      let blockByteCount = min(136, byteCount - outputOffset)
+      var byteIndex = 0
+      while byteIndex < blockByteCount {
+        let words = state[byteIndex >> 3]
+        let shift = UInt64((byteIndex & 7) * 8)
+        first[outputOffset + byteIndex] = UInt8(
+          truncatingIfNeeded: words[0] >> shift
+        )
+        second[outputOffset + byteIndex] = UInt8(
+          truncatingIfNeeded: words[1] >> shift
+        )
+        byteIndex += 1
+      }
+      outputOffset += blockByteCount
+      if outputOffset < byteCount {
+        permute()
+      }
+    }
+  }
+
   mutating func sampleCBDEta2(
     into first: inout MutableSpan<MLKEMArithmetic.Coefficient>
   ) {
@@ -465,6 +545,85 @@ struct KeccakX2Core: ~Copyable {
     }
   }
 
+  mutating func sampleMLDSAMatrix(
+    first: UnsafeMutablePointer<UInt32>,
+    second: UnsafeMutablePointer<UInt32>
+  ) {
+    precondition(sensitivity == .publicData)
+    // Unsafe boundary invariants:
+    // - both destinations own 256 initialized UInt32 values and are disjoint;
+    // - accepted counters are checked before every store and never exceed 256;
+    // - the pointers remain scoped to this synchronous call and never escape;
+    // - the public SHAKE state is uniquely owned for every permutation.
+    var firstCount = 0
+    var secondCount = 0
+    while firstCount < 256 || secondCount < 256 {
+      var laneIndex = 0
+      while laneIndex < 21 {
+        let firstLane = state[laneIndex]
+        let secondLane = state[laneIndex + 1]
+        let thirdLane = state[laneIndex + 2]
+        Self.appendMLDSAMatrixCandidates(
+          firstLane[0],
+          secondLane[0],
+          thirdLane[0],
+          into: first,
+          count: &firstCount
+        )
+        Self.appendMLDSAMatrixCandidates(
+          firstLane[1],
+          secondLane[1],
+          thirdLane[1],
+          into: second,
+          count: &secondCount
+        )
+        laneIndex += 3
+      }
+      if firstCount < 256 || secondCount < 256 {
+        permute()
+      }
+    }
+  }
+
+  mutating func sampleMLDSAShort(
+    first: UnsafeMutablePointer<UInt32>,
+    second: UnsafeMutablePointer<UInt32>
+  ) {
+    precondition(sensitivity == .secret)
+    // Unsafe boundary invariants:
+    // - both destinations own 256 initialized UInt32 values and are disjoint;
+    // - accepted counters are checked before every store and never exceed 256;
+    // - no pointer crosses the synchronous borrow or a Sendable boundary;
+    // - reset and deinit erase the uniquely owned secret SHAKE state.
+    var firstCount = 0
+    var secondCount = 0
+    while firstCount < 256 || secondCount < 256 {
+      var laneIndex = 0
+      while laneIndex < 17 && (firstCount < 256 || secondCount < 256) {
+        let words = state[laneIndex]
+        var byteIndex = 0
+        while byteIndex < 8 && (firstCount < 256 || secondCount < 256) {
+          let shift = UInt64(byteIndex * 8)
+          Self.appendMLDSAShortByte(
+            UInt8(truncatingIfNeeded: words[0] >> shift),
+            into: first,
+            count: &firstCount
+          )
+          Self.appendMLDSAShortByte(
+            UInt8(truncatingIfNeeded: words[1] >> shift),
+            into: second,
+            count: &secondCount
+          )
+          byteIndex += 1
+        }
+        laneIndex += 1
+      }
+      if firstCount < 256 || secondCount < 256 {
+        permute()
+      }
+    }
+  }
+
   @inline(__always)
   private static func suffixLane(_ suffix: (UInt8, UInt8)) -> UInt64 {
     UInt64(suffix.0) | (UInt64(suffix.1) << 8) | (UInt64(0x1F) << 16)
@@ -473,6 +632,160 @@ struct KeccakX2Core: ~Copyable {
   @inline(__always)
   private static func nonceLane(_ nonce: UInt8) -> UInt64 {
     UInt64(nonce) | (UInt64(0x1F) << 8)
+  }
+
+  @inline(__always)
+  private static func mlDSANonceLane(_ nonce: UInt16) -> UInt64 {
+    UInt64(nonce) | (UInt64(0x1F) << 16)
+  }
+
+  @inline(__always)
+  private static func appendMLDSAMatrixCandidate(
+    _ candidate: UInt64,
+    into polynomial: UnsafeMutablePointer<UInt32>,
+    count: inout Int
+  ) {
+    let value = candidate & 0x7F_FFFF
+    if value < 8_380_417 && count < 256 {
+      polynomial[count] = UInt32(truncatingIfNeeded: value)
+      count += 1
+    }
+  }
+
+  @inline(__always)
+  private static func appendMLDSAMatrixCandidateWithCapacity(
+    _ candidate: UInt64,
+    into polynomial: UnsafeMutablePointer<UInt32>,
+    count: inout Int
+  ) {
+    // The caller reserves room for all eight candidates in the current chunk.
+    // A rejected value may occupy the next uncommitted slot temporarily; the
+    // next accepted value overwrites it before the polynomial is observed.
+    let value = candidate & 0x7F_FFFF
+    polynomial[count] = UInt32(truncatingIfNeeded: value)
+    count += value < 8_380_417 ? 1 : 0
+  }
+
+  @inline(__always)
+  private static func appendMLDSAMatrixCandidates(
+    _ first: UInt64,
+    _ second: UInt64,
+    _ third: UInt64,
+    into polynomial: UnsafeMutablePointer<UInt32>,
+    count: inout Int
+  ) {
+    // Three little-endian lanes contain eight consecutive 24-bit candidates.
+    // The top bit is masked as required by FIPS 204 rejection sampling.
+    if count <= 248 {
+      appendMLDSAMatrixCandidateWithCapacity(first, into: polynomial, count: &count)
+      appendMLDSAMatrixCandidateWithCapacity(
+        first >> 24,
+        into: polynomial,
+        count: &count
+      )
+      appendMLDSAMatrixCandidateWithCapacity(
+        (first >> 48) | (second << 16),
+        into: polynomial,
+        count: &count
+      )
+      appendMLDSAMatrixCandidateWithCapacity(
+        second >> 8,
+        into: polynomial,
+        count: &count
+      )
+      appendMLDSAMatrixCandidateWithCapacity(
+        second >> 32,
+        into: polynomial,
+        count: &count
+      )
+      appendMLDSAMatrixCandidateWithCapacity(
+        (second >> 56) | (third << 8),
+        into: polynomial,
+        count: &count
+      )
+      appendMLDSAMatrixCandidateWithCapacity(
+        third >> 16,
+        into: polynomial,
+        count: &count
+      )
+      appendMLDSAMatrixCandidateWithCapacity(
+        third >> 40,
+        into: polynomial,
+        count: &count
+      )
+      return
+    }
+    appendMLDSAMatrixCandidate(first, into: polynomial, count: &count)
+    appendMLDSAMatrixCandidate(first >> 24, into: polynomial, count: &count)
+    appendMLDSAMatrixCandidate(
+      (first >> 48) | (second << 16),
+      into: polynomial,
+      count: &count
+    )
+    appendMLDSAMatrixCandidate(second >> 8, into: polynomial, count: &count)
+    appendMLDSAMatrixCandidate(second >> 32, into: polynomial, count: &count)
+    appendMLDSAMatrixCandidate(
+      (second >> 56) | (third << 8),
+      into: polynomial,
+      count: &count
+    )
+    appendMLDSAMatrixCandidate(third >> 16, into: polynomial, count: &count)
+    appendMLDSAMatrixCandidate(third >> 40, into: polynomial, count: &count)
+  }
+
+  @inline(__always)
+  private static func appendMLDSAShortByte(
+    _ byte: UInt8,
+    into polynomial: UnsafeMutablePointer<UInt32>,
+    count: inout Int
+  ) {
+    if count <= 254 {
+      appendMLDSAShortCandidateWithCapacity(
+        UInt32(byte & 0x0F),
+        into: polynomial,
+        count: &count
+      )
+      appendMLDSAShortCandidateWithCapacity(
+        UInt32(byte >> 4),
+        into: polynomial,
+        count: &count
+      )
+      return
+    }
+    appendMLDSAShortCandidate(
+      UInt32(byte & 0x0F),
+      into: polynomial,
+      count: &count
+    )
+    appendMLDSAShortCandidate(
+      UInt32(byte >> 4),
+      into: polynomial,
+      count: &count
+    )
+  }
+
+  @inline(__always)
+  private static func appendMLDSAShortCandidateWithCapacity(
+    _ candidate: UInt32,
+    into polynomial: UnsafeMutablePointer<UInt32>,
+    count: inout Int
+  ) {
+    // The caller reserves two slots for the byte. Rejected nibbles can write to
+    // the next uncommitted slot because a later accepted nibble overwrites it.
+    polynomial[count] = candidate <= 4 ? 4 - candidate : 8_380_421 - candidate
+    count += candidate < 9 ? 1 : 0
+  }
+
+  @inline(__always)
+  private static func appendMLDSAShortCandidate(
+    _ candidate: UInt32,
+    into polynomial: UnsafeMutablePointer<UInt32>,
+    count: inout Int
+  ) {
+    if candidate < 9 && count < 256 {
+      polynomial[count] = candidate <= 4 ? 4 - candidate : 8_380_421 - candidate
+      count += 1
+    }
   }
 
   @inline(__always)
