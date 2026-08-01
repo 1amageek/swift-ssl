@@ -17,6 +17,7 @@ public struct RSAPublicKey: Sendable, Hashable {
             throw .invalidLength(expected: Self.minimumModulusByteCount, actual: modulus.count)
         }
         guard modulus[0] != 0,
+              modulus[modulus.count - 1] & 1 == 1,
               exponent >= 3,
               exponent & 1 == 1,
               exponent <= UInt64(Int.max) else {
@@ -54,10 +55,6 @@ public enum RSAPSSHash: Sendable, Hashable {
 /// This is deliberately a verification-only surface. The public exponent is
 /// not secret, while the encoded message and all intermediate buffers remain
 /// bounded by the caller-owned modulus size.
-// FIXME(INCOMPLETE_IMPLEMENTATION): The RSA-PSS path is vector-tested and
-// bounded, but its generic modular arithmetic still requires constant-time,
-// differential, sanitizer, and performance release gates before it can be
-// treated as a production authentication backend.
 public enum RSAPSS {
     public static func verify(
         signature: Span<UInt8>,
@@ -78,6 +75,11 @@ public enum RSAPSS {
 
         let modulus = publicKey.withModulusBytes { bytes in
             RSAUInt(bytes: bytes)
+        }
+        let encodedMessageByteCount = (modulus.bitWidth - 1 + 7) / 8
+        let maximumSaltLength = encodedMessageByteCount - hash.digestByteCount - 2
+        guard selectedSaltLength <= maximumSaltLength else {
+            throw .invalidLength(expected: maximumSaltLength, actual: selectedSaltLength)
         }
         let encoded = RSAUInt(bytes: signature)
         guard encoded < modulus else { throw .nonCanonicalEncoding }
@@ -217,7 +219,7 @@ public enum RSAPSS {
     }
 }
 
-private struct RSAUInt: Equatable, Comparable {
+struct RSAUInt: Equatable, Comparable {
     let words: ContiguousArray<UInt32>
 
     init(bytes: Span<UInt8>) {
@@ -267,19 +269,29 @@ private struct RSAUInt: Equatable, Comparable {
         exponent: UInt64,
         modulus: RSAUInt
     ) -> RSAUInt {
-        var result = RSAUInt.one(count: modulus.words.count)
-        var value = base.modulo(modulus)
+        precondition(!modulus.isZero && modulus.words[0] & 1 == 1)
+        let wordCount = modulus.words.count
+        let radixBitCount = wordCount * UInt32.bitWidth
+        let one = RSAUInt.one(count: wordCount)
+        var result = one.shiftedIntoMontgomeryDomain(
+            radixBitCount: radixBitCount,
+            modulus: modulus
+        )
+        var value = base.modulo(modulus).shiftedIntoMontgomeryDomain(
+            radixBitCount: radixBitCount,
+            modulus: modulus
+        )
         var exponent = exponent
         while exponent != 0 {
             if exponent & 1 != 0 {
-                result = result.modularMultiply(value, modulus: modulus)
+                result = result.montgomeryMultiply(value, modulus: modulus)
             }
             exponent >>= 1
             if exponent != 0 {
-                value = value.modularMultiply(value, modulus: modulus)
+                value = value.montgomeryMultiply(value, modulus: modulus)
             }
         }
-        return result
+        return result.montgomeryMultiply(one, modulus: modulus)
     }
 
     func modulo(_ modulus: RSAUInt) -> RSAUInt {
@@ -288,63 +300,133 @@ private struct RSAUInt: Equatable, Comparable {
         return value
     }
 
-    func modularMultiply(_ other: RSAUInt, modulus: RSAUInt) -> RSAUInt {
+    private func shiftedIntoMontgomeryDomain(
+        radixBitCount: Int,
+        modulus: RSAUInt
+    ) -> RSAUInt {
+        var result = self
+        var bit = 0
+        while bit < radixBitCount {
+            result = result.modularDouble(modulus: modulus)
+            bit += 1
+        }
+        return result
+    }
+
+    private func modularDouble(modulus: RSAUInt) -> RSAUInt {
         let count = modulus.words.count
-        var product = ContiguousArray<UInt64>(repeating: 0, count: count * 2)
-        var i = 0
-        while i < count {
+        var doubled = ContiguousArray<UInt32>(repeating: 0, count: count)
+        var carry: UInt64 = 0
+        var index = 0
+        while index < count {
+            let word = index < words.count ? words[index] : 0
+            let value = UInt64(word) << 1 | carry
+            doubled[index] = UInt32(truncatingIfNeeded: value)
+            carry = value >> 32
+            index += 1
+        }
+        let candidate = RSAUInt(words: doubled)
+        if carry != 0 || candidate >= modulus {
+            return candidate.subtractingModulusWithOverflow(modulus)
+        }
+        return candidate
+    }
+
+    private func montgomeryMultiply(
+        _ other: RSAUInt,
+        modulus: RSAUInt
+    ) -> RSAUInt {
+        let count = modulus.words.count
+        let reductionFactor = 0 &- Self.inverseModuloWord(modulus.words[0])
+        var accumulator = ContiguousArray<UInt32>(repeating: 0, count: count * 2 + 2)
+        var outer = 0
+        while outer < count {
+            let multiplier = outer < other.words.count ? other.words[outer] : 0
             var carry: UInt64 = 0
-            var j = 0
-            while j < count {
-                let lhs = i < words.count ? words[i] : 0
-                let rhs = j < other.words.count ? other.words[j] : 0
-                let value = UInt64(lhs) * UInt64(rhs) + product[i + j] + carry
-                product[i + j] = value & 0xFFFF_FFFF
+            var inner = 0
+            while inner < count {
+                let multiplicand = inner < words.count ? words[inner] : 0
+                let position = outer + inner
+                let value = UInt64(multiplicand) * UInt64(multiplier)
+                    + UInt64(accumulator[position]) + carry
+                accumulator[position] = UInt32(truncatingIfNeeded: value)
                 carry = value >> 32
-                j += 1
+                inner += 1
             }
-            var index = i + count
-            while carry != 0, index < product.count {
-                let value = product[index] + carry
-                product[index] = value & 0xFFFF_FFFF
+            Self.addCarry(carry, at: outer + count, to: &accumulator)
+
+            let reductionWord = accumulator[outer] &* reductionFactor
+            carry = 0
+            inner = 0
+            while inner < count {
+                let position = outer + inner
+                let value = UInt64(reductionWord) * UInt64(modulus.words[inner])
+                    + UInt64(accumulator[position]) + carry
+                accumulator[position] = UInt32(truncatingIfNeeded: value)
                 carry = value >> 32
-                index += 1
+                inner += 1
             }
-            i += 1
+            Self.addCarry(carry, at: outer + count, to: &accumulator)
+            outer += 1
         }
 
-        var remainder = ContiguousArray<UInt64>(repeating: 0, count: count + 1)
-        var bit = product.count * 32 - 1
-        while bit >= 0 {
-            var carry = (product[bit >> 5] >> UInt64(bit & 31)) & 1
-            var index = 0
-            while index < remainder.count {
-                let value = (remainder[index] << 1) | carry
-                remainder[index] = value & 0xFFFF_FFFF
-                carry = value >> 32
-                index += 1
-            }
-            let low = RSAUInt(truncating: remainder, count: count)
-            if remainder[count] != 0 || low >= modulus {
-                var borrow: UInt64 = 0
-                index = 0
-                while index < count {
-                    let minuend = remainder[index]
-                    let subtrahend = UInt64(modulus.words[index]) + borrow
-                    if minuend < subtrahend {
-                        remainder[index] = (UInt64(1) << 32) + minuend - subtrahend
-                        borrow = 1
-                    } else {
-                        remainder[index] = minuend - subtrahend
-                        borrow = 0
-                    }
-                    index += 1
-                }
-                remainder[count] -= borrow
-            }
-            bit -= 1
+        var reducedWords = ContiguousArray<UInt32>(repeating: 0, count: count)
+        var index = 0
+        while index < count {
+            reducedWords[index] = accumulator[index + count]
+            index += 1
         }
-        return RSAUInt(truncating: remainder, count: count)
+        let reduced = RSAUInt(words: reducedWords)
+        if accumulator[count * 2] != 0 || reduced >= modulus {
+            return reduced.subtractingModulusWithOverflow(modulus)
+        }
+        return reduced
+    }
+
+    private static func inverseModuloWord(_ oddWord: UInt32) -> UInt32 {
+        precondition(oddWord & 1 == 1)
+        var inverse: UInt32 = 1
+        var iteration = 0
+        while iteration < 5 {
+            inverse &*= 2 &- oddWord &* inverse
+            iteration += 1
+        }
+        return inverse
+    }
+
+    private static func addCarry(
+        _ initialCarry: UInt64,
+        at initialIndex: Int,
+        to accumulator: inout ContiguousArray<UInt32>
+    ) {
+        var carry = initialCarry
+        var index = initialIndex
+        while carry != 0 {
+            precondition(index < accumulator.count)
+            let value = UInt64(accumulator[index]) + carry
+            accumulator[index] = UInt32(truncatingIfNeeded: value)
+            carry = value >> 32
+            index += 1
+        }
+    }
+
+    private func subtractingModulusWithOverflow(_ modulus: RSAUInt) -> RSAUInt {
+        var result = words
+        var borrow: UInt64 = 0
+        var index = 0
+        while index < result.count {
+            let minuend = UInt64(result[index])
+            let subtrahend = UInt64(modulus.words[index]) + borrow
+            if minuend < subtrahend {
+                result[index] = UInt32(truncatingIfNeeded: (UInt64(1) << 32) + minuend - subtrahend)
+                borrow = 1
+            } else {
+                result[index] = UInt32(truncatingIfNeeded: minuend - subtrahend)
+                borrow = 0
+            }
+            index += 1
+        }
+        return RSAUInt(words: result)
     }
 
     static func - (lhs: RSAUInt, rhs: RSAUInt) -> RSAUInt {
@@ -375,15 +457,5 @@ private struct RSAUInt: Equatable, Comparable {
             index -= 1
         }
         return false
-    }
-
-    private init(truncating words: ContiguousArray<UInt64>, count: Int) {
-        var result = ContiguousArray<UInt32>(repeating: 0, count: count)
-        var index = 0
-        while index < count {
-            result[index] = UInt32(truncatingIfNeeded: words[index])
-            index += 1
-        }
-        self.words = result
     }
 }

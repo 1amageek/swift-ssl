@@ -406,10 +406,6 @@ public struct X509Certificate: Sendable, Hashable {
         }
     }
 
-    // FIXME(INCOMPLETE_IMPLEMENTATION): RSA-PSS certificate verification is
-    // callable for compatibility validation, but the crypto backend remains
-    // outside TLS selection until its constant-time and differential release
-    // gates pass.
     private borrowing func verifyRSAPSS(
         using verificationKey: borrowing SubjectPublicKeyInfo
     ) throws(X509CertificateError) {

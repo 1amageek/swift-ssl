@@ -130,16 +130,59 @@ final class X509CertificateTests: XCTestCase {
         XCTAssertEqual(certificate.subjectPublicKeyInfo.algorithm, .ecPublicKey(curve: .secp384r1))
     }
 
+    func testRejectsModifiedP384ECDSACertificateSignature() throws {
+        var certificateDER = makeP384ECDSACertificate()
+        certificateDER[certificateDER.count - 1] ^= 0x01
+        let certificate = try X509Certificate(der: certificateDER.span)
+
+        XCTAssertThrowsError(try certificate.verifySignature()) { error in
+            XCTAssertEqual(error as? X509CertificateError, .signatureVerificationFailed)
+        }
+    }
+
     func testVerifiesP521ECDSACertificateSignature() throws {
         let certificate = try X509Certificate(der: makeP521ECDSACertificate().span)
         XCTAssertNoThrow(try certificate.verifySignature())
         XCTAssertEqual(certificate.subjectPublicKeyInfo.algorithm, .ecPublicKey(curve: .secp521r1))
     }
 
+    func testRejectsModifiedP521ECDSACertificateSignature() throws {
+        var certificateDER = makeP521ECDSACertificate()
+        certificateDER[certificateDER.count - 1] ^= 0x01
+        let certificate = try X509Certificate(der: certificateDER.span)
+
+        XCTAssertThrowsError(try certificate.verifySignature()) { error in
+            XCTAssertEqual(error as? X509CertificateError, .signatureVerificationFailed)
+        }
+    }
+
     func testVerifiesRSAPSSCertificateSignature() throws {
         let certificate = try X509Certificate(der: makeRSAPSSCertificate().span)
         XCTAssertNoThrow(try certificate.verifySignature())
         XCTAssertEqual(certificate.subjectPublicKeyInfo.algorithm, .rsaEncryption)
+    }
+
+    func testRejectsModifiedRSAPSSCertificateSignature() throws {
+        var certificateDER = makeRSAPSSCertificate()
+        certificateDER[certificateDER.count - 1] ^= 0x01
+        let certificate = try X509Certificate(der: certificateDER.span)
+
+        XCTAssertThrowsError(try certificate.verifySignature()) { error in
+            XCTAssertEqual(error as? X509CertificateError, .signatureVerificationFailed)
+        }
+    }
+
+    func testRejectsRSAPSSSignatureWithEllipticCurveIssuerKey() throws {
+        let certificate = try X509Certificate(der: makeRSAPSSCertificate().span)
+        let ellipticCurveCertificate = try X509Certificate(
+            der: makeECDSACertificate().span
+        )
+
+        XCTAssertThrowsError(try certificate.verifySignature(
+            using: ellipticCurveCertificate.subjectPublicKeyInfo
+        )) { error in
+            XCTAssertEqual(error as? X509CertificateError, .unsupportedSignatureAlgorithm)
+        }
     }
 
     func testValidatesP256LeafAgainstTrustAnchorAndSAN() throws {

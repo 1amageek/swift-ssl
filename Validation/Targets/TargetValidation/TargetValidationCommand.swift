@@ -14,6 +14,7 @@ enum TargetValidationCommand {
     case hpke
     case p256
     case p256ECDSA
+    case rsaPSS
     case hmacDRBG
     case sha384512
     case sha3
@@ -54,6 +55,7 @@ enum TargetValidationCommand {
     try validateX25519()
     try validateHPKE()
     try validateP256()
+    try validateRSAPSS()
     try validateHMACDRBG()
     try validateSHA384AndSHA512()
     try validateSHA3()
@@ -408,6 +410,54 @@ enum TargetValidationCommand {
       privateKey: signingPrivateKey
     ) == expectedDeterministicSignature else {
       throw Failure.p256ECDSA
+    }
+  }
+
+  private static func validateRSAPSS() throws {
+    let modulus = try hexadecimalBytes(
+      "B5E9172F65A2FB7D5D287F277A5CC182581497CF9FFC779839113DAD70B8EA9E" +
+        "35EDB39C95C23ACC949B953132C0CDA4723C3E13E3FFBA97345FA8BA4947460B1" +
+        "E833B4EC5793402CC19AFB3E9B3C406F9F423EE47C504C4E790314BE876EF4B0" +
+        "68EF85C021349459A0E1B05B9E860864797AC588AB6F70EC55452915D0C3DDE9" +
+        "9A0B4AA566F759A0BDA20080F96254512B4BDBFF4E0AAF68263B9BD513D16EBF" +
+        "797D71BB8AA02611F544DB3C80F1EC5B60BD185D36ADBBDE988EBB9F6EE332E" +
+        "7501F66A1413DD348D4F7F78D9F93172A029BAC6F4072EB81AF4CC9692D62153" +
+        "04DD8C68F10F100925AD50987FC5D7FA1084532E90CED8F02A1BED6D92DE8A65"
+    )
+    let digest = try hexadecimalBytes(
+      "29AEB90FADDF4D7ECE03FA92CFFB85213640FC5ED228181BD7BDE889FF3E7A5E"
+    )
+    let signature = try hexadecimalBytes(
+      "6FA921CFAC77C99B35BFCD6722264EF9C4B508542AF7A517134938F75726E8E5B" +
+        "696A019E709826339B0AA726B8FE02606D8F2DB94C345C9BC3112D97CAC3DF6E" +
+        "166EDE61468C6D21A61FD573387F6770B3D13E44FD510FA9B9AABA6BB25C94EB" +
+        "ED5E023FB4E531029DF7D35BD84AC5D34BAB24A349A537FCC1BAD294A6CD1E17" +
+        "F917582603AF2468308C7E8E940A49B036ECED9791D9C593FA6B570B44ACC8B9" +
+        "0EF80BCC69675FDE2BB1E3BDD9EA5F0461A87D5A8F427DB1ABFFE4443CFEFFFB" +
+        "F13532C876975D9270E709E4D504457CBD124A5132DF4CEBF7E1B48A3BAF5E6C" +
+        "BC3D4D7E27387204698250E1E7CD5C6DE8CF800DA203CD73D938FF911C1B5C4"
+    )
+    let key = try RSAPublicKey(modulus: modulus.span, exponent: 65_537)
+    guard try RSAPSS.verify(
+      signature: signature.span,
+      messageHash: digest.span,
+      publicKey: key,
+      hash: .sha256,
+      saltLength: 32
+    ) else {
+      throw Failure.rsaPSS
+    }
+
+    var modifiedSignature = signature
+    modifiedSignature[modifiedSignature.count - 1] ^= 1
+    guard try !RSAPSS.verify(
+      signature: modifiedSignature.span,
+      messageHash: digest.span,
+      publicKey: key,
+      hash: .sha256,
+      saltLength: 32
+    ) else {
+      throw Failure.rsaPSS
     }
   }
 
@@ -836,6 +886,37 @@ enum TargetValidationCommand {
       !QUICTLSProfile.usesTLSRecords
     else {
       throw Failure.profileBoundary
+    }
+  }
+
+  private static func hexadecimalBytes(
+    _ hexadecimal: String
+  ) throws(Failure) -> ContiguousArray<UInt8> {
+    let characters = ContiguousArray(hexadecimal.utf8)
+    guard characters.count & 1 == 0 else {
+      throw .rsaPSS
+    }
+    var result = ContiguousArray<UInt8>()
+    result.reserveCapacity(characters.count / 2)
+    var index = 0
+    while index < characters.count {
+      guard let high = hexadecimalNibble(characters[index]),
+        let low = hexadecimalNibble(characters[index + 1])
+      else {
+        throw .rsaPSS
+      }
+      result.append(high << 4 | low)
+      index += 2
+    }
+    return result
+  }
+
+  private static func hexadecimalNibble(_ character: UInt8) -> UInt8? {
+    switch character {
+    case 0x30...0x39: character - 0x30
+    case 0x41...0x46: character - 0x41 + 10
+    case 0x61...0x66: character - 0x61 + 10
+    default: nil
     }
   }
 }
