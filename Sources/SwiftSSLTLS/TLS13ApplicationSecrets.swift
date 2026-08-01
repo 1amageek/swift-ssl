@@ -77,6 +77,33 @@ public struct TLS13ApplicationSecrets: ~Copyable, Sendable {
         )
     }
 
+    package borrowing func exportTrafficSecret(
+        for endpoint: TLSRole
+    ) throws(SecretMemoryError) -> TLS13TrafficSecret {
+        switch endpoint {
+        case .client:
+            let copy = try clientTrafficSecret.withBorrowedBytes {
+                bytes throws(SecretMemoryError) in
+                try SecretBytes(copying: bytes)
+            }
+            return TLS13TrafficSecret(
+                endpoint: endpoint,
+                cipherSuite: cipherSuite,
+                secret: copy
+            )
+        case .server:
+            let copy = try serverTrafficSecret.withBorrowedBytes {
+                bytes throws(SecretMemoryError) in
+                try SecretBytes(copying: bytes)
+            }
+            return TLS13TrafficSecret(
+                endpoint: endpoint,
+                cipherSuite: cipherSuite,
+                secret: copy
+            )
+        }
+    }
+
     public borrowing func withExporterMasterSecret<Result: ~Copyable, Failure: Error>(
         _ body: (Span<UInt8>) throws(Failure) -> Result
     ) throws(Failure) -> Result {

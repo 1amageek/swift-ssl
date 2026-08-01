@@ -36,6 +36,13 @@ from the reassembly ring while the core consumes it. The stream advances only
 after a successful semantic transition. The adapter maps client/server secret
 names to local read/write directions and preserves effect order.
 
+`TLS13ClientHandshake` and `TLS13ServerHandshake` are Stream record adapters
+over the same core. They parse inbound record boundaries as checked ranges,
+open authenticated handshake records, and pass borrowed complete messages to
+the core. Outbound handshake messages are sealed directly into the final
+record-batch backing. Application records, NewSessionTicket transport, and
+KeyUpdate record transitions remain Stream-adapter responsibilities.
+
 Traffic secrets are copied once when exported from the key schedule because
 the state machine must retain its own secret owner while the transport takes
 an independently wiped owner. Message bytes are not materialized between the
@@ -48,8 +55,8 @@ owned backing.
 - Full and PSK-resumed handshakes use the same semantic path.
 - Conflicting CRYPTO retransmissions fail before TLS state changes.
 - Secret direction and delivery order are explicit, typed effects.
-- The stream TLS engine must be migrated to this core before the semantic
-  implementation is considered single-source.
+- Stream TLS and QUIC now share one semantic implementation; transport
+  adapters cannot independently change transcript or authentication state.
 - QUIC transport parameters, ALPN policy, and post-handshake application-epoch
   processing remain separate responsibilities and are not hidden fallbacks.
 
@@ -65,5 +72,8 @@ owned backing.
 - three repeated focused Native runs and focused AddressSanitizer execution;
 - full-handshake execution with directional-secret comparison on Native,
   WASI, and Embedded WASI using the pinned Swift 6.4 snapshot; and
+- Stream full/resumed handshakes, all cipher suites, application records,
+  encrypted tickets, KeyUpdate request/response, Ed25519 and P-256/P-384/P-521
+  CertificateVerify, tamper rejection, and focused AddressSanitizer execution;
 - allocation, fuzzing, and external interoperability gates as recorded in the
   verification ledger.

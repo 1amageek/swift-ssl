@@ -6,7 +6,12 @@ import SwiftSSLX509
 ///
 /// The core owns authentication, transcript, and key-schedule semantics. A
 /// transport adapter owns message framing, reliability, and encryption.
-public struct TLS13ServerHandshakeCore: TLS13ServerHandshakeCoreProtocol, ~Copyable, Sendable {
+public struct TLS13ServerHandshakeCore:
+    TLS13ServerHandshakeCoreProtocol,
+    TLS13ApplicationTrafficSecretManaging,
+    ~Copyable,
+    Sendable
+{
     private enum Phase: Sendable {
         case awaitingClientHello
         case awaitingClientFinished
@@ -147,6 +152,32 @@ public struct TLS13ServerHandshakeCore: TLS13ServerHandshakeCoreProtocol, ~Copya
         } catch {
             phase = .failed
             throw mapHandshakeEngineError(error)
+        }
+    }
+
+    public mutating func updateApplicationTrafficSecret(
+        for endpoint: TLSRole
+    ) throws(TLS13HandshakeEngineError) -> TLS13TrafficSecret {
+        guard case .established = phase,
+              var secrets = applicationSecrets.take() else {
+            throw .invalidState
+        }
+        do {
+            switch endpoint {
+            case .client: try secrets.updateClientTrafficSecret()
+            case .server: try secrets.updateServerTrafficSecret()
+            }
+            let exported = try secrets.exportTrafficSecret(for: endpoint)
+            applicationSecrets = consume secrets
+            return exported
+        } catch let error as TLS13KeyScheduleError {
+            applicationSecrets = consume secrets
+            phase = .failed
+            throw .keySchedule(error)
+        } catch {
+            applicationSecrets = consume secrets
+            phase = .failed
+            throw .malformedInput
         }
     }
 

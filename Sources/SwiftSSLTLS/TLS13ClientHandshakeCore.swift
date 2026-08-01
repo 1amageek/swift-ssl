@@ -8,7 +8,12 @@ import SwiftSSLX509
 /// The core consumes exactly one complete handshake message per receive call.
 /// It owns transcript and key-schedule state, but never frames, seals, opens,
 /// retransmits, or reassembles transport bytes.
-public struct TLS13ClientHandshakeCore: TLS13ClientHandshakeCoreProtocol, ~Copyable, Sendable {
+public struct TLS13ClientHandshakeCore:
+    TLS13ClientHandshakeCoreProtocol,
+    TLS13ApplicationTrafficSecretManaging,
+    ~Copyable,
+    Sendable
+{
     private enum Phase: Sendable {
         case idle
         case awaitingServerHello
@@ -173,6 +178,62 @@ public struct TLS13ClientHandshakeCore: TLS13ClientHandshakeCoreProtocol, ~Copya
         } catch {
             phase = .failed
             throw mapHandshakeEngineError(error)
+        }
+    }
+
+    public mutating func updateApplicationTrafficSecret(
+        for endpoint: TLSRole
+    ) throws(TLS13HandshakeEngineError) -> TLS13TrafficSecret {
+        guard case .established = phase,
+              var secrets = applicationSecrets.take() else {
+            throw .invalidState
+        }
+        do {
+            switch endpoint {
+            case .client: try secrets.updateClientTrafficSecret()
+            case .server: try secrets.updateServerTrafficSecret()
+            }
+            let exported = try secrets.exportTrafficSecret(for: endpoint)
+            applicationSecrets = consume secrets
+            return exported
+        } catch let error as TLS13KeyScheduleError {
+            applicationSecrets = consume secrets
+            phase = .failed
+            throw .keySchedule(error)
+        } catch {
+            applicationSecrets = consume secrets
+            phase = .failed
+            throw .malformedInput
+        }
+    }
+
+    public mutating func makeResumptionState(
+        ticket: TLS13NewSessionTicket,
+        receivedAt: VerificationInstant
+    ) throws(TLS13HandshakeEngineError) -> TLS13ResumptionState {
+        guard case .established = phase,
+              let secrets = applicationSecrets.take() else {
+            throw .invalidState
+        }
+        do {
+            let state = try secrets.withResumptionMasterSecret {
+                master throws(TLS13ResumptionError) in
+                try TLS13ResumptionState(
+                    ticket: ticket.ticket.span,
+                    ticketNonce: ticket.ticketNonce.span,
+                    resumptionMasterSecret: master,
+                    cipherSuite: secrets.cipherSuite,
+                    issuedAt: receivedAt,
+                    lifetime: ticket.lifetime,
+                    ageAdd: ticket.ageAdd
+                )
+            }
+            applicationSecrets = consume secrets
+            return state
+        } catch let error {
+            applicationSecrets = consume secrets
+            phase = .failed
+            throw .resumption(error)
         }
     }
 
