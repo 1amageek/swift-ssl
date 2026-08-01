@@ -11,6 +11,24 @@ let ownershipSettings: [SwiftSetting] = [
   .enableExperimentalFeature("Lifetimes"),
 ]
 
+var nistValidationSettings = ownershipSettings
+switch ProcessInfo.processInfo.environment["SWIFT_SSL_NIST_VALIDATION_CASE"] {
+case nil, "all":
+  break
+case "p256":
+  nistValidationSettings.append(.define("SWIFT_SSL_NIST_P256"))
+case "p384-valid":
+  nistValidationSettings.append(.define("SWIFT_SSL_NIST_P384_VALID"))
+case "p384-mutated":
+  nistValidationSettings.append(.define("SWIFT_SSL_NIST_P384_MUTATED"))
+case "p521-valid":
+  nistValidationSettings.append(.define("SWIFT_SSL_NIST_P521_VALID"))
+case "p521-mutated":
+  nistValidationSettings.append(.define("SWIFT_SSL_NIST_P521_MUTATED"))
+case let invalidSelection?:
+  fatalError("Unsupported SWIFT_SSL_NIST_VALIDATION_CASE: \(invalidSelection)")
+}
+
 var products: [Product] = [
   .library(name: "SwiftSSL", targets: ["SwiftSSL"]),
   .library(name: "SwiftSSLCore", targets: ["SwiftSSLCore"]),
@@ -30,6 +48,10 @@ var products: [Product] = [
   .executable(
     name: "swift-ssl-quic-crypto-stream-validation",
     targets: ["SwiftSSLQUICCryptoStreamValidation"]
+  ),
+  .executable(
+    name: "swift-ssl-nist-verification-validation",
+    targets: ["SwiftSSLNISTVerificationValidation"]
   ),
 ]
 
@@ -94,6 +116,12 @@ var targets: [Target] = [
     dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLQUIC", "SwiftSSLTLS"],
     path: "Validation/Targets/QUICCryptoStreamValidation",
     swiftSettings: ownershipSettings
+  ),
+  .executableTarget(
+    name: "SwiftSSLNISTVerificationValidation",
+    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto"],
+    path: "Validation/Targets/NISTVerificationValidation",
+    swiftSettings: nistValidationSettings
   ),
   .testTarget(
     name: "SwiftSSLCoreTests",

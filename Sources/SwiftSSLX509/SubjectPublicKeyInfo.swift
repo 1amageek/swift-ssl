@@ -8,6 +8,11 @@ public struct SubjectPublicKeyInfo: Sendable, Hashable {
     private let der: OwnedBytes
     private let keyRange: ByteRange
 
+    /// Whether this key is a canonical Ed25519 SubjectPublicKeyInfo.
+    public var isEd25519: Bool {
+        algorithm == .ed25519 && algorithmIdentifier.parameters == .absent
+    }
+
     public init(
         der encodedDER: Span<UInt8>,
         limits: ParsingLimits = SubjectPublicKeyInfo.defaultParsingLimits
@@ -25,10 +30,8 @@ public struct SubjectPublicKeyInfo: Sendable, Hashable {
         do {
             root = try cursor.readElement(using: &budget)
             try cursor.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw .der(error)
-        } catch {
-            throw .invalidStructure
         }
         let sequenceTag = DERTag(tagClass: .universal, isConstructed: true, number: 16)
         guard root.tag == sequenceTag else {
@@ -45,10 +48,8 @@ public struct SubjectPublicKeyInfo: Sendable, Hashable {
             algorithmElement = try body.readElement(using: &budget)
             keyElement = try body.readElement(using: &budget)
             try body.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw .der(error)
-        } catch {
-            throw .invalidStructure
         }
         let algorithmIdentifier: DERAlgorithmIdentifier
         do {
@@ -56,18 +57,14 @@ public struct SubjectPublicKeyInfo: Sendable, Hashable {
                 from: algorithmElement,
                 using: &budget
             )
-        } catch let error as DERAlgorithmIdentifierError {
+        } catch let error {
             throw .algorithm(error)
-        } catch {
-            throw .invalidStructure
         }
         let keyBits: DERBitString
         do {
             keyBits = try DERPrimitiveCodec.decodeBitString(from: keyElement)
-        } catch let error as DERValueError {
+        } catch let error {
             throw .value(error)
-        } catch {
-            throw .invalidStructure
         }
         guard keyBits.unusedBitCount == 0 else {
             throw .invalidKeyBitString

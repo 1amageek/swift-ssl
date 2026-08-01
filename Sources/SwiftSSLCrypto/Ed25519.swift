@@ -1,23 +1,23 @@
 import SwiftSSLCore
 
 /// Ed25519 signature verification using extended Edwards coordinates.
-public enum Ed25519 {
+public enum Ed25519: DigitalSignature {
+    public typealias PublicKey = Ed25519PublicKey
+    public typealias PrivateKey = Ed25519PrivateKey
+
     public static let publicKeyByteCount = 32
     public static let signatureByteCount = 64
 
     public static func verify(
         signature: Span<UInt8>,
         message: Span<UInt8>,
-        publicKey: Span<UInt8>
+        using publicKey: borrowing Ed25519PublicKey
     ) throws(CryptoInputError) -> Bool {
-        guard publicKey.count == Self.publicKeyByteCount else {
-            throw .invalidLength(expected: Self.publicKeyByteCount, actual: publicKey.count)
-        }
         guard signature.count == Self.signatureByteCount else {
             throw .invalidLength(expected: Self.signatureByteCount, actual: signature.count)
         }
 
-        let publicPoint = try EdwardsPoint.decode(publicKey)
+        let publicPoint = try EdwardsPoint.decode(publicKey.span)
         let rPoint = try EdwardsPoint.decode(signature.extracting(0..<32))
         let scalarBytes = signature.extracting(32..<64)
         guard Scalar.isCanonical(scalarBytes) else {
@@ -31,7 +31,7 @@ public enum Ed25519 {
                 let baseAddress = buffer.baseAddress!
                 var context = SHA512.makeContext()
                 try context.update(signature.extracting(0..<32))
-                try context.update(publicKey)
+                try context.update(publicKey.span)
                 try context.update(message)
                 var output = MutableSpan(_unsafeStart: baseAddress, count: digestByteCount)
                 try context.finalize(into: &output)
@@ -43,10 +43,21 @@ public enum Ed25519 {
         Self.wipe(&digest)
 
         let left = EdwardsPoint.scalarMultiplyBase(scalarBytes)
-        let right = rPoint.add(publicPoint.scalarMultiply(challenge))
+        let right = rPoint.add(publicPoint.scalarMultiply(challenge.span))
         let leftCleared = left.double().double().double()
         let rightCleared = right.double().double().double()
         return leftCleared.isEqual(to: rightCleared)
+    }
+
+    public static func sign(
+        message: Span<UInt8>,
+        using privateKey: borrowing Ed25519PrivateKey
+    ) throws(CryptoInputError) -> ContiguousArray<UInt8> {
+        try privateKey.sign(message: message)
+    }
+
+    static func validatePublicKey(_ bytes: Span<UInt8>) throws(CryptoInputError) {
+        _ = try EdwardsPoint.decode(bytes)
     }
 
     private static func wipe(_ bytes: inout ContiguousArray<UInt8>) {
@@ -75,35 +86,35 @@ public struct Ed25519PrivateKey: ~Copyable, Sendable {
     }
 
     public borrowing func publicKey() throws(CryptoInputError) -> ContiguousArray<UInt8> {
-        let expanded = try Self.expand(seed: seed)
-        var scalar = expanded
-        scalar[0] &= 248
-        scalar[31] &= 63
-        scalar[31] |= 64
-        defer { Self.wipe(&scalar) }
-        return EdwardsPoint.scalarMultiplyBase(scalar.span).encoded
+        var expanded = try Self.expand(seed: seed)
+        expanded[0] &= 248
+        expanded[31] &= 63
+        expanded[31] |= 64
+        defer { Self.wipe(&expanded) }
+        return EdwardsPoint.scalarMultiplyBase(
+            expanded.span.extracting(0..<32)
+        ).encoded
     }
 
     public borrowing func sign(message: Span<UInt8>) throws(CryptoInputError) -> ContiguousArray<UInt8> {
-        let expanded = try Self.expand(seed: seed)
-        var scalar = expanded
-        scalar[0] &= 248
-        scalar[31] &= 63
-        scalar[31] |= 64
-        var prefix = ContiguousArray(expanded[32..<64])
-        defer {
-            Self.wipe(&scalar)
-            Self.wipe(&prefix)
-        }
+        var expanded = try Self.expand(seed: seed)
+        expanded[0] &= 248
+        expanded[31] &= 63
+        expanded[31] |= 64
+        defer { Self.wipe(&expanded) }
 
-        let publicKey = EdwardsPoint.scalarMultiplyBase(scalar.span).encoded
+        let scalar = expanded.span.extracting(0..<32)
+        let prefix = expanded.span.extracting(32..<64)
+        let publicKey = EdwardsPoint.scalarMultiplyBase(scalar).encoded
         var nonceInput = ContiguousArray<UInt8>()
         nonceInput.reserveCapacity(prefix.count + message.count)
-        nonceInput.append(contentsOf: prefix)
+        Self.append(&nonceInput, prefix)
         Self.append(&nonceInput, message)
+        defer { Self.wipe(&nonceInput) }
         var nonceDigest = try Self.hash(nonceInput.span)
         defer { Self.wipe(&nonceDigest) }
-        let nonce = Scalar.reduce(nonceDigest.span)
+        var nonce = Scalar.reduce(nonceDigest.span)
+        defer { Self.wipe(&nonce) }
         let encodedR = EdwardsPoint.scalarMultiplyBase(nonce.span).encoded
 
         var challengeInput = ContiguousArray<UInt8>()
@@ -116,7 +127,7 @@ public struct Ed25519PrivateKey: ~Copyable, Sendable {
         let challenge = Scalar.reduce(challengeDigest.span)
         let response = Scalar.addMod(
             nonce,
-            Scalar.multiplyMod(challenge, Scalar.clamped(scalar))
+            Scalar.multiplyMod(challenge, scalar)
         )
 
         var signature = ContiguousArray<UInt8>()
@@ -178,37 +189,29 @@ private struct Scalar {
     }
 
     static func reduce(_ bytes: Span<UInt8>) -> ContiguousArray<UInt8> {
+        // The 64-byte hash is secret while signing. Long division performs one
+        // shift and one masked conditional subtraction for every input bit, so
+        // control flow and memory indices do not depend on the reduced value.
         var remainder = ContiguousArray<UInt8>(repeating: 0, count: 33)
-        var index = bytes.count - 1
-        while index >= 0 {
-            var carry = UInt16(bytes[index])
-            var limb = 0
-            while limb < remainder.count {
-                let value = UInt16(remainder[limb]) * 256 + carry
-                remainder[limb] = UInt8(truncatingIfNeeded: value)
-                carry = value >> 8
-                limb += 1
+        var bit = bytes.count * 8 - 1
+        while bit >= 0 {
+            let inputBit = (bytes[bit >> 3] >> UInt8(bit & 7)) & 1
+            var carry = inputBit
+            var index = 0
+            while index < remainder.count {
+                let nextCarry = remainder[index] >> 7
+                remainder[index] = (remainder[index] << 1) | carry
+                carry = nextCarry
+                index += 1
             }
-            while Self.compare(remainder, modulus) >= 0 {
-                Self.subtract(&remainder, modulus)
-            }
-            index -= 1
+            Self.subtractModulusIfPossible(&remainder)
+            bit -= 1
         }
         var result = ContiguousArray<UInt8>(repeating: 0, count: 32)
         var resultIndex = 0
         while resultIndex < 32 {
             result[resultIndex] = remainder[resultIndex]
             resultIndex += 1
-        }
-        return result
-    }
-
-    static func clamped(_ bytes: ContiguousArray<UInt8>) -> ContiguousArray<UInt8> {
-        var result = ContiguousArray<UInt8>(repeating: 0, count: 32)
-        var index = 0
-        while index < 32 {
-            result[index] = bytes[index]
-            index += 1
         }
         return result
     }
@@ -227,59 +230,54 @@ private struct Scalar {
             index += 1
         }
         result[32] = UInt8(truncatingIfNeeded: carry)
-        while Self.compare(result, modulus) >= 0 {
-            Self.subtract(&result, modulus)
-        }
+        Self.subtractModulusIfPossible(&result)
         result.removeLast()
         return result
     }
 
     static func multiplyMod(
         _ lhs: ContiguousArray<UInt8>,
-        _ rhs: ContiguousArray<UInt8>
+        _ rhs: Span<UInt8>
     ) -> ContiguousArray<UInt8> {
         var result = ContiguousArray<UInt8>(repeating: 0, count: 32)
         var addend = lhs
         var bit = 0
         while bit < 256 {
-            if ((rhs[bit >> 3] >> UInt8(bit & 7)) & 1) != 0 {
-                result = Self.addMod(result, addend)
-            }
+            let sum = Self.addMod(result, addend)
+            let selected = (rhs[bit >> 3] >> UInt8(bit & 7)) & 1
+            Self.select(&result, sum, when: selected)
             addend = Self.addMod(addend, addend)
             bit += 1
         }
         return result
     }
 
-    private static func compare(
-        _ lhs: ContiguousArray<UInt8>,
-        _ rhs: ContiguousArray<UInt8>
-    ) -> Int {
-        var index = lhs.count - 1
-        while index >= 0 {
-            let rhsByte = index < rhs.count ? rhs[index] : 0
-            if lhs[index] < rhsByte { return -1 }
-            if lhs[index] > rhsByte { return 1 }
-            index -= 1
-        }
-        return 0
-    }
-
-    private static func subtract(
-        _ value: inout ContiguousArray<UInt8>,
-        _ modulus: ContiguousArray<UInt8>
+    private static func subtractModulusIfPossible(
+        _ value: inout ContiguousArray<UInt8>
     ) {
-        var borrow: Int16 = 0
+        var difference = ContiguousArray<UInt8>(repeating: 0, count: value.count)
+        var borrow: UInt16 = 0
         var index = 0
         while index < value.count {
-            let difference = Int16(value[index]) - Int16(index < modulus.count ? modulus[index] : 0) - borrow
-            if difference < 0 {
-                value[index] = UInt8(difference + 256)
-                borrow = 1
-            } else {
-                value[index] = UInt8(difference)
-                borrow = 0
-            }
+            let subtrahend = UInt16(index < modulus.count ? modulus[index] : 0) + borrow
+            let minuend = UInt16(value[index])
+            difference[index] = UInt8(truncatingIfNeeded: minuend &- subtrahend)
+            borrow = UInt16(minuend < subtrahend ? 1 : 0)
+            index += 1
+        }
+        let useDifference = UInt8(truncatingIfNeeded: UInt16(1) &- borrow)
+        Self.select(&value, difference, when: useDifference)
+    }
+
+    private static func select(
+        _ whenZero: inout ContiguousArray<UInt8>,
+        _ whenOne: ContiguousArray<UInt8>,
+        when select: UInt8
+    ) {
+        let mask = UInt8(0) &- select
+        var index = 0
+        while index < whenZero.count {
+            whenZero[index] = (whenZero[index] & ~mask) | (whenOne[index] & mask)
             index += 1
         }
     }
@@ -353,25 +351,38 @@ private struct EdwardsPoint {
         return EdwardsPoint(x: e * f, y: g * h, z: f * g, t: e * h)
     }
 
-    func scalarMultiply(_ scalar: ContiguousArray<UInt8>) -> EdwardsPoint {
+    func scalarMultiply(_ scalar: Span<UInt8>) -> EdwardsPoint {
+        // Secret scalar bits never select a control-flow edge. Every iteration
+        // computes both the addition and doubling and selects field limbs with
+        // a mask. All storage is owned by local values and no borrow escapes.
         var result = EdwardsPoint.identity
         var addend = self
         var bit = 0
         while bit < 256 {
-            if ((scalar[bit >> 3] >> UInt8(bit & 7)) & 1) != 0 {
-                result = result.add(addend)
-            }
+            let sum = result.add(addend)
+            let selected = UInt64((scalar[bit >> 3] >> UInt8(bit & 7)) & 1)
+            result = EdwardsPoint.selecting(result, sum, select: selected)
             addend = addend.double()
             bit += 1
         }
         return result
     }
 
+    private static func selecting(
+        _ whenZero: EdwardsPoint,
+        _ whenOne: EdwardsPoint,
+        select: UInt64
+    ) -> EdwardsPoint {
+        EdwardsPoint(
+            x: Field25519.selecting(whenZero.x, whenOne.x, select: select),
+            y: Field25519.selecting(whenZero.y, whenOne.y, select: select),
+            z: Field25519.selecting(whenZero.z, whenOne.z, select: select),
+            t: Field25519.selecting(whenZero.t, whenOne.t, select: select)
+        )
+    }
+
     static func scalarMultiplyBase(_ scalar: Span<UInt8>) -> EdwardsPoint {
-        var bytes = ContiguousArray<UInt8>(repeating: 0, count: 32)
-        var index = 0
-        while index < 32 { bytes[index] = scalar[index]; index += 1 }
-        return EdwardsPoint.base.scalarMultiply(bytes)
+        EdwardsPoint.base.scalarMultiply(scalar)
     }
 
     static func decode(_ bytes: Span<UInt8>) throws(CryptoInputError) -> EdwardsPoint {

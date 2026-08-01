@@ -1,6 +1,6 @@
 # ADR 0030: Validation-Gated P-256 ECDSA Signing
 
-- Status: Accepted
+- Status: Superseded by ADR 0036; signing and TLS selection were removed
 - Date: 2026-08-01
 
 ## Context

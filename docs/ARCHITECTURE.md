@@ -105,7 +105,8 @@ Protocols describe semantic responsibilities; concrete algorithms and parsers re
 | `AuthenticatedCipher` | Seal/open with explicit nonce and associated data; failed open exposes no plaintext. |
 | `KeyAgreement` | Validates peer public input and returns a noncopyable shared secret. |
 | `KeyEncapsulationMechanism` | Key generation, encapsulation, and decapsulation with `KEMError`; correctly sized ML-KEM ciphertexts use implicit rejection rather than a validity-revealing error. |
-| `DigitalSignature` / `SignatureVerifier` | Signing and verification are separate capabilities so verification-only policy can be expressed. |
+| `DigitalSignature` / `SignatureVerifier` | Message signing refines message verification and requires distinct noncopyable private and owned public key types; Ed25519 implements both capabilities. |
+| `DigestSignatureVerifier` | Verifies a caller-selected digest without a signing requirement; NIST ECDSA implements this certificate-compatibility capability. |
 
 Algorithm input errors, policy errors, authentication failures, and resource exhaustion are different typed error families.
 

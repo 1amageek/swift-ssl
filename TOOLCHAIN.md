@@ -14,7 +14,7 @@
 
 ## Build and execution checks
 
-Native correctness tests use Xcode with a bounded external timeout. Cross-target checks compile, link, and execute dedicated validation programs with the exact SDK identifier.
+Native correctness tests use Xcode with a bounded external timeout. Cross-target checks compile, link, and execute dedicated validation programs with the exact SDK identifier. Release cross-compilation can exceed the 120-second execution timeout. In that case, build the product first, then run the already-linked product under the bounded wrapper with `--skip-build`; a compile timeout is never reported as a runtime failure.
 
 ```sh
 TOOLCHAINS=org.swift.64202607231a xcrun swift --version
@@ -42,6 +42,40 @@ scripts/swift-test-timeout.sh 120 \
   --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
   --scratch-path .build/target-validation-wasi-embedded \
   swift-ssl-target-validation
+
+swift build -c release \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm \
+  --product swift-ssl-facade-validation
+
+scripts/swift-test-timeout.sh 120 \
+  swift run --skip-build -c release \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm \
+  swift-ssl-facade-validation
+
+swift build -c release \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
+  --product swift-ssl-quic-crypto-stream-validation
+
+scripts/swift-test-timeout.sh 120 \
+  swift run --skip-build -c release \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
+  swift-ssl-quic-crypto-stream-validation
+```
+
+The long-running NIST verification program is separate from normal tests and
+selects one bounded success or mutation case at manifest-evaluation time:
+
+```sh
+SWIFT_SSL_NIST_VALIDATION_CASE=p384-valid \
+  swift build -c release \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
+  --product swift-ssl-nist-verification-validation
+
+SWIFT_SSL_NIST_VALIDATION_CASE=p384-valid \
+  scripts/swift-test-timeout.sh 120 \
+  swift run --skip-build -c release \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
+  swift-ssl-nist-verification-validation
 ```
 
 The CI wrapper is responsible for enforcing the timeout and recording the toolchain, SDK, target triple, compiler commit, and linked Embedded platform implementation in each log.

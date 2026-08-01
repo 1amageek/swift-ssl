@@ -193,10 +193,8 @@ public struct X509Certificate: Sendable, Hashable {
                     signatureAlgorithmElement,
                     limits: limits
                 )
-            } catch let error as X509CertificateError {
+            } catch let error {
                 throw error
-            } catch {
-                throw .unsupportedSignatureAlgorithm
             }
         } else {
             parsedPSSParameters = nil
@@ -295,10 +293,11 @@ public struct X509Certificate: Sendable, Hashable {
                 valid = try withTBSCertificateBytes { tbs throws(CryptoInputError) in
                     try withSignatureBytes { signature throws(CryptoInputError) in
                         try verificationKey.withPublicKeyBytes { publicKey throws(CryptoInputError) in
-                            try Ed25519.verify(
+                            let key = try Ed25519PublicKey(bytes: publicKey)
+                            return try Ed25519.verify(
                                 signature: signature,
                                 message: tbs,
-                                publicKey: publicKey
+                                using: key
                             )
                         }
                     }
@@ -317,11 +316,6 @@ public struct X509Certificate: Sendable, Hashable {
             return
         }
 
-        // FIXME(INCOMPLETE_IMPLEMENTATION): These X.509 ECDSA branches are
-        // vector- and certificate-tested, but their fixed-width arithmetic
-        // still requires the constant-time, differential, sanitizer, and
-        // performance release gates. The current call path is validation-only
-        // and must not be selected by TLS until those gates pass.
         let digest: ContiguousArray<UInt8>
         let signatureComponentByteCount: Int
         switch Array(signatureAlgorithm.objectIdentifier) {
@@ -386,19 +380,21 @@ public struct X509Certificate: Sendable, Hashable {
                 return try P256ECDSA.verify(
                     signature: rawSignature.span,
                     messageHash: digest.span,
-                    publicKey: key
+                    using: key
                 )
             case .ecPublicKey(curve: .secp384r1):
+                let key = try P384PublicKey(bytes: publicKey)
                 return try P384ECDSA.verify(
                     signature: rawSignature.span,
                     messageHash: digest.span,
-                    publicKey: publicKey
+                    using: key
                 )
             case .ecPublicKey(curve: .secp521r1):
+                let key = try P521PublicKey(bytes: publicKey)
                 return try P521ECDSA.verify(
                     signature: rawSignature.span,
                     messageHash: digest.span,
-                    publicKey: publicKey
+                    using: key
                 )
             default:
                 throw CryptoInputError.invalidPeerKey
@@ -537,10 +533,8 @@ public struct X509Certificate: Sendable, Hashable {
         do {
             root = try cursor.readElement(using: &budget)
             try cursor.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw .der(error)
-        } catch {
-            throw .invalidStructure
         }
         let sequenceTag = DERTag(tagClass: .universal, isConstructed: true, number: 16)
         guard root.tag == sequenceTag else { throw .invalidStructure }
@@ -551,10 +545,8 @@ public struct X509Certificate: Sendable, Hashable {
             modulusElement = try body.readElement(using: &budget)
             exponentElement = try body.readElement(using: &budget)
             try body.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw .der(error)
-        } catch {
-            throw .invalidStructure
         }
         let integerTag = DERTag(tagClass: .universal, isConstructed: false, number: 2)
         guard modulusElement.tag == integerTag, exponentElement.tag == integerTag else {

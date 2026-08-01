@@ -1,6 +1,6 @@
 # ADR 0029: Add P-384 and P-521 ECDH key-agreement owners
 
-Status: accepted for validation-gated implementation
+Status: superseded by ADR 0036; the callable secret-key and ECDH surfaces were removed
 
 ## Context
 

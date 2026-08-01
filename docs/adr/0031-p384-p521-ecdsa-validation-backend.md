@@ -1,6 +1,6 @@
 # ADR 0031: P-384/P-521 ECDSA Validation Backend
 
-- Status: Superseded by explicit TLS CertificateVerify selection
+- Status: Superseded by ADR 0036; signing and TLS selection were removed
 - Date: 2026-08-01
 
 ## Context

@@ -1,5 +1,4 @@
 import SwiftSSLCore
-import SwiftSSLASN1
 import SwiftSSLCrypto
 import SwiftSSLX509
 
@@ -19,44 +18,12 @@ public struct TLS13ServerHello: Sendable, Hashable {
 
 /// Signature schemes permitted by the modern TLS 1.3 profile.
 public enum TLS13SignatureScheme: UInt16, Sendable, Hashable {
-    case ecdsaP256SHA256 = 0x0403
-    case ecdsaP384SHA384 = 0x0503
-    case ecdsaP521SHA512 = 0x0603
-    case rsaPSSRSAESHA256 = 0x0804
-    case rsaPSSRSAESHA384 = 0x0805
-    case rsaPSSRSAESHA512 = 0x0806
     case ed25519 = 0x0807
-    case rsaPSSPSSSHA256 = 0x0809
-    case rsaPSSPSSSHA384 = 0x080A
-    case rsaPSSPSSSHA512 = 0x080B
 
     public var publicKeyByteCount: Int {
-        switch self {
-        case .ed25519: return 32
-        case .ecdsaP256SHA256: return 65
-        case .ecdsaP384SHA384: return 97
-        case .ecdsaP521SHA512: return 133
-        case .rsaPSSRSAESHA256, .rsaPSSRSAESHA384, .rsaPSSRSAESHA512,
-             .rsaPSSPSSSHA256, .rsaPSSPSSSHA384, .rsaPSSPSSSHA512:
-            return 0
-        }
+        32
     }
 
-    public var keyAlgorithm: PublicKeyAlgorithm {
-        switch self {
-        case .ed25519:
-            return .ed25519
-        case .ecdsaP256SHA256:
-            return .ecPublicKey(curve: .prime256v1)
-        case .ecdsaP384SHA384:
-            return .ecPublicKey(curve: .secp384r1)
-        case .ecdsaP521SHA512:
-            return .ecPublicKey(curve: .secp521r1)
-        case .rsaPSSRSAESHA256, .rsaPSSRSAESHA384, .rsaPSSRSAESHA512,
-             .rsaPSSPSSSHA256, .rsaPSSPSSSHA384, .rsaPSSPSSSHA512:
-            return .rsaEncryption
-        }
-    }
 }
 
 public struct TLS13CertificateVerify: Sendable, Hashable {

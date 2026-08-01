@@ -60,7 +60,7 @@ public struct TLS13ServerHandshakeCore:
         guard parsed.validity.contains(verificationInstant) else {
             throw .certificateNotValid
         }
-        guard parsed.subjectPublicKeyInfo.algorithm == signingKey.signatureScheme.keyAlgorithm else {
+        guard parsed.subjectPublicKeyInfo.isEd25519 else {
             throw .invalidConfiguration
         }
         guard (resumptionIdentity == nil) == (resumptionPSK == nil) else {
@@ -309,29 +309,7 @@ public struct TLS13ServerHandshakeCore:
             messages.append(certificateMessage)
             let hash = try transcriptDigest()
             let signed = TLS13HandshakeWire.certificateVerifyInput(transcriptHash: hash.span)
-            let signature = try engineTry { try signingKey.sign(message: signed.span) }
-            let wireSignature: ContiguousArray<UInt8>
-            switch signingKey.signatureScheme {
-            case .ed25519:
-                wireSignature = signature
-            case .ecdsaP256SHA256:
-                wireSignature = try encodeECDSASignature(
-                    signature.span,
-                    componentByteCount: 32
-                )
-            case .ecdsaP384SHA384:
-                wireSignature = try encodeECDSASignature(
-                    signature.span,
-                    componentByteCount: 48
-                )
-            case .ecdsaP521SHA512:
-                wireSignature = try encodeECDSASignature(
-                    signature.span,
-                    componentByteCount: 66
-                )
-            default:
-                throw .invalidConfiguration
-            }
+            let wireSignature = try engineTry { try signingKey.sign(message: signed.span) }
             let certificateVerify = try makeCertificateVerifyMessage(
                 signatureScheme: signingKey.signatureScheme,
                 signature: wireSignature
@@ -415,48 +393,6 @@ public struct TLS13ServerHandshakeCore:
             ageAdd: ageAdd,
             toleranceMilliseconds: resumptionAgeToleranceMilliseconds
         )
-    }
-
-    private func encodeECDSASignature(
-        _ raw: Span<UInt8>,
-        componentByteCount: Int
-    ) throws(TLS13HandshakeEngineError) -> ContiguousArray<UInt8> {
-        guard raw.count == componentByteCount * 2 else {
-            throw .certificateVerifyFailure
-        }
-        let r = derInteger(raw.extracting(0..<componentByteCount))
-        let s = derInteger(raw.extracting(componentByteCount..<raw.count))
-        let bodyCount = 2 + r.count + 2 + s.count
-        guard bodyCount <= 255 else { throw .certificateVerifyFailure }
-        var result = ContiguousArray<UInt8>()
-        result.reserveCapacity(bodyCount + 3)
-        result.append(0x30)
-        if bodyCount < 128 {
-            result.append(UInt8(bodyCount))
-        } else {
-            result.append(0x81)
-            result.append(UInt8(bodyCount))
-        }
-        result.append(0x02)
-        result.append(UInt8(r.count))
-        result.append(contentsOf: r)
-        result.append(0x02)
-        result.append(UInt8(s.count))
-        result.append(contentsOf: s)
-        return result
-    }
-
-    private func derInteger(_ bytes: Span<UInt8>) -> ContiguousArray<UInt8> {
-        var first = 0
-        while first + 1 < bytes.count, bytes[first] == 0 { first += 1 }
-        var result = ContiguousArray<UInt8>()
-        if bytes[first] & 0x80 != 0 { result.append(0) }
-        var index = first
-        while index < bytes.count {
-            result.append(bytes[index])
-            index += 1
-        }
-        return result
     }
 
     private mutating func appendTranscript(

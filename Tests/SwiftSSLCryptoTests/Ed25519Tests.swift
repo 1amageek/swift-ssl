@@ -31,10 +31,11 @@ final class Ed25519Tests: XCTestCase {
             "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155" +
             "5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
         )
+        let key = try Ed25519PublicKey(bytes: publicKey.span)
         let valid = try Ed25519.verify(
             signature: signature.span,
             message: ContiguousArray<UInt8>().span,
-            publicKey: publicKey.span
+            using: key
         )
 
         XCTAssertTrue(valid)
@@ -49,11 +50,12 @@ final class Ed25519Tests: XCTestCase {
             "5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
         )
         let message = ContiguousArray<UInt8>([0])
+        let key = try Ed25519PublicKey(bytes: publicKey.span)
 
         let valid = try Ed25519.verify(
             signature: signature.span,
             message: message.span,
-            publicKey: publicKey.span
+            using: key
         )
 
         XCTAssertFalse(valid)
@@ -70,17 +72,18 @@ final class Ed25519Tests: XCTestCase {
         signature.replaceSubrange(32..<64, with: bytes(
             "edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010"
         ))
+        let key = try Ed25519PublicKey(bytes: publicKey.span)
 
         do {
             let unused = try Ed25519.verify(
                 signature: signature.span,
                 message: ContiguousArray<UInt8>().span,
-                publicKey: publicKey.span
+                using: key
             )
             _ = unused
             XCTFail("non-canonical scalar was accepted")
         } catch {
-            XCTAssertEqual(error as? CryptoInputError, .nonCanonicalEncoding)
+            XCTAssertEqual(error, .nonCanonicalEncoding)
         }
     }
 

@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted for the standalone P-256 ECDH primitive. TLS negotiation and
-certificate-signature use remain separate decisions.
+Superseded by ADR 0036. The callable P-256 secret-key and ECDH surface was
+removed from the modern profile.
 
 ## Context
 

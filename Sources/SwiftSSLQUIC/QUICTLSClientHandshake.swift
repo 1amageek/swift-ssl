@@ -16,7 +16,6 @@ public struct QUICTLSClientHandshake: QUICTLSClientHandshaking, ~Copyable, Senda
         verificationInstant: VerificationInstant,
         cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
         resumptionState: consuming TLS13ResumptionState? = nil,
-        expectedServerSignatureScheme: TLS13SignatureScheme = .ed25519,
         maximumBufferedByteCount: Int = QUICCryptoStreamReassembler.defaultMaximumBufferedByteCount,
         maximumMessageByteCount: Int = TLS13HandshakeMessageFramer.defaultMaximumMessageByteCount
     ) throws(QUICTLSHandshakeError) -> Self {
@@ -28,8 +27,7 @@ public struct QUICTLSClientHandshake: QUICTLSClientHandshaking, ~Copyable, Senda
                 expectedServerPublicKey: expectedServerPublicKey,
                 verificationInstant: verificationInstant,
                 cipherSuite: cipherSuite,
-                resumptionState: resumptionState,
-                expectedServerSignatureScheme: expectedServerSignatureScheme
+                resumptionState: resumptionState
             )
         } catch let error {
             throw .handshake(error)

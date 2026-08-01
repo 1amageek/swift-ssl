@@ -2,9 +2,7 @@
 
 ## Status
 
-Accepted for the validation path. Production release remains blocked by the
-constant-time, differential, target, and performance gates recorded in the
-responsibility matrix.
+Accepted for production certificate-signature verification under ADR 0036.
 
 ## Context
 
@@ -23,10 +21,11 @@ prime256v1 SPKI, strictly decodes the DER sequence of two positive integers,
 and truncates SHA-384/SHA-512 digests to the P-256 order width through the
 crypto primitive.
 
-The verifier is intentionally not selected by the TLS handshake engine yet.
-The P-256 arithmetic is shared with the standalone ECDH primitive and still
-requires a constant-time audit and independent differential corpus before it
-can become a production authentication backend.
+The verifier cannot be selected by the TLS handshake engine. Its public key,
+digest, signature, and result are public verification inputs, so its arithmetic
+has no secret-dependent timing contract. Differential, target, sanitizer,
+allocation, performance, and security-review gates still apply to release
+quality and correctness.
 
 ## Consequences
 
@@ -36,5 +35,5 @@ can become a production authentication backend.
   modified signatures fail explicitly as signature verification failures.
 - P-384/P-521, RSA-PSS, ECDSA signing, and TLS CertificateVerify integration
   remain separate implementation responsibilities.
-- The validation-only marker remains on both the primitive and façade so a
-  callable path cannot be mistaken for a completed security release.
+- The primitive conforms only to `DigestSignatureVerifier`; no signing or key
+  agreement capability can be obtained from its type.

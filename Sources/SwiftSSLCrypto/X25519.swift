@@ -312,6 +312,27 @@ struct Field25519 {
         }
     }
 
+    /// Selects one field element without branching on `select`.
+    ///
+    /// Both inputs own initialized 16-limb storage. The result receives a new
+    /// initialized owner, no pointer escapes, and `select` must be zero or one.
+    static func selecting(
+        _ whenZero: Field25519,
+        _ whenOne: Field25519,
+        select: UInt64
+    ) -> Field25519 {
+        let mask = UInt64(0) &- select
+        var result = Field25519()
+        var index = 0
+        while index < 16 {
+            let zero = UInt64(bitPattern: whenZero.limbs[index]) & ~mask
+            let one = UInt64(bitPattern: whenOne.limbs[index]) & mask
+            result.limbs[index] = Int64(bitPattern: zero | one)
+            index += 1
+        }
+        return result
+    }
+
     private mutating func normalize() {
         // Radix carries use arithmetic shifts so secret-dependent values do not
         // select a branch. Three fixed passes bound carries after multiplication

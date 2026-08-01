@@ -16,4 +16,4 @@ PKCS #8 version is checked against the optional public-key field: version 0 has 
 
 ## Verification
 
-Native `SwiftSSLX509Tests` cover an X25519 SPKI key range, non-zero unused-bit rejection, PKCS #8 X25519 private-key ranges, version-one/public-key consistency, RFC 5915 P-256 parsing, and curve-mismatch rejection. `TLS13SigningKey.fromECPrivateKey` additionally validates the derived public point before selecting a TLS signer. Constant-time arithmetic and differential evidence remain separate crypto release gates.
+Native `SwiftSSLX509Tests` cover an X25519 SPKI key range, non-zero unused-bit rejection, PKCS #8 X25519 private-key ranges, version-one/public-key consistency, RFC 5915 P-256 parsing, and curve-mismatch rejection. Under ADR 0036, RFC 5915 decoding remains a format and ownership responsibility only; there is no conversion from `ECPrivateKey` to `TLS13SigningKey`. Constant-time arithmetic and differential evidence remain separate crypto release gates for callable secret operations.

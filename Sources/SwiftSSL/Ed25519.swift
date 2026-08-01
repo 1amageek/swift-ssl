@@ -8,13 +8,13 @@ public enum Ed25519 {
     public static func verify(
         signature: Span<UInt8>,
         message: Span<UInt8>,
-        publicKey: Span<UInt8>
+        using publicKey: borrowing Ed25519PublicKey
     ) throws(CryptoInputError) -> Bool {
         do {
             return try SwiftSSLCrypto.Ed25519.verify(
                 signature: signature,
                 message: message,
-                publicKey: publicKey
+                using: publicKey.implementation
             )
         } catch {
             throw CryptoInputError(error)

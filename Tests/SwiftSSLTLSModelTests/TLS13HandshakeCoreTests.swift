@@ -225,8 +225,8 @@ final class TLS13HandshakeCoreTests: XCTestCase {
                     bytes: ContiguousArray(repeating: 0x22, count: 32).span
                 ),
                 certificateDER: deterministicCertificate().span,
-                signingKey: .ed25519(
-                    try Ed25519PrivateKey(seed: deterministicSeed().span)
+                signingKey: TLS13SigningKey(
+                    ed25519: try Ed25519PrivateKey(seed: deterministicSeed().span)
                 ),
                 verificationInstant: receivedAt,
                 resumptionIdentity: ticket.span,
@@ -316,7 +316,7 @@ final class TLS13HandshakeCoreTests: XCTestCase {
             random: ContiguousArray(repeating: 0x02, count: 32).span,
             ephemeralKey: serverKey,
             certificateDER: deterministicCertificate().span,
-            signingKey: .ed25519(signingKey),
+            signingKey: TLS13SigningKey(ed25519: signingKey),
             verificationInstant: instant
         )
         return CorePair(client: client, server: server)

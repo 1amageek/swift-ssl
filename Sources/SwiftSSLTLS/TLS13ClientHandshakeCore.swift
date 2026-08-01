@@ -1,5 +1,4 @@
 import SwiftSSLCore
-import SwiftSSLASN1
 import SwiftSSLCrypto
 import SwiftSSLX509
 
@@ -24,8 +23,7 @@ public struct TLS13ClientHandshakeCore:
 
     private let random: OwnedBytes
     private let ephemeralKey: X25519PrivateKey
-    private let expectedServerPublicKey: OwnedBytes
-    private let expectedServerSignatureScheme: TLS13SignatureScheme
+    private let expectedServerPublicKey: Ed25519PublicKey
     private let verificationInstant: VerificationInstant
     private let cipherSuite: TLSCipherSuite
     private var transcript: TLS13Transcript
@@ -46,15 +44,19 @@ public struct TLS13ClientHandshakeCore:
         expectedServerPublicKey: Span<UInt8>,
         verificationInstant: VerificationInstant,
         cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
-        resumptionState: consuming TLS13ResumptionState? = nil,
-        expectedServerSignatureScheme: TLS13SignatureScheme = .ed25519
+        resumptionState: consuming TLS13ResumptionState? = nil
     ) throws(TLS13HandshakeEngineError) {
-        guard random.count == 32,
-              expectedServerPublicKey.count == expectedServerSignatureScheme.publicKeyByteCount else {
+        guard random.count == 32 else {
             throw .invalidConfiguration
         }
         guard TLSCipherSuite(rawValue: cipherSuite.rawValue) != nil else {
             throw .unsupportedCipherSuite(cipherSuite.rawValue)
+        }
+        let validatedServerPublicKey: Ed25519PublicKey
+        do {
+            validatedServerPublicKey = try Ed25519PublicKey(bytes: expectedServerPublicKey)
+        } catch {
+            throw .invalidConfiguration
         }
         do {
             transcript = try TLS13Transcript()
@@ -63,8 +65,7 @@ public struct TLS13ClientHandshakeCore:
         }
         self.random = OwnedBytes(copying: random)
         self.ephemeralKey = ephemeralKey
-        self.expectedServerPublicKey = OwnedBytes(copying: expectedServerPublicKey)
-        self.expectedServerSignatureScheme = expectedServerSignatureScheme
+        self.expectedServerPublicKey = validatedServerPublicKey
         self.verificationInstant = verificationInstant
         self.cipherSuite = cipherSuite
         self.resumptionState = resumptionState
@@ -349,8 +350,7 @@ public struct TLS13ClientHandshakeCore:
             guard certificate.validity.contains(verificationInstant) else {
                 throw .certificateNotValid
             }
-            guard certificate.subjectPublicKeyInfo.algorithm
-                    == expectedServerSignatureScheme.keyAlgorithm else {
+            guard certificate.subjectPublicKeyInfo.isEd25519 else {
                 throw .certificateVerificationFailed
             }
             let expected = expectedServerPublicKey
@@ -369,7 +369,7 @@ public struct TLS13ClientHandshakeCore:
             let certificateVerify = try engineTry {
                 try TLS13HandshakeCodec.parseCertificateVerifyWithScheme(message)
             }
-            guard certificateVerify.signatureScheme == expectedServerSignatureScheme else {
+            guard certificateVerify.signatureScheme == .ed25519 else {
                 throw .certificateVerifyFailure
             }
             let hash = try transcriptDigest()
@@ -472,134 +472,13 @@ public struct TLS13ClientHandshakeCore:
         signedMessage: Span<UInt8>
     ) throws(TLS13HandshakeEngineError) -> Bool {
         do {
-            switch value.signatureScheme {
-            case .ed25519:
-                return try Ed25519.verify(
-                    signature: value.signature.span,
-                    message: signedMessage,
-                    publicKey: expectedServerPublicKey.span
-                )
-            case .ecdsaP256SHA256:
-                let raw = try decodeECDSASignature(value.signature.span, componentByteCount: 32)
-                var digest = ContiguousArray<UInt8>(repeating: 0, count: SHA256.digestByteCount)
-                var destination = digest.mutableSpan
-                try SHA256.hash(signedMessage, into: &destination)
-                return try P256ECDSA.verify(
-                    signature: raw.span,
-                    messageHash: digest.span,
-                    publicKey: P256PublicKey(bytes: expectedServerPublicKey.span)
-                )
-            case .ecdsaP384SHA384:
-                let raw = try decodeECDSASignature(value.signature.span, componentByteCount: 48)
-                var digest = ContiguousArray<UInt8>(repeating: 0, count: SHA384.digestByteCount)
-                var destination = digest.mutableSpan
-                try SHA384.hash(signedMessage, into: &destination)
-                let key = try P384PublicKey(bytes: expectedServerPublicKey.span)
-                return try P384ECDSA.verify(
-                    signature: raw.span,
-                    messageHash: digest.span,
-                    publicKey: key.span
-                )
-            case .ecdsaP521SHA512:
-                let raw = try decodeECDSASignature(value.signature.span, componentByteCount: 66)
-                var digest = ContiguousArray<UInt8>(repeating: 0, count: SHA512.digestByteCount)
-                var destination = digest.mutableSpan
-                try SHA512.hash(signedMessage, into: &destination)
-                let key = try P521PublicKey(bytes: expectedServerPublicKey.span)
-                return try P521ECDSA.verify(
-                    signature: raw.span,
-                    messageHash: digest.span,
-                    publicKey: key.span
-                )
-            case .rsaPSSRSAESHA256, .rsaPSSRSAESHA384, .rsaPSSRSAESHA512,
-                 .rsaPSSPSSSHA256, .rsaPSSPSSSHA384, .rsaPSSPSSSHA512:
-                throw TLS13HandshakeEngineError.certificateVerifyFailure
-            }
-        } catch let error as TLS13HandshakeEngineError {
-            throw error
-        } catch {
-            throw .certificateVerifyFailure
-        }
-    }
-
-    private func decodeECDSASignature(
-        _ signature: Span<UInt8>,
-        componentByteCount: Int
-    ) throws(TLS13HandshakeEngineError) -> ContiguousArray<UInt8> {
-        guard signature.count <= 256 else { throw .certificateVerifyFailure }
-        var budget: ParsingBudget
-        do {
-            budget = try ParsingBudget(
-                limits: X509Certificate.defaultParsingLimits,
-                inputByteCount: signature.count
+            return try Ed25519.verify(
+                signature: value.signature.span,
+                message: signedMessage,
+                using: expectedServerPublicKey
             )
         } catch {
             throw .certificateVerifyFailure
-        }
-        var cursor = DERCursor(signature)
-        let root: DERElementView
-        do {
-            root = try cursor.readElement(using: &budget)
-            try cursor.requireFullyConsumed()
-        } catch {
-            throw .certificateVerifyFailure
-        }
-        guard root.tag == DERTag(tagClass: .universal, isConstructed: true, number: 16) else {
-            throw .certificateVerifyFailure
-        }
-        var body = DERCursor(root.contentBytes)
-        let r: DERElementView
-        let s: DERElementView
-        do {
-            r = try body.readElement(using: &budget)
-            s = try body.readElement(using: &budget)
-            try body.requireFullyConsumed()
-        } catch {
-            throw .certificateVerifyFailure
-        }
-        let integerTag = DERTag(tagClass: .universal, isConstructed: false, number: 2)
-        guard r.tag == integerTag, s.tag == integerTag else {
-            throw .certificateVerifyFailure
-        }
-        var result = ContiguousArray<UInt8>(repeating: 0, count: componentByteCount * 2)
-        try copyPositiveInteger(
-            r.contentBytes,
-            into: &result,
-            offset: 0,
-            componentByteCount: componentByteCount
-        )
-        try copyPositiveInteger(
-            s.contentBytes,
-            into: &result,
-            offset: componentByteCount,
-            componentByteCount: componentByteCount
-        )
-        return result
-    }
-
-    private func copyPositiveInteger(
-        _ bytes: Span<UInt8>,
-        into result: inout ContiguousArray<UInt8>,
-        offset: Int,
-        componentByteCount: Int
-    ) throws(TLS13HandshakeEngineError) {
-        guard bytes.count > 0, bytes.count <= componentByteCount + 1,
-              (bytes[0] & 0x80 == 0 || bytes[0] == 0) else {
-            throw .certificateVerifyFailure
-        }
-        var sourceOffset = 0
-        if bytes.count > 1, bytes[0] == 0 {
-            guard bytes[1] & 0x80 != 0 else { throw .certificateVerifyFailure }
-            sourceOffset = 1
-        }
-        let count = bytes.count - sourceOffset
-        guard count > 0, count <= componentByteCount else {
-            throw .certificateVerifyFailure
-        }
-        var index = 0
-        while index < count {
-            result[offset + componentByteCount - count + index] = bytes[sourceOffset + index]
-            index += 1
         }
     }
 

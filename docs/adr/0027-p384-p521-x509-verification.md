@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted as a validation-only implementation; release gating remains open.
+Accepted for production certificate-signature verification under ADR 0036.
 
 ## Context
 
@@ -19,20 +19,20 @@ keys and fixed-width `r || s` signatures. `SwiftSSLX509.X509Certificate` owns
 DER signature decoding and selects the curve only when the signature and SPKI
 algorithm identifiers agree.
 
-The implementation intentionally remains outside TLS certificate selection
-until the constant-time audit, independent differential corpus, sanitizer,
-allocation/copy, and performance gates are recorded. A marker remains beside
-the callable boundary so a validation success cannot be mistaken for release
-readiness.
+The implementation remains outside TLS signing and CertificateVerify
+selection. Its public key, digest, signature, and result are public inputs, so
+the variable-time arithmetic does not cross a secret boundary. Independent
+differential, sanitizer, target, allocation/copy, performance, and security
+review gates remain release requirements for correctness and robustness.
 
 ## Consequences
 
 - P-384 and P-521 certificates can now be parsed and cryptographically checked
   without a platform crypto dependency.
 - X.509 owns DER integer canonicalization; the crypto layer owns curve arithmetic.
-- The current generic limb backend is a bounded validation path and is not yet a
-  constant-time production backend.
-- ECDSA signing, RSA-PSS, and TLS selection remain separate responsibilities.
+- The current generic limb backend is bounded verification-only arithmetic.
+- ECDSA signing is absent; RSA-PSS verification and TLS Ed25519 signing are
+  separate capabilities.
 
 ```mermaid
 flowchart LR
@@ -42,5 +42,5 @@ flowchart LR
     Select --> Crypto[SwiftSSLCrypto verifier]
     Raw --> Crypto
     Crypto --> Result[typed success or signature failure]
-    Crypto -. release gates pending .-> Gate[constant-time / differential / sanitizer / benchmark]
+    Crypto -. release gates pending .-> Gate[differential / sanitizer / targets / benchmark]
 ```

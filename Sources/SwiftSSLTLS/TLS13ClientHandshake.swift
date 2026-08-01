@@ -16,8 +16,7 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
         expectedServerPublicKey: Span<UInt8>,
         verificationInstant: VerificationInstant,
         cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
-        resumptionState: consuming TLS13ResumptionState? = nil,
-        expectedServerSignatureScheme: TLS13SignatureScheme = .ed25519
+        resumptionState: consuming TLS13ResumptionState? = nil
     ) throws(TLS13HandshakeEngineError) {
         core = try TLS13ClientHandshakeCore(
             random: random,
@@ -25,8 +24,7 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
             expectedServerPublicKey: expectedServerPublicKey,
             verificationInstant: verificationInstant,
             cipherSuite: cipherSuite,
-            resumptionState: resumptionState,
-            expectedServerSignatureScheme: expectedServerSignatureScheme
+            resumptionState: resumptionState
         )
         handshakeRead = nil
         handshakeWrite = nil

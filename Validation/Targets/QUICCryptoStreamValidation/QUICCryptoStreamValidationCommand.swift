@@ -245,7 +245,7 @@ enum QUICCryptoStreamValidationCommand {
       random: ContiguousArray(repeating: 0x02, count: 32).span,
       ephemeralKey: serverKey,
       certificateDER: deterministicCertificate().span,
-      signingKey: .ed25519(signingKey),
+      signingKey: TLS13SigningKey(ed25519: signingKey),
       verificationInstant: instant
     )
     return Endpoints(client: client, server: server)
