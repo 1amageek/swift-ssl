@@ -1,5 +1,9 @@
 import SwiftSSL
 
+#if canImport(Darwin)
+  import Darwin
+#endif
+
 @main
 enum MLKEMBenchmarkCommand {
   private enum ParameterSet: String {
@@ -37,6 +41,39 @@ enum MLKEMBenchmarkCommand {
     let nanoseconds: Int64
     let checksum: UInt64
   }
+
+  #if canImport(Darwin)
+    private struct AllocationProbe {
+      let start: @convention(c) () -> Void
+      let stopAndPrint: @convention(c) () -> Void
+
+      init() throws {
+        let defaultSearchHandle = UnsafeMutableRawPointer(
+          bitPattern: UInt(bitPattern: -2)
+        )
+        guard
+          let startAddress = dlsym(
+            defaultSearchHandle,
+            "swift_ssl_allocation_probe_start"
+          ),
+          let stopAddress = dlsym(
+            defaultSearchHandle,
+            "swift_ssl_allocation_probe_stop_and_print"
+          )
+        else {
+          throw ArgumentError.validationFailure
+        }
+        start = unsafeBitCast(
+          startAddress,
+          to: (@convention(c) () -> Void).self
+        )
+        stopAndPrint = unsafeBitCast(
+          stopAddress,
+          to: (@convention(c) () -> Void).self
+        )
+      }
+    }
+  #endif
 
   static func main() throws {
     let arguments = CommandLine.arguments
@@ -144,9 +181,299 @@ enum MLKEMBenchmarkCommand {
         let secret = try MLKEM1024.decapsulate(encapsulation, using: pair.privateKey)
         print("SECRET,\(secret.withBorrowedBytes { encodeHex($0) })")
       }
+    case "--memory":
+      guard
+        arguments.count == 5,
+        let operation = Operation(rawValue: arguments[3]),
+        let iterations = Int(arguments[4]),
+        iterations > 0
+      else {
+        throw ArgumentError.invalidArguments
+      }
+      try runMemoryMeasurement(
+        parameters: parameters,
+        operation: operation,
+        iterations: iterations
+      )
     default:
       throw ArgumentError.invalidArguments
     }
+  }
+
+  private static func runMemoryMeasurement(
+    parameters: ParameterSet,
+    operation: Operation,
+    iterations: Int
+  ) throws {
+    #if canImport(Darwin)
+      let probe = try AllocationProbe()
+      let checksum: UInt64
+      switch (parameters, operation) {
+      case (.mlKEM768, .keyGeneration):
+        let entropy = FixedEntropy(bytes: deterministicBytes(count: 64, seed: 0x76))
+        probe.start()
+        do {
+          checksum = try memoryMLKEM768KeyGeneration(
+            entropy: entropy,
+            iterations: iterations
+          )
+        } catch {
+          probe.stopAndPrint()
+          throw error
+        }
+      case (.mlKEM768, .encapsulation):
+        let keyEntropy = FixedEntropy(bytes: deterministicBytes(count: 64, seed: 0x75))
+        let pair = try MLKEM768.generateKeyPair(using: keyEntropy)
+        var encapsulation = ContiguousArray<UInt8>(
+          repeating: 0,
+          count: MLKEM768.encapsulationByteCount
+        )
+        var sharedSecret = ContiguousArray<UInt8>(
+          repeating: 0,
+          count: MLKEM768.sharedSecretByteCount
+        )
+        let entropy = FixedEntropy(bytes: deterministicBytes(count: 32, seed: 0x77))
+        probe.start()
+        do {
+          checksum = try memoryMLKEM768Encapsulation(
+            publicKey: pair.publicKey,
+            entropy: entropy,
+            encapsulation: &encapsulation,
+            sharedSecret: &sharedSecret,
+            iterations: iterations
+          )
+        } catch {
+          probe.stopAndPrint()
+          throw error
+        }
+      case (.mlKEM768, .decapsulation):
+        let keyEntropy = FixedEntropy(bytes: deterministicBytes(count: 64, seed: 0x74))
+        let pair = try MLKEM768.generateKeyPair(using: keyEntropy)
+        let encapsulationEntropy = FixedEntropy(
+          bytes: deterministicBytes(count: 32, seed: 0x73)
+        )
+        let encapsulated = try MLKEM768.encapsulate(
+          to: pair.publicKey,
+          using: encapsulationEntropy
+        )
+        var sharedSecret = ContiguousArray<UInt8>(
+          repeating: 0,
+          count: MLKEM768.sharedSecretByteCount
+        )
+        probe.start()
+        do {
+          checksum = try memoryMLKEM768Decapsulation(
+            privateKey: pair.privateKey,
+            encapsulation: encapsulated.encapsulation,
+            sharedSecret: &sharedSecret,
+            iterations: iterations
+          )
+        } catch {
+          probe.stopAndPrint()
+          throw error
+        }
+      case (.mlKEM1024, .keyGeneration):
+        let entropy = FixedEntropy(bytes: deterministicBytes(count: 64, seed: 0x10))
+        probe.start()
+        do {
+          checksum = try memoryMLKEM1024KeyGeneration(
+            entropy: entropy,
+            iterations: iterations
+          )
+        } catch {
+          probe.stopAndPrint()
+          throw error
+        }
+      case (.mlKEM1024, .encapsulation):
+        let keyEntropy = FixedEntropy(bytes: deterministicBytes(count: 64, seed: 0x12))
+        let pair = try MLKEM1024.generateKeyPair(using: keyEntropy)
+        var encapsulation = ContiguousArray<UInt8>(
+          repeating: 0,
+          count: MLKEM1024.encapsulationByteCount
+        )
+        var sharedSecret = ContiguousArray<UInt8>(
+          repeating: 0,
+          count: MLKEM1024.sharedSecretByteCount
+        )
+        let entropy = FixedEntropy(bytes: deterministicBytes(count: 32, seed: 0x11))
+        probe.start()
+        do {
+          checksum = try memoryMLKEM1024Encapsulation(
+            publicKey: pair.publicKey,
+            entropy: entropy,
+            encapsulation: &encapsulation,
+            sharedSecret: &sharedSecret,
+            iterations: iterations
+          )
+        } catch {
+          probe.stopAndPrint()
+          throw error
+        }
+      case (.mlKEM1024, .decapsulation):
+        let keyEntropy = FixedEntropy(bytes: deterministicBytes(count: 64, seed: 0x13))
+        let pair = try MLKEM1024.generateKeyPair(using: keyEntropy)
+        let encapsulationEntropy = FixedEntropy(
+          bytes: deterministicBytes(count: 32, seed: 0x14)
+        )
+        let encapsulated = try MLKEM1024.encapsulate(
+          to: pair.publicKey,
+          using: encapsulationEntropy
+        )
+        var sharedSecret = ContiguousArray<UInt8>(
+          repeating: 0,
+          count: MLKEM1024.sharedSecretByteCount
+        )
+        probe.start()
+        do {
+          checksum = try memoryMLKEM1024Decapsulation(
+            privateKey: pair.privateKey,
+            encapsulation: encapsulated.encapsulation,
+            sharedSecret: &sharedSecret,
+            iterations: iterations
+          )
+        } catch {
+          probe.stopAndPrint()
+          throw error
+        }
+      }
+      probe.stopAndPrint()
+      print("MEMORY_CHECKSUM,\(iterations),\(checksum)")
+    #else
+      throw ArgumentError.validationFailure
+    #endif
+  }
+
+  private static func memoryMLKEM768KeyGeneration(
+    entropy: borrowing FixedEntropy,
+    iterations: Int
+  ) throws -> UInt64 {
+    var checksum: UInt64 = 0
+    var iteration = 0
+    while iteration < iterations {
+      let pair = try MLKEM768.generateKeyPair(using: copy entropy)
+      checksum &+= UInt64(pair.publicKey.span[iteration % MLKEM768.PublicKey.byteCount])
+      iteration += 1
+    }
+    return checksum
+  }
+
+  private static func memoryMLKEM768Encapsulation(
+    publicKey: borrowing MLKEM768.PublicKey,
+    entropy: borrowing FixedEntropy,
+    encapsulation: inout ContiguousArray<UInt8>,
+    sharedSecret: inout ContiguousArray<UInt8>,
+    iterations: Int
+  ) throws -> UInt64 {
+    var checksum: UInt64 = 0
+    var iteration = 0
+    while iteration < iterations {
+      var encapsulationOutput = encapsulation.mutableSpan
+      var secretOutput = sharedSecret.mutableSpan
+      try MLKEM768.encapsulate(
+        to: publicKey,
+        using: copy entropy,
+        into: &encapsulationOutput,
+        sharedSecret: &secretOutput
+      )
+      checksum &+= UInt64(encapsulation[iteration % encapsulation.count])
+      checksum &+= UInt64(sharedSecret[iteration % sharedSecret.count])
+      iteration += 1
+    }
+    return checksum
+  }
+
+  private static func memoryMLKEM768Decapsulation(
+    privateKey: borrowing MLKEM768.PrivateKey,
+    encapsulation: borrowing MLKEM768.Encapsulation,
+    sharedSecret: inout ContiguousArray<UInt8>,
+    iterations: Int
+  ) throws -> UInt64 {
+    var checksum: UInt64 = 0
+    var iteration = 0
+    while iteration < iterations {
+      var secretOutput = sharedSecret.mutableSpan
+      try MLKEM768.decapsulate(
+        encapsulation.span,
+        using: privateKey,
+        into: &secretOutput
+      )
+      checksum &+= UInt64(sharedSecret[iteration % sharedSecret.count])
+      iteration += 1
+    }
+    return checksum
+  }
+
+  private static func memoryMLKEM1024KeyGeneration(
+    entropy: borrowing FixedEntropy,
+    iterations: Int
+  ) throws -> UInt64 {
+    var checksum: UInt64 = 0
+    var iteration = 0
+    while iteration < iterations {
+      let pair = try MLKEM1024.generateKeyPair(using: copy entropy)
+      checksum &+= UInt64(pair.publicKey.span[iteration % MLKEM1024.PublicKey.byteCount])
+      iteration += 1
+    }
+    return checksum
+  }
+
+  private static func memoryMLKEM1024Encapsulation(
+    publicKey: borrowing MLKEM1024.PublicKey,
+    entropy: borrowing FixedEntropy,
+    encapsulation: inout ContiguousArray<UInt8>,
+    sharedSecret: inout ContiguousArray<UInt8>,
+    iterations: Int
+  ) throws -> UInt64 {
+    var checksum: UInt64 = 0
+    var iteration = 0
+    while iteration < iterations {
+      var encapsulationOutput = encapsulation.mutableSpan
+      var secretOutput = sharedSecret.mutableSpan
+      try MLKEM1024.encapsulate(
+        to: publicKey,
+        using: copy entropy,
+        into: &encapsulationOutput,
+        sharedSecret: &secretOutput
+      )
+      checksum &+= UInt64(encapsulation[iteration % encapsulation.count])
+      checksum &+= UInt64(sharedSecret[iteration % sharedSecret.count])
+      iteration += 1
+    }
+    return checksum
+  }
+
+  private static func deterministicBytes(
+    count: Int,
+    seed: UInt8
+  ) -> ContiguousArray<UInt8> {
+    var bytes = ContiguousArray<UInt8>(repeating: 0, count: count)
+    var index = 0
+    while index < count {
+      bytes[index] = seed &+ UInt8(truncatingIfNeeded: index &* 29)
+      index += 1
+    }
+    return bytes
+  }
+
+  private static func memoryMLKEM1024Decapsulation(
+    privateKey: borrowing MLKEM1024.PrivateKey,
+    encapsulation: borrowing MLKEM1024.Encapsulation,
+    sharedSecret: inout ContiguousArray<UInt8>,
+    iterations: Int
+  ) throws -> UInt64 {
+    var checksum: UInt64 = 0
+    var iteration = 0
+    while iteration < iterations {
+      var secretOutput = sharedSecret.mutableSpan
+      try MLKEM1024.decapsulate(
+        encapsulation.span,
+        using: privateKey,
+        into: &secretOutput
+      )
+      checksum &+= UInt64(sharedSecret[iteration % sharedSecret.count])
+      iteration += 1
+    }
+    return checksum
   }
 
   private static func emitMLKEM768Fixture(

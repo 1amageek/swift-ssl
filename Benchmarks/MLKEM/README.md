@@ -91,6 +91,35 @@ Timing evidence does not establish allocation or logical-copy counts. Those
 remain a separate instrumented release artifact even though this worker uses
 the public in-place encapsulation and decapsulation APIs.
 
+## Allocation and bulk-copy runner
+
+The memory runner is also manual and separate from the test targets. It builds
+a fresh Release worker from a clean Git archive, injects a benchmark-only
+allocator/copy interposer, validates that interposer with a C contract probe,
+and measures the public entropy-injected operation at 1, 10, and 100
+iterations in three fresh processes each.
+
+```bash
+TOOLCHAINS=org.swift.64202607231a \
+python3 Benchmarks/MLKEM/run_memory.py --formal
+```
+
+For each counter, the runner requires an exact linear relation between the
+three iteration counts. The slope is the per-operation count and the intercept
+is process/setup overhead. In-place encapsulation and decapsulation must not
+perform a general `malloc`, and allocation/free slopes must balance. Dynamic
+`memcpy`/`memmove` bytes must have a zero per-operation slope. The declared
+allocation budgets include algorithm workspaces and owned key results; they do
+not assert that ML-KEM is allocation-free.
+
+macOS aliases the public `memcpy` and `memmove` implementations, so their two
+individual call counters are diagnostic only; the gate uses their combined
+byte slope. The interposer cannot see compiler-inlined scalar assignments.
+Consequently, the artifact is combined with the safe API contract and source
+review: caller inputs stay borrowed, serialized outputs are written directly
+into caller-owned spans, and algorithm-required result writes are not described
+as avoided copies.
+
 ## Formal result
 
 The 2026-08-01 run used SwiftSSL commit
