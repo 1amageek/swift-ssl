@@ -110,6 +110,13 @@ Ed25519 secret path has focused ASan evidence for its direct, TLS Core, and
 QUIC/TLS routes; TSan, UBSan, an automated constant-time code-generation gate,
 and fresh sanitizer coverage for the current verification-only NIST paths
 remain required.
+
+ARM64 code-generation analysis is recorded in ADR 0037. The pinned Swift and
+Clang intrinsic forms both retain a recurrent tied-operand copy that BoringSSL
+avoids with hand-written assembly. Source rearrangements and an opaque SIMD
+identity operation did not produce a repeatable improvement. The Pure Swift
+constraint and the `1.10x` goal are both retained; the failed result is not
+waived or represented as complete.
 The prior high-load invalidation remains at
 `.test-artifacts/benchmark/20260731T113521Z-native-sha256.json` and is not part
 of these ratios.
