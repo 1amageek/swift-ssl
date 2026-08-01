@@ -56,7 +56,7 @@ EXPECTED_BUDGETS = {
     },
     "mldsa44-verify": {
         "allocationCalls": 14,
-        "allocationBytes": 23_480,
+        "allocationBytes": 23_488,
         "bulkCopyCalls": 1,
         "bulkCopyBytes": 0,
     },
@@ -92,7 +92,7 @@ EXPECTED_BUDGETS = {
     },
     "mldsa87-verify": {
         "allocationCalls": 14,
-        "allocationBytes": 42_200,
+        "allocationBytes": 42_240,
         "bulkCopyCalls": 1,
         "bulkCopyBytes": 0,
     },

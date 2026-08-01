@@ -79,13 +79,13 @@ The Native fixed-fixture memory budgets are:
 |---|---:|---:|---:|
 | ML-DSA-44 key generation | 23 | 44,928 | 0 |
 | ML-DSA-44 in-place signing | 30 | 38,800 | 16,384 |
-| ML-DSA-44 verification | 14 | 23,480 | 0 |
+| ML-DSA-44 verification | 14 | 23,488 | 0 |
 | ML-DSA-65 key generation | 25 | 71,536 | 0 |
 | ML-DSA-65 in-place signing | 62 | 59,248 | 40,960 |
 | ML-DSA-65 verification | 14 | 31,712 | 0 |
 | ML-DSA-87 key generation | 25 | 111,088 | 0 |
 | ML-DSA-87 in-place signing | 48 | 71,120 | 43,008 |
-| ML-DSA-87 verification | 14 | 42,200 | 0 |
+| ML-DSA-87 verification | 14 | 42,240 | 0 |
 
 The signing copies preserve a parameter-specific mask vector while a second
 copy is transformed into the NTT domain. They are explicit algorithm
