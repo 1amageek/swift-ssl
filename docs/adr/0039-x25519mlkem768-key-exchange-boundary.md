@@ -133,7 +133,7 @@ No logical state is shared between tasks or threads, and no target weakens a
 | Compatibility | Modern responsibility replacement, not BoringSSL API emulation | Library-specific design has authority | Aligned; obsolete Kyber and C compatibility remain excluded |
 | Performance | Final owners, borrowed wire input, in-place primitives | Measured zero-copy and unsafe boundaries | Aligned; exact allocation/copy budgets are release gates |
 | Platform capability | One semantic API across targets | Target branches only for real capability differences | Compatible; only entropy linking differs |
-| Tests | Production-path vectors, failures, target execution, interop | Behavior and evidence ladder before completion | Aligned; formal memory gate passed, while formal timing and security review remain gates |
+| Tests | Production-path vectors, failures, target execution, interop | Behavior and evidence ladder before completion | Aligned; formal memory and timing gates passed, while broader review gates remain |
 
 ## Consequences
 
@@ -143,7 +143,8 @@ material, hold an escaping input view, or select the obsolete Kyber draft
 group. The API is intentionally allowed to make a breaking change if the
 pinned Internet-Draft changes before publication.
 
-The implementation is not declared complete from this ADR. Completion still
-requires the committed formal allocation artifact, bidirectional BoringSSL
-interoperability, the paired timing confidence gate, target execution,
-sanitizer evidence, and security review.
+The implementation is not declared complete from this ADR alone. Committed
+formal allocation and timing artifacts, bidirectional BoringSSL
+interoperability, three-target execution, and focused sanitizer evidence are
+present. Broader independent interoperability, automated constant-time
+review, and security review remain completion gates.

@@ -107,6 +107,17 @@ built from source commit `6c77e4807fbf23e444e1a61608a6108ee0107a00` and
 has SHA-256
 `c50b8a82b8d411ed4e71e24a9dfbf1c458f57c80270bfc4ff12212592d41c7c0`.
 
-No formal timing result has been recorded yet. Add its atomic JSON artifact,
-source commit, hash, and measured decision here only after the timing gate
-completes.
+The formal timing gate also passed on 2026-08-01:
+
+| Swift median ns/op | BoringSSL median ns/op | Paired median speedup | 95% bootstrap CI |
+|---:|---:|---:|---:|
+| 70,469.781 | 78,195.411 | 1.1093x | 1.1082–1.1111 |
+
+The run used 30 balanced randomized pairs of 4,000 operations and 10,000
+bootstrap resamples. Both interoperability directions passed before timing.
+The committed artifact is
+[`Results/20260801T150930Z-native-x25519mlkem768.json`](Results/20260801T150930Z-native-x25519mlkem768.json),
+built from SwiftSSL commit `22df4b61272a3e24596166fee2b2d6ee7f342217`
+and pinned BoringSSL commit `ae49d2681a56ca7b8609f6039a770fda2a8eb550`.
+Its SHA-256 is
+`aef1aaeb1f6ab3ed18619c93577acfb9ebf4cbf48594c6bef4c62ac26f88f347`.
