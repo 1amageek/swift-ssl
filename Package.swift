@@ -91,7 +91,7 @@ var targets: [Target] = [
   ),
   .executableTarget(
     name: "SwiftSSLQUICCryptoStreamValidation",
-    dependencies: ["SwiftSSLCore", "SwiftSSLQUIC", "SwiftSSLTLS"],
+    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLQUIC", "SwiftSSLTLS"],
     path: "Validation/Targets/QUICCryptoStreamValidation",
     swiftSettings: ownershipSettings
   ),

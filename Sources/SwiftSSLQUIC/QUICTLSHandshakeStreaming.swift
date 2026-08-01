@@ -16,7 +16,7 @@ public protocol QUICTLSHandshakeStreaming: ~Copyable, Sendable {
     borrowing func nextMessageStatus(
     ) throws(QUICTLSHandshakeStreamError) -> TLSHandshakeMessageFrameStatus
 
-    borrowing func withNextMessage<Result>(
+    borrowing func withNextMessage<Result: ~Copyable>(
         _ body: (Span<UInt8>) -> Result
     ) throws(QUICTLSHandshakeStreamError) -> Result?
 

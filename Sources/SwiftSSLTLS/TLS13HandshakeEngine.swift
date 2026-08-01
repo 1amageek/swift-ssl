@@ -1601,7 +1601,7 @@ public struct TLS13ServerHandshake: ~Copyable, Sendable {
     }
 }
 
-private enum TLS13HandshakeWire {
+enum TLS13HandshakeWire {
     static let handshakeContentType: UInt8 = TLS13ContentType.handshake.rawValue
     static let maximumInputByteCount = 4 * 16_384
 
@@ -1721,7 +1721,7 @@ private enum TLS13HandshakeWire {
     }
 }
 
-private func mapHandshakeEngineError(_ error: any Error) -> TLS13HandshakeEngineError {
+func mapHandshakeEngineError(_ error: any Error) -> TLS13HandshakeEngineError {
     if let error = error as? TLS13HandshakeEngineError { return error }
     if let error = error as? TLS13HandshakeError { return .handshake(error) }
     if let error = error as? TLS13RecordError { return .record(error) }
@@ -1770,7 +1770,7 @@ private func makeServerTrafficProtector(
     }
 }
 
-private func expectedObfuscatedTicketAge(
+func expectedObfuscatedTicketAge(
     at instant: VerificationInstant,
     issuedAt: VerificationInstant,
     lifetime: UInt32,
@@ -1793,7 +1793,7 @@ private func expectedObfuscatedTicketAge(
     return UInt32(truncatingIfNeeded: UInt64(adjusted) &+ UInt64(ageAdd))
 }
 
-private func ticketAgeWithinTolerance(
+func ticketAgeWithinTolerance(
     offered: UInt32,
     expected: UInt32,
     toleranceMilliseconds: UInt32
@@ -1803,7 +1803,7 @@ private func ticketAgeWithinTolerance(
     return min(forward, backward) <= toleranceMilliseconds
 }
 
-private func engineTry<Result: ~Copyable>(
+func engineTry<Result: ~Copyable>(
     _ body: () throws -> Result
 ) throws(TLS13HandshakeEngineError) -> Result {
     do {
@@ -1813,7 +1813,7 @@ private func engineTry<Result: ~Copyable>(
     }
 }
 
-private func makeCertificateVerifyMessage(
+func makeCertificateVerifyMessage(
     signatureScheme: TLS13SignatureScheme,
     signature: consuming ContiguousArray<UInt8>
 ) throws(TLS13HandshakeEngineError) -> OwnedBytes {
@@ -1828,7 +1828,7 @@ private func makeCertificateVerifyMessage(
     }
 }
 
-private func wipe(_ bytes: inout ContiguousArray<UInt8>) {
+func wipe(_ bytes: inout ContiguousArray<UInt8>) {
     bytes.withUnsafeMutableBufferPointer { buffer in
         guard let baseAddress = buffer.baseAddress else { return }
         SecureWipe.erase(UnsafeMutableRawPointer(baseAddress), byteCount: buffer.count)

@@ -83,7 +83,7 @@ public struct QUICTLSHandshakeStream:
     ///
     /// A throwing consumer can return a `Result`; the caller then discards the
     /// message only after it has accepted the result.
-    public borrowing func withNextMessage<Result>(
+    public borrowing func withNextMessage<Result: ~Copyable>(
         _ body: (Span<UInt8>) -> Result
     ) throws(QUICTLSHandshakeStreamError) -> Result? {
         try reassembler.withContiguousBytes { bytes throws(QUICTLSHandshakeStreamError) in
