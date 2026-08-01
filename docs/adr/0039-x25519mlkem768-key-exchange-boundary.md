@@ -133,7 +133,7 @@ No logical state is shared between tasks or threads, and no target weakens a
 | Compatibility | Modern responsibility replacement, not BoringSSL API emulation | Library-specific design has authority | Aligned; obsolete Kyber and C compatibility remain excluded |
 | Performance | Final owners, borrowed wire input, in-place primitives | Measured zero-copy and unsafe boundaries | Aligned; exact allocation/copy budgets are release gates |
 | Platform capability | One semantic API across targets | Target branches only for real capability differences | Compatible; only entropy linking differs |
-| Tests | Production-path vectors, failures, target execution, interop | Behavior and evidence ladder before completion | Aligned; formal memory/timing artifacts and security review remain gates |
+| Tests | Production-path vectors, failures, target execution, interop | Behavior and evidence ladder before completion | Aligned; formal memory gate passed, while formal timing and security review remain gates |
 
 ## Consequences
 

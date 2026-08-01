@@ -131,6 +131,14 @@ Hot paths define a budget before optimization.
 
 Instrumentation must measure actual allocation and copy counts. A zero-copy claim is not inferred solely from use of `Span` or unsafe pointers.
 
+The committed X25519MLKEM768 steady-state measurement is
+`Benchmarks/TLSHybrid/Results/20260801T150811Z-native-tls-hybrid-memory.json`
+(SHA-256
+`c50b8a82b8d411ed4e71e24a9dfbf1c458f57c80270bfc4ff12212592d41c7c0`).
+It executes one exact-path operation outside each probe window to initialize
+Swift runtime metadata. Cold-start allocation is not part of the reported
+per-operation slopes.
+
 ## 7. Benchmark methodology
 
 Benchmarks are manually invoked from `Benchmarks/` and never run through the normal correctness-test scheme.

@@ -76,7 +76,7 @@ Correctness tests live under `Tests/`. Long-running differential, interoperabili
 | X25519 | RFC 7748 Alice public-key vector, independent shared-secret vector, four deterministic field vectors, all-zero peer rejection, invalid-length failures, Native façade, WASI, and Embedded WASI target validation | Independent differential corpus, malformed-coordinate corpus, sanitizer/code-generation review, measured allocation/copy counts, and release benchmark |
 | Ed25519 | Owned noncopyable private seed, owned validated public key, separate signing/verification protocol capabilities, fixed-iteration scalar reduction, and mask-selected secret scalar multiplication | RFC 8032 signing/verification vector, modified-message and noncanonical-scalar failures, Native/WASI/Embedded façade verification, Native TLS/Core tests, dedicated Native/WASI/Embedded QUIC/TLS handshakes, focused ASan covering 11 Ed25519/Core/QUIC tests, and manual optimized ARM64 control-flow inspection | Broader RFC 8032 corpus, automated constant-time code-generation gate, TSan/UBSan, allocation/copy measurement, interoperability, and release benchmark |
 | ML-KEM-768/1024 | FIPS 203 key generation, encapsulation, decapsulation, implicit rejection, noncopyable erased private/shared-secret owners, expanded-key reuse, caller-owned output, SIMD NTT, and two-stream Keccak | NIST ACVP/TR1 fixtures, arithmetic differential and boundary tests, typed no-write failure tests, 24-test focused ASan, Native/WASI/Embedded WASI façade execution, six secure-wipe code-generation configurations, bidirectional pinned-BoringSSL interoperability, a committed formal timing artifact whose six workloads pass the `1.10x` confidence-bound gate, and a committed formal allocation/dynamic-copy artifact | Broader external corpus, automated constant-time review, TSan/UBSan availability statement, and security review |
-| TLS X25519MLKEM768 | `draft-ietf-tls-ecdhe-mlkem-05` group `0x11EC`; role-specific one-shot protocols; 1,216-byte client share, 1,120-byte server share, and 64-byte combined secret; borrowed received shares and direct final-owner output | Native key-exchange/Core/Stream/QUIC success and negative tests, X25519 no-write low-order failure, dedicated Native/WASI/Embedded runtime execution, Hybrid ASan execution, bidirectional pinned-BoringSSL key-share interoperability runner, and a separate allocation/copy runner | Committed formal memory and paired timing artifacts, second independent peer, automated constant-time review, broader corpus, and security review |
+| TLS X25519MLKEM768 | `draft-ietf-tls-ecdhe-mlkem-05` group `0x11EC`; role-specific one-shot protocols; 1,216-byte client share, 1,120-byte server share, and 64-byte combined secret; borrowed received shares and direct final-owner output | Native key-exchange/Core/Stream/QUIC success and negative tests, X25519 no-write low-order failure, dedicated Native/WASI/Embedded runtime execution, Hybrid ASan execution, bidirectional pinned-BoringSSL key-share interoperability runner, and a committed formal allocation/dynamic-copy artifact | Paired timing artifact, second independent peer, automated constant-time review, broader corpus, and security review |
 | ECDSA P-256/P-384/P-521 verification | Verification-only fixed-width raw-signature arithmetic, typed owned public keys, strict DER signature decoding including P-521 long-form lengths, SHA-256/384/512 certificate verification, curve SPKI validation, and mutation failures | Independent raw-signature vectors; real X.509 certificates signed with ECDSA-with-SHA256, SHA384, and SHA512; malformed/modified signature failures; dedicated Native/WASI/Embedded Release validation of P-256/P-384/P-521 success and mutation routes | Broader independent differential corpus, measured allocation/copy counts, sanitizer coverage, formal benchmark, and security review; public-input verification has no secret-dependent timing contract |
 | RSA-PSS verification | Verification-only SHA-256/384/512 EMSA-PSS, canonical 2048–4096-bit public keys, bounded Montgomery public exponentiation, strict X.509 PSS parameters, and explicit failure contracts | Independent SHA-256/384/512 signatures including a 4096-bit SHA-512 fixture, 512 Montgomery differential cases, key/length/salt boundaries, signature mutations, real X.509 success/failure, focused ASan including the maximum modulus, and Native/WASI/Embedded WASI runtime validation | Broader external corpus, measured allocation/copy counts, formal benchmark, and security review |
 | X.509 path validation | Bounded unordered path search, issuer/subject DER-name matching, validity-window checks, trust-anchor boundary, BasicConstraints CA/pathLen, optional keyCertSign, and SAN-only hostname verification | Real P-256 leaf/root chain, SAN match, modified leaf signature failure, non-CA issuer rejection, hostname mismatch rejection, and bounded path behavior | RFC 5280 policy processing, name constraints, CRL/OCSP, CT, delegated credentials, and broader interoperability |
@@ -174,6 +174,29 @@ The committed raw artifact is
 [`Benchmarks/MLKEM/Results/20260801T122012Z-native-mlkem-memory.json`](Benchmarks/MLKEM/Results/20260801T122012Z-native-mlkem-memory.json)
 (SHA-256
 `36658642dc4c2bc791288b55fd089f18ac6772cb4b50c0f1dca057a58ec339c5`).
+
+### X25519MLKEM768 TLS allocation and zero-copy evidence
+
+| Path | Allocation/free calls per operation | Requested bytes | Dynamic bulk-copy bytes |
+|---|---:|---:|---:|
+| Client offer | 17 / 17 | 15,656 | 0 |
+| Server accept | 15 / 15 | 14,464 | 0 |
+| Full round trip | 45 / 45 | 40,032 | 0 |
+| X25519 public key into caller output | 0 / 0 | 0 | 0 |
+| X25519 shared secret into caller output | 0 / 0 | 0 | 0 |
+
+The formal steady-state memory run executes one unmeasured exact-path warmup
+before each measurement window, then derives exact slopes from 1, 10, and 100
+operations in three fresh processes each. Received key shares remain borrowed,
+caller-owned X25519 outputs allocate nothing, and no per-operation dynamic
+`memcpy`/`memmove` byte traffic was observed. Cold-start runtime metadata
+allocation and compiler-inlined scalar stores are explicitly outside this
+artifact.
+
+The committed raw artifact is
+[`Benchmarks/TLSHybrid/Results/20260801T150811Z-native-tls-hybrid-memory.json`](Benchmarks/TLSHybrid/Results/20260801T150811Z-native-tls-hybrid-memory.json)
+(source commit `6c77e4807fbf23e444e1a61608a6108ee0107a00`, SHA-256
+`c50b8a82b8d411ed4e71e24a9dfbf1c458f57c80270bfc4ff12212592d41c7c0`).
 
 See [docs/VERIFICATION.md](docs/VERIFICATION.md) for gates and measurement rules.
 

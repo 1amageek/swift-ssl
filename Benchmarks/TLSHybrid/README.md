@@ -97,8 +97,16 @@ The interposer cannot observe compiler-inlined scalar stores. The artifact is
 therefore combined with source review of final owners, scoped `Span` borrows,
 and in-place output. It is not used as timing evidence.
 
-## Formal result
+## Formal results
 
-No formal timing or memory result has been recorded yet. Add atomic JSON
-artifacts, source commits, hashes, and measured decisions here only after both
-formal gates complete.
+The formal steady-state memory gate passed on 2026-08-01. All five workloads
+matched the budgets above exactly, including balanced allocation/free slopes
+and zero dynamic bulk-copy bytes. The committed artifact is
+[`Results/20260801T150811Z-native-tls-hybrid-memory.json`](Results/20260801T150811Z-native-tls-hybrid-memory.json),
+built from source commit `6c77e4807fbf23e444e1a61608a6108ee0107a00` and
+has SHA-256
+`c50b8a82b8d411ed4e71e24a9dfbf1c458f57c80270bfc4ff12212592d41c7c0`.
+
+No formal timing result has been recorded yet. Add its atomic JSON artifact,
+source commit, hash, and measured decision here only after the timing gate
+completes.
