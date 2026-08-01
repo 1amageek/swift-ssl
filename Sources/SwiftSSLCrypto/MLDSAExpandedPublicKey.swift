@@ -2,12 +2,12 @@ import SwiftSSLCore
 import Synchronization
 
 /// Immutable decoded public key with a synchronized derived-material cache.
-final class MLDSA65ExpandedPublicKey {
-  private static let t1CoefficientCount = 6 * 256
-
+final class MLDSAExpandedPublicKey {
+  private let parameterSet: MLDSAParameterSet
+  private let t1CoefficientCount: Int
   private let bytes: UnsafeMutablePointer<UInt8>
   private let t1: UnsafeMutablePointer<UInt32>
-  private let cachedMaterial: Mutex<MLDSA65ExpandedPublicMaterial?>
+  private let cachedMaterial: Mutex<MLDSAExpandedPublicMaterial?>
 
   // Unsafe ownership invariants:
   // - this object uniquely owns 96 bytes and t1CoefficientCount initialized words;
@@ -18,13 +18,15 @@ final class MLDSA65ExpandedPublicKey {
   //   concurrent construction is harmless because material is immutable;
   // - pointers never escape and deinit releases both allocations exactly once.
   init(
+    parameterSet: MLDSAParameterSet,
     encoded: Span<UInt8>,
     publicKeyHash: Span<UInt8>,
     t1: Span<UInt32>
   ) {
-    precondition(encoded.count == MLDSA65.publicKeyByteCount)
+    let t1CoefficientCount = parameterSet.k * 256
+    precondition(encoded.count == parameterSet.publicKeyByteCount)
     precondition(publicKeyHash.count == 64)
-    precondition(t1.count == Self.t1CoefficientCount)
+    precondition(t1.count == t1CoefficientCount)
     let bytes = UnsafeMutablePointer<UInt8>.allocate(capacity: 96)
     bytes.initialize(repeating: 0, count: 96)
     var byteIndex = 0
@@ -39,14 +41,16 @@ final class MLDSA65ExpandedPublicKey {
     }
     self.bytes = bytes
     let storedT1 = UnsafeMutablePointer<UInt32>.allocate(
-      capacity: Self.t1CoefficientCount
+      capacity: t1CoefficientCount
     )
-    storedT1.initialize(repeating: 0, count: Self.t1CoefficientCount)
+    storedT1.initialize(repeating: 0, count: t1CoefficientCount)
     var index = 0
     while index < t1.count {
       storedT1[index] = t1[index]
       index += 1
     }
+    self.parameterSet = parameterSet
+    self.t1CoefficientCount = t1CoefficientCount
     self.t1 = storedT1
     cachedMaterial = Mutex(nil)
   }
@@ -68,17 +72,20 @@ final class MLDSA65ExpandedPublicKey {
         count: 64
       )
     )
-    let material: MLDSA65ExpandedPublicMaterial
+    let material: MLDSAExpandedPublicMaterial
     if let existing = cachedMaterial.withLock({ $0 }) {
       material = existing
     } else {
       let t1Span = Span(
         _unsafeElements: UnsafeBufferPointer(
           start: UnsafePointer(t1),
-          count: Self.t1CoefficientCount
+          count: t1CoefficientCount
         )
       )
-      let created = try MLDSA65Core.expandPublicMaterial(rho: rho, t1: t1Span)
+      let created = try MLDSACore(parameterSet: parameterSet).expandPublicMaterial(
+        rho: rho,
+        t1: t1Span
+      )
       material = cachedMaterial.withLock { state in
         if let existing = state {
           return existing
@@ -114,11 +121,11 @@ final class MLDSA65ExpandedPublicKey {
   deinit {
     bytes.deinitialize(count: 96)
     bytes.deallocate()
-    t1.deinitialize(count: Self.t1CoefficientCount)
+    t1.deinitialize(count: t1CoefficientCount)
     t1.deallocate()
   }
 }
 
 // The backing bytes and coefficients are immutable after initialization. The
 // cache is isolated by Mutex and every pointer borrow remains scoped.
-extension MLDSA65ExpandedPublicKey: @unchecked Sendable {}
+extension MLDSAExpandedPublicKey: @unchecked Sendable {}

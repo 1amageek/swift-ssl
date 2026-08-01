@@ -86,6 +86,25 @@ package enum SecureWipe {
   }
 
   // Unsafe boundary invariants:
+  // - The caller owns wordCount initialized UInt32 values at their natural alignment.
+  // - VolatileMappedRegister addresses storage by integer address and does not bind,
+  //   rebind, retain, or return a typed pointer.
+  // - Every store covers one complete UInt32 value; no prefix or suffix is omitted.
+  // - The caller retains exclusive access until all volatile stores complete.
+  @inline(never)
+  package static func eraseUInt32Words(
+    _ pointer: UnsafeMutablePointer<UInt32>,
+    wordCount: Int
+  ) {
+    precondition(wordCount >= 0, "Secure wipe word count must not be negative")
+
+    for offset in 0..<wordCount {
+      let address = UInt(bitPattern: pointer.advanced(by: offset))
+      VolatileMappedRegister<UInt32>(unsafeBitPattern: address).store(0)
+    }
+  }
+
+  // Unsafe boundary invariants:
   // - The caller owns wordCount initialized 8-byte words at UInt64 alignment.
   // - VolatileMappedRegister addresses storage by integer address and does not bind,
   //   rebind, retain, or return a typed pointer.

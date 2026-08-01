@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and compare Pure Swift and BoringSSL ML-DSA-65 implementations."""
+"""Build and compare Pure Swift and BoringSSL ML-DSA implementations."""
 
 from __future__ import annotations
 
@@ -43,16 +43,27 @@ CONVERGENCE_TOLERANCE = 0.05
 MAXIMUM_LOAD_PER_LOGICAL_CPU = 0.25
 QUIESCENCE_POLL_SECONDS = 5
 DEFAULT_QUIESCENCE_TIMEOUT_SECONDS = 600
-WORKLOADS = tuple((65, operation) for operation in ("keygen", "sign", "verify"))
+PARAMETER_SETS = (44, 65, 87)
+WORKLOADS = tuple(
+    (parameter_set, operation)
+    for parameter_set in PARAMETER_SETS
+    for operation in ("keygen", "sign", "verify")
+)
 INITIAL_ITERATIONS = {
+    (44, "keygen"): 15_000,
+    (44, "sign"): 7_500,
+    (44, "verify"): 20_000,
     (65, "keygen"): 10_000,
     (65, "sign"): 5_000,
     (65, "verify"): 15_000,
+    (87, "keygen"): 7_500,
+    (87, "sign"): 3_500,
+    (87, "verify"): 10_000,
 }
+PUBLIC_KEY_BYTES = {44: 1_312, 65: 1_952, 87: 2_592}
+SIGNATURE_BYTES = {44: 2_420, 65: 3_309, 87: 4_627}
 RESULT_PATTERN = re.compile(r"^RESULT,([0-9]+),([0-9]+)$")
-FIXTURE_PATTERN = re.compile(
-    r"^FIXTURE,([0-9a-f]{3904}),([0-9a-f]{6618})$"
-)
+FIXTURE_PATTERN = re.compile(r"^FIXTURE,([0-9a-f]+),([0-9a-f]+)$")
 POWER_MODE_PATTERN = re.compile(r"(?:lowpowermode|powermode)\s+([0-9]+)")
 BUILD_PROCESS_NAMES = frozenset(
     {
@@ -104,7 +115,7 @@ def parse_positive_integer(value: str) -> int:
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Build and compare Pure Swift and pinned BoringSSL ML-DSA-65 workers "
+            "Build and compare Pure Swift and pinned BoringSSL ML-DSA workers "
             "with randomized paired samples."
         )
     )
@@ -610,17 +621,19 @@ def inspect_worker_codegen(
         timeout_seconds=120,
         environment=environment,
     ).stdout
-    required_swift_symbols = (
-        "MLDSA65O7keyPair",
-        "MLDSA65O4sign",
-        "MLDSA65O6verify",
-        "MLDSA65Core",
-        "KeccakX2Core",
-    )
+    required_swift_symbols = tuple(
+        symbol
+        for parameter_set in PARAMETER_SETS
+        for symbol in (
+            f"MLDSA{parameter_set}O7keyPair",
+            f"MLDSA{parameter_set}O4sign",
+            f"MLDSA{parameter_set}O6verify",
+        )
+    ) + ("MLDSACore", "KeccakX2Core")
     missing_swift = [value for value in required_swift_symbols if value not in swift_symbols]
     if missing_swift:
-        raise BenchmarkError(f"Swift ML-DSA-65 symbols are missing: {missing_swift}")
-    mldsa_blocks = code_blocks_containing(swift_disassembly, "MLDSA65Core")
+        raise BenchmarkError(f"Swift ML-DSA symbols are missing: {missing_swift}")
+    mldsa_blocks = code_blocks_containing(swift_disassembly, "MLDSACore")
     mldsa_simd_multiply_count = sum(
         block.count("umull.2d") + block.count("umull2.2d")
         for block in mldsa_blocks
@@ -631,10 +644,10 @@ def inspect_worker_codegen(
     }
     if not mldsa_blocks or mldsa_simd_multiply_count < 400:
         raise BenchmarkError(
-            "Swift ML-DSA-65 code generation lost its SIMD Montgomery arithmetic shape"
+            "Swift ML-DSA code generation lost its SIMD Montgomery arithmetic shape"
         )
     if any(count == 0 for count in sha3_counts.values()):
-        raise BenchmarkError("Swift ML-DSA-65 code generation lost ARM SHA3 instructions")
+        raise BenchmarkError("Swift ML-DSA code generation lost ARM SHA3 instructions")
 
     boringssl_symbols = run_command(
         [toolchain["tools"]["nm"], "-nm", str(boringssl_worker)],
@@ -642,17 +655,21 @@ def inspect_worker_codegen(
         timeout_seconds=120,
         environment=environment,
     ).stdout
-    required_boringssl_symbols = (
-        "_MLDSA65_generate_key",
-        "_MLDSA65_sign",
-        "_MLDSA65_verify",
-        "BCM_mldsa65",
+    required_boringssl_symbols = tuple(
+        symbol
+        for parameter_set in PARAMETER_SETS
+        for symbol in (
+            f"_MLDSA{parameter_set}_generate_key",
+            f"_MLDSA{parameter_set}_sign",
+            f"_MLDSA{parameter_set}_verify",
+            f"BCM_mldsa{parameter_set}",
+        )
     )
     missing_boringssl = [
         value for value in required_boringssl_symbols if value not in boringssl_symbols
     ]
     if missing_boringssl:
-        raise BenchmarkError(f"BoringSSL ML-DSA-65 symbols are missing: {missing_boringssl}")
+        raise BenchmarkError(f"BoringSSL ML-DSA symbols are missing: {missing_boringssl}")
     capability = run_command(
         [str(boringssl_worker), "--capabilities"],
         cwd=boringssl_worker.parent,
@@ -921,6 +938,7 @@ def invoke_worker(
     completed = run_command(
         [
             str(worker),
+            str(parameter_set),
             operation,
             str(iterations),
             str(warmup_iterations),
@@ -945,16 +963,24 @@ def invoke_validation(worker: Path, arguments: Sequence[str]) -> str:
     return lines[0]
 
 
-def parse_fixture_record(record: str) -> tuple[str, str]:
+def parse_fixture_record(record: str, parameter_set: int) -> tuple[str, str]:
     match = FIXTURE_PATTERN.fullmatch(record)
     if match is None:
         raise BenchmarkError("worker emitted a malformed interoperability fixture")
+    if (
+        len(match.group(1)) != PUBLIC_KEY_BYTES[parameter_set] * 2
+        or len(match.group(2)) != SIGNATURE_BYTES[parameter_set] * 2
+    ):
+        raise BenchmarkError(
+            f"worker emitted invalid ML-DSA-{parameter_set} fixture lengths"
+        )
     return match.group(1), match.group(2)
 
 
-def validate_interoperability(
+def validate_parameter_interoperability(
     swift_worker: Path,
     boringssl_worker: Path,
+    parameter_set: int,
 ) -> dict[str, Any]:
     seed = bytes((0x21 + 37 * index) & 0xFF for index in range(32)).hex()
     message = bytes((0x42 + 37 * index) & 0xFF for index in range(64)).hex()
@@ -963,23 +989,39 @@ def validate_interoperability(
 
     swift_record = invoke_validation(
         swift_worker,
-        ["--fixture", seed, message, context, randomizer],
+        ["--fixture", str(parameter_set), seed, message, context, randomizer],
     )
-    swift_public, swift_signature = parse_fixture_record(swift_record)
+    swift_public, swift_signature = parse_fixture_record(swift_record, parameter_set)
     if invoke_validation(
         boringssl_worker,
-        ["--validate", seed, swift_public, swift_signature, message, context],
+        [
+            "--validate",
+            str(parameter_set),
+            seed,
+            swift_public,
+            swift_signature,
+            message,
+            context,
+        ],
     ) != "VALIDATED":
         raise BenchmarkError("BoringSSL did not validate the SwiftSSL signature")
 
     boring_record = invoke_validation(
         boringssl_worker,
-        ["--fixture", seed, message, context],
+        ["--fixture", str(parameter_set), seed, message, context],
     )
-    boring_public, boring_signature = parse_fixture_record(boring_record)
+    boring_public, boring_signature = parse_fixture_record(boring_record, parameter_set)
     if invoke_validation(
         swift_worker,
-        ["--validate", seed, boring_public, boring_signature, message, context],
+        [
+            "--validate",
+            str(parameter_set),
+            seed,
+            boring_public,
+            boring_signature,
+            message,
+            context,
+        ],
     ) != "VALIDATED":
         raise BenchmarkError("SwiftSSL did not validate the BoringSSL signature")
 
@@ -988,14 +1030,16 @@ def validate_interoperability(
     mutated_hex = mutated.hex()
     swift_mutation = invoke_validation(
         swift_worker,
-        ["--verify", swift_public, mutated_hex, message, context],
+        ["--verify", str(parameter_set), swift_public, mutated_hex, message, context],
     )
     boring_mutation = invoke_validation(
         boringssl_worker,
-        ["--verify", swift_public, mutated_hex, message, context],
+        ["--verify", str(parameter_set), swift_public, mutated_hex, message, context],
     )
     if swift_mutation != "VERIFIED,0" or boring_mutation != "VERIFIED,0":
-        raise BenchmarkError("a mutated ML-DSA-65 signature was accepted")
+        raise BenchmarkError(
+            f"a mutated ML-DSA-{parameter_set} signature was accepted"
+        )
 
     return {
         "method": "deterministic seeded keys, bidirectional signature validation, and mutated-signature rejection",
@@ -1008,6 +1052,24 @@ def validate_interoperability(
         "boringSSLToSwift": "validated",
         "mutatedSignature": "rejected by both",
         "passed": True,
+    }
+
+
+def validate_interoperability(
+    swift_worker: Path,
+    boringssl_worker: Path,
+) -> dict[str, Any]:
+    results = {
+        str(parameter_set): validate_parameter_interoperability(
+            swift_worker,
+            boringssl_worker,
+            parameter_set,
+        )
+        for parameter_set in PARAMETER_SETS
+    }
+    return {
+        "parameterSets": results,
+        "passed": all(result["passed"] for result in results.values()),
     }
 
 

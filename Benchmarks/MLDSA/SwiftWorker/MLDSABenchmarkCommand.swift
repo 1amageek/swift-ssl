@@ -4,8 +4,409 @@ import SwiftSSL
   import Darwin
 #endif
 
+private protocol MLDSABenchmarkParameterSet:
+  InPlaceContextualRandomizedDigitalSignature
+{
+  associatedtype BenchmarkKeyPair: ~Copyable
+
+  static var seedByteCount: Int { get }
+  static var publicKeyByteCount: Int { get }
+  static var signatureByteCount: Int { get }
+  static var randomizerByteCount: Int { get }
+
+  static func benchmarkKeyPair(
+    seed: Span<UInt8>
+  ) throws(MLDSAError) -> BenchmarkKeyPair
+
+  static func benchmarkKeyPair() throws(MLDSAError) -> BenchmarkKeyPair
+
+  static func benchmarkKeyPair(
+    using entropy: borrowing any EntropySource
+  ) throws(MLDSAError) -> BenchmarkKeyPair
+
+  static func benchmarkPublicByte(
+    at index: Int,
+    from pair: borrowing BenchmarkKeyPair
+  ) -> UInt64
+
+  static func benchmarkPublicKeyBytes(
+    from pair: borrowing BenchmarkKeyPair
+  ) -> ContiguousArray<UInt8>
+
+  static func benchmarkSign(
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    using pair: borrowing BenchmarkKeyPair,
+    entropy: borrowing any EntropySource
+  ) throws(MLDSAError) -> ContiguousArray<UInt8>
+
+  static func benchmarkSign(
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    using pair: borrowing BenchmarkKeyPair,
+    entropy: borrowing any EntropySource,
+    into signature: inout MutableSpan<UInt8>
+  ) throws(MLDSAError)
+
+  static func benchmarkSign(
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    using pair: borrowing BenchmarkKeyPair,
+    into signature: inout MutableSpan<UInt8>
+  ) throws(MLDSAError)
+
+  static func benchmarkVerify(
+    signature: Span<UInt8>,
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    using pair: borrowing BenchmarkKeyPair
+  ) throws(MLDSAError) -> Bool
+
+  static func benchmarkVerify(
+    signature: Span<UInt8>,
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    publicKeyBytes: Span<UInt8>
+  ) throws(MLDSAError) -> Bool
+}
+
+private func copyBenchmarkBytes(_ input: Span<UInt8>) -> ContiguousArray<UInt8> {
+  var result = ContiguousArray<UInt8>()
+  result.reserveCapacity(input.count)
+  var index = 0
+  while index < input.count {
+    result.append(input[index])
+    index += 1
+  }
+  return result
+}
+
+extension MLDSA44: MLDSABenchmarkParameterSet {
+  fileprivate typealias BenchmarkKeyPair = MLDSA44KeyPair
+
+  fileprivate static func benchmarkKeyPair(
+    seed: Span<UInt8>
+  ) throws(MLDSAError) -> MLDSA44KeyPair {
+    try keyPair(seed: seed)
+  }
+
+  fileprivate static func benchmarkKeyPair() throws(MLDSAError) -> MLDSA44KeyPair {
+    try keyPair()
+  }
+
+  fileprivate static func benchmarkKeyPair(
+    using entropy: borrowing any EntropySource
+  ) throws(MLDSAError) -> MLDSA44KeyPair {
+    try keyPair(using: entropy)
+  }
+
+  fileprivate static func benchmarkPublicByte(
+    at index: Int,
+    from pair: borrowing MLDSA44KeyPair
+  ) -> UInt64 {
+    UInt64(pair.publicKey.span[index])
+  }
+
+  fileprivate static func benchmarkPublicKeyBytes(
+    from pair: borrowing MLDSA44KeyPair
+  ) -> ContiguousArray<UInt8> {
+    copyBenchmarkBytes(pair.publicKey.span)
+  }
+
+  fileprivate static func benchmarkSign(
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    using pair: borrowing MLDSA44KeyPair,
+    entropy: borrowing any EntropySource
+  ) throws(MLDSAError) -> ContiguousArray<UInt8> {
+    try sign(
+      message: message,
+      context: context,
+      using: pair.privateKey,
+      entropy: entropy
+    )
+  }
+
+  fileprivate static func benchmarkSign(
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    using pair: borrowing MLDSA44KeyPair,
+    entropy: borrowing any EntropySource,
+    into signature: inout MutableSpan<UInt8>
+  ) throws(MLDSAError) {
+    try sign(
+      message: message,
+      context: context,
+      using: pair.privateKey,
+      entropy: entropy,
+      into: &signature
+    )
+  }
+
+  fileprivate static func benchmarkSign(
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    using pair: borrowing MLDSA44KeyPair,
+    into signature: inout MutableSpan<UInt8>
+  ) throws(MLDSAError) {
+    try sign(
+      message: message,
+      context: context,
+      using: pair.privateKey,
+      into: &signature
+    )
+  }
+
+  fileprivate static func benchmarkVerify(
+    signature: Span<UInt8>,
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    using pair: borrowing MLDSA44KeyPair
+  ) throws(MLDSAError) -> Bool {
+    try verify(
+      signature: signature,
+      message: message,
+      context: context,
+      using: pair.publicKey
+    )
+  }
+
+  fileprivate static func benchmarkVerify(
+    signature: Span<UInt8>,
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    publicKeyBytes: Span<UInt8>
+  ) throws(MLDSAError) -> Bool {
+    let publicKey = try MLDSA44PublicKey(bytes: publicKeyBytes)
+    return try verify(
+      signature: signature,
+      message: message,
+      context: context,
+      using: publicKey
+    )
+  }
+}
+
+extension MLDSA65: MLDSABenchmarkParameterSet {
+  fileprivate typealias BenchmarkKeyPair = MLDSA65KeyPair
+
+  fileprivate static func benchmarkKeyPair(
+    seed: Span<UInt8>
+  ) throws(MLDSAError) -> MLDSA65KeyPair {
+    try keyPair(seed: seed)
+  }
+
+  fileprivate static func benchmarkKeyPair() throws(MLDSAError) -> MLDSA65KeyPair {
+    try keyPair()
+  }
+
+  fileprivate static func benchmarkKeyPair(
+    using entropy: borrowing any EntropySource
+  ) throws(MLDSAError) -> MLDSA65KeyPair {
+    try keyPair(using: entropy)
+  }
+
+  fileprivate static func benchmarkPublicByte(
+    at index: Int,
+    from pair: borrowing MLDSA65KeyPair
+  ) -> UInt64 {
+    UInt64(pair.publicKey.span[index])
+  }
+
+  fileprivate static func benchmarkPublicKeyBytes(
+    from pair: borrowing MLDSA65KeyPair
+  ) -> ContiguousArray<UInt8> {
+    copyBenchmarkBytes(pair.publicKey.span)
+  }
+
+  fileprivate static func benchmarkSign(
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    using pair: borrowing MLDSA65KeyPair,
+    entropy: borrowing any EntropySource
+  ) throws(MLDSAError) -> ContiguousArray<UInt8> {
+    try sign(
+      message: message,
+      context: context,
+      using: pair.privateKey,
+      entropy: entropy
+    )
+  }
+
+  fileprivate static func benchmarkSign(
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    using pair: borrowing MLDSA65KeyPair,
+    entropy: borrowing any EntropySource,
+    into signature: inout MutableSpan<UInt8>
+  ) throws(MLDSAError) {
+    try sign(
+      message: message,
+      context: context,
+      using: pair.privateKey,
+      entropy: entropy,
+      into: &signature
+    )
+  }
+
+  fileprivate static func benchmarkSign(
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    using pair: borrowing MLDSA65KeyPair,
+    into signature: inout MutableSpan<UInt8>
+  ) throws(MLDSAError) {
+    try sign(
+      message: message,
+      context: context,
+      using: pair.privateKey,
+      into: &signature
+    )
+  }
+
+  fileprivate static func benchmarkVerify(
+    signature: Span<UInt8>,
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    using pair: borrowing MLDSA65KeyPair
+  ) throws(MLDSAError) -> Bool {
+    try verify(
+      signature: signature,
+      message: message,
+      context: context,
+      using: pair.publicKey
+    )
+  }
+
+  fileprivate static func benchmarkVerify(
+    signature: Span<UInt8>,
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    publicKeyBytes: Span<UInt8>
+  ) throws(MLDSAError) -> Bool {
+    let publicKey = try MLDSA65PublicKey(bytes: publicKeyBytes)
+    return try verify(
+      signature: signature,
+      message: message,
+      context: context,
+      using: publicKey
+    )
+  }
+}
+
+extension MLDSA87: MLDSABenchmarkParameterSet {
+  fileprivate typealias BenchmarkKeyPair = MLDSA87KeyPair
+
+  fileprivate static func benchmarkKeyPair(
+    seed: Span<UInt8>
+  ) throws(MLDSAError) -> MLDSA87KeyPair {
+    try keyPair(seed: seed)
+  }
+
+  fileprivate static func benchmarkKeyPair() throws(MLDSAError) -> MLDSA87KeyPair {
+    try keyPair()
+  }
+
+  fileprivate static func benchmarkKeyPair(
+    using entropy: borrowing any EntropySource
+  ) throws(MLDSAError) -> MLDSA87KeyPair {
+    try keyPair(using: entropy)
+  }
+
+  fileprivate static func benchmarkPublicByte(
+    at index: Int,
+    from pair: borrowing MLDSA87KeyPair
+  ) -> UInt64 {
+    UInt64(pair.publicKey.span[index])
+  }
+
+  fileprivate static func benchmarkPublicKeyBytes(
+    from pair: borrowing MLDSA87KeyPair
+  ) -> ContiguousArray<UInt8> {
+    copyBenchmarkBytes(pair.publicKey.span)
+  }
+
+  fileprivate static func benchmarkSign(
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    using pair: borrowing MLDSA87KeyPair,
+    entropy: borrowing any EntropySource
+  ) throws(MLDSAError) -> ContiguousArray<UInt8> {
+    try sign(
+      message: message,
+      context: context,
+      using: pair.privateKey,
+      entropy: entropy
+    )
+  }
+
+  fileprivate static func benchmarkSign(
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    using pair: borrowing MLDSA87KeyPair,
+    entropy: borrowing any EntropySource,
+    into signature: inout MutableSpan<UInt8>
+  ) throws(MLDSAError) {
+    try sign(
+      message: message,
+      context: context,
+      using: pair.privateKey,
+      entropy: entropy,
+      into: &signature
+    )
+  }
+
+  fileprivate static func benchmarkSign(
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    using pair: borrowing MLDSA87KeyPair,
+    into signature: inout MutableSpan<UInt8>
+  ) throws(MLDSAError) {
+    try sign(
+      message: message,
+      context: context,
+      using: pair.privateKey,
+      into: &signature
+    )
+  }
+
+  fileprivate static func benchmarkVerify(
+    signature: Span<UInt8>,
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    using pair: borrowing MLDSA87KeyPair
+  ) throws(MLDSAError) -> Bool {
+    try verify(
+      signature: signature,
+      message: message,
+      context: context,
+      using: pair.publicKey
+    )
+  }
+
+  fileprivate static func benchmarkVerify(
+    signature: Span<UInt8>,
+    message: Span<UInt8>,
+    context: Span<UInt8>,
+    publicKeyBytes: Span<UInt8>
+  ) throws(MLDSAError) -> Bool {
+    let publicKey = try MLDSA87PublicKey(bytes: publicKeyBytes)
+    return try verify(
+      signature: signature,
+      message: message,
+      context: context,
+      using: publicKey
+    )
+  }
+}
+
 @main
 enum MLDSABenchmarkCommand {
+  private enum ParameterSet: String {
+    case mlDSA44 = "44"
+    case mlDSA65 = "65"
+    case mlDSA87 = "87"
+  }
+
   private enum Operation: String {
     case keyGeneration = "keygen"
     case signing = "sign"
@@ -74,52 +475,73 @@ enum MLDSABenchmarkCommand {
       return
     }
     guard
-      arguments.count == 4,
-      let operation = Operation(rawValue: arguments[1]),
-      let iterations = Int(arguments[2]),
-      let warmupIterations = Int(arguments[3]),
+      arguments.count == 5,
+      let parameterSet = ParameterSet(rawValue: arguments[1]),
+      let operation = Operation(rawValue: arguments[2]),
+      let iterations = Int(arguments[3]),
+      let warmupIterations = Int(arguments[4]),
       iterations > 0,
       warmupIterations >= 0
     else {
       throw ArgumentError.invalidArguments
     }
-    let measurement = try run(
-      operation: operation,
-      iterations: iterations,
-      warmupIterations: warmupIterations
-    )
+    let measurement: Measurement
+    switch parameterSet {
+    case .mlDSA44:
+      measurement = try run(
+        MLDSA44.self,
+        operation: operation,
+        iterations: iterations,
+        warmupIterations: warmupIterations
+      )
+    case .mlDSA65:
+      measurement = try run(
+        MLDSA65.self,
+        operation: operation,
+        iterations: iterations,
+        warmupIterations: warmupIterations
+      )
+    case .mlDSA87:
+      measurement = try run(
+        MLDSA87.self,
+        operation: operation,
+        iterations: iterations,
+        warmupIterations: warmupIterations
+      )
+    }
     print("RESULT,\(measurement.nanoseconds),\(measurement.checksum)")
   }
 
-  private static func run(
+  private static func run<Parameters: MLDSABenchmarkParameterSet>(
+    _ parameters: Parameters.Type,
     operation: Operation,
     iterations: Int,
     warmupIterations: Int
   ) throws -> Measurement {
-    let seed = deterministicBytes(count: MLDSA65.seedByteCount, seed: 0x65)
-    let pair = try MLDSA65.keyPair(seed: seed.span)
+    let seed = deterministicBytes(count: parameters.seedByteCount, seed: 0x65)
+    let pair = try parameters.benchmarkKeyPair(seed: seed.span)
     let message = deterministicBytes(count: 1_024, seed: 0xA5)
     let context = deterministicBytes(count: 17, seed: 0xC3)
-    var signature = try MLDSA65.sign(
+    var signature = try parameters.benchmarkSign(
       message: message.span,
       context: context.span,
-      using: pair.privateKey,
+      using: pair,
       entropy: FixedEntropy(byte: 0x73)
     )
     var warmupIteration = 0
     switch operation {
     case .keyGeneration:
       while warmupIteration < warmupIterations {
-        _ = try keyGenerationChecksum(iteration: warmupIteration)
+        _ = try keyGenerationChecksum(parameters, iteration: warmupIteration)
         warmupIteration += 1
       }
     case .signing:
       while warmupIteration < warmupIterations {
         var output = signature.mutableSpan
-        try MLDSA65.sign(
+        try parameters.benchmarkSign(
           message: message.span,
           context: context.span,
-          using: pair.privateKey,
+          using: pair,
           into: &output
         )
         warmupIteration += 1
@@ -127,11 +549,11 @@ enum MLDSABenchmarkCommand {
     case .verification:
       while warmupIteration < warmupIterations {
         guard
-          try MLDSA65.verify(
+          try parameters.benchmarkVerify(
             signature: signature.span,
             message: message.span,
             context: context.span,
-            using: pair.publicKey
+            using: pair
           )
         else {
           throw ArgumentError.validationFailure
@@ -145,17 +567,17 @@ enum MLDSABenchmarkCommand {
     case .keyGeneration:
       var iteration = 0
       while iteration < iterations {
-        checksum &+= try keyGenerationChecksum(iteration: iteration)
+        checksum &+= try keyGenerationChecksum(parameters, iteration: iteration)
         iteration += 1
       }
     case .signing:
       var iteration = 0
       while iteration < iterations {
         var output = signature.mutableSpan
-        try MLDSA65.sign(
+        try parameters.benchmarkSign(
           message: message.span,
           context: context.span,
-          using: pair.privateKey,
+          using: pair,
           into: &output
         )
         checksum &+= UInt64(signature[iteration % signature.count])
@@ -165,11 +587,11 @@ enum MLDSABenchmarkCommand {
       var iteration = 0
       while iteration < iterations {
         guard
-          try MLDSA65.verify(
+          try parameters.benchmarkVerify(
             signature: signature.span,
             message: message.span,
             context: context.span,
-            using: pair.publicKey
+            using: pair
           )
         else {
           throw ArgumentError.validationFailure
@@ -184,14 +606,14 @@ enum MLDSABenchmarkCommand {
     )
   }
 
-  private static func keyGenerationChecksum(
+  private static func keyGenerationChecksum<Parameters: MLDSABenchmarkParameterSet>(
+    _ parameters: Parameters.Type,
     iteration: Int
   ) throws -> UInt64 {
-    let generated = try MLDSA65.keyPair()
-    return UInt64(
-      generated.publicKey.withBorrowedBytes {
-        $0[iteration % MLDSA65.publicKeyByteCount]
-      }
+    let generated = try parameters.benchmarkKeyPair()
+    return parameters.benchmarkPublicByte(
+      at: iteration % parameters.publicKeyByteCount,
+      from: generated
     )
   }
 
@@ -199,83 +621,152 @@ enum MLDSABenchmarkCommand {
     switch arguments[1] {
     case "--memory":
       guard
-        arguments.count == 4,
-        let operation = Operation(rawValue: arguments[2]),
-        let iterations = Int(arguments[3]),
+        arguments.count == 5,
+        let parameterSet = ParameterSet(rawValue: arguments[2]),
+        let operation = Operation(rawValue: arguments[3]),
+        let iterations = Int(arguments[4]),
         iterations > 0
       else {
         throw ArgumentError.invalidArguments
       }
-      try runMemoryMeasurement(operation: operation, iterations: iterations)
+      switch parameterSet {
+      case .mlDSA44:
+        try runMemoryMeasurement(MLDSA44.self, operation: operation, iterations: iterations)
+      case .mlDSA65:
+        try runMemoryMeasurement(MLDSA65.self, operation: operation, iterations: iterations)
+      case .mlDSA87:
+        try runMemoryMeasurement(MLDSA87.self, operation: operation, iterations: iterations)
+      }
     case "--fixture":
-      guard arguments.count == 6 else { throw ArgumentError.invalidArguments }
-      let seed = try decodeHex(arguments[2], expectedByteCount: MLDSA65.seedByteCount)
-      let message = try decodeHex(arguments[3], expectedByteCount: 64)
-      let context = try decodeHex(arguments[4], expectedByteCount: 19)
-      let randomizer = try decodeHex(
-        arguments[5],
-        expectedByteCount: MLDSA65.randomizerByteCount
-      )
-      let pair = try MLDSA65.keyPair(seed: seed.span)
-      let signature = try MLDSA65.sign(
-        message: message.span,
-        context: context.span,
-        using: pair.privateKey,
-        entropy: ByteEntropy(bytes: randomizer)
-      )
-      print("FIXTURE,\(encodeHex(pair.publicKey.span)),\(encodeHex(signature.span))")
-    case "--validate":
-      guard arguments.count == 7 else { throw ArgumentError.invalidArguments }
-      let seed = try decodeHex(arguments[2], expectedByteCount: MLDSA65.seedByteCount)
-      let expectedPublic = try decodeHex(
-        arguments[3],
-        expectedByteCount: MLDSA65.publicKeyByteCount
-      )
-      let signature = try decodeHex(
-        arguments[4],
-        expectedByteCount: MLDSA65.signatureByteCount
-      )
-      let message = try decodeHex(arguments[5], expectedByteCount: 64)
-      let context = try decodeHex(arguments[6], expectedByteCount: 19)
-      let pair = try MLDSA65.keyPair(seed: seed.span)
       guard
-        equal(pair.publicKey.span, expectedPublic.span),
-        try MLDSA65.verify(
-          signature: signature.span,
-          message: message.span,
-          context: context.span,
-          using: pair.publicKey
-        )
+        arguments.count == 7,
+        let parameterSet = ParameterSet(rawValue: arguments[2])
+      else {
+        throw ArgumentError.invalidArguments
+      }
+      switch parameterSet {
+      case .mlDSA44:
+        try emitFixture(MLDSA44.self, arguments: arguments)
+      case .mlDSA65:
+        try emitFixture(MLDSA65.self, arguments: arguments)
+      case .mlDSA87:
+        try emitFixture(MLDSA87.self, arguments: arguments)
+      }
+    case "--validate":
+      guard
+        arguments.count == 8,
+        let parameterSet = ParameterSet(rawValue: arguments[2])
       else {
         throw ArgumentError.validationFailure
       }
-      print("VALIDATED")
+      switch parameterSet {
+      case .mlDSA44:
+        try validateFixture(MLDSA44.self, arguments: arguments)
+      case .mlDSA65:
+        try validateFixture(MLDSA65.self, arguments: arguments)
+      case .mlDSA87:
+        try validateFixture(MLDSA87.self, arguments: arguments)
+      }
     case "--verify":
-      guard arguments.count == 6 else { throw ArgumentError.invalidArguments }
-      let encodedPublic = try decodeHex(
-        arguments[2],
-        expectedByteCount: MLDSA65.publicKeyByteCount
-      )
-      let signature = try decodeHex(
-        arguments[3],
-        expectedByteCount: MLDSA65.signatureByteCount
-      )
-      let message = try decodeHex(arguments[4], expectedByteCount: 64)
-      let context = try decodeHex(arguments[5], expectedByteCount: 19)
-      let publicKey = try MLDSA65PublicKey(bytes: encodedPublic.span)
-      let valid = try MLDSA65.verify(
-        signature: signature.span,
-        message: message.span,
-        context: context.span,
-        using: publicKey
-      )
-      print("VERIFIED,\(valid ? 1 : 0)")
+      guard
+        arguments.count == 7,
+        let parameterSet = ParameterSet(rawValue: arguments[2])
+      else {
+        throw ArgumentError.invalidArguments
+      }
+      switch parameterSet {
+      case .mlDSA44:
+        try verifyFixture(MLDSA44.self, arguments: arguments)
+      case .mlDSA65:
+        try verifyFixture(MLDSA65.self, arguments: arguments)
+      case .mlDSA87:
+        try verifyFixture(MLDSA87.self, arguments: arguments)
+      }
     default:
       throw ArgumentError.invalidArguments
     }
   }
 
-  private static func runMemoryMeasurement(
+  private static func emitFixture<Parameters: MLDSABenchmarkParameterSet>(
+    _ parameters: Parameters.Type,
+    arguments: [String]
+  ) throws {
+    let seed = try decodeHex(arguments[3], expectedByteCount: parameters.seedByteCount)
+    let message = try decodeHex(arguments[4], expectedByteCount: 64)
+    let context = try decodeHex(arguments[5], expectedByteCount: 19)
+    let randomizer = try decodeHex(
+      arguments[6],
+      expectedByteCount: parameters.randomizerByteCount
+    )
+    let pair = try parameters.benchmarkKeyPair(seed: seed.span)
+    let signature = try parameters.benchmarkSign(
+      message: message.span,
+      context: context.span,
+      using: pair,
+      entropy: ByteEntropy(bytes: randomizer)
+    )
+    let publicKey = parameters.benchmarkPublicKeyBytes(from: pair)
+    print(
+      "FIXTURE,\(encodeHex(publicKey.span)),\(encodeHex(signature.span))"
+    )
+  }
+
+  private static func validateFixture<Parameters: MLDSABenchmarkParameterSet>(
+    _ parameters: Parameters.Type,
+    arguments: [String]
+  ) throws {
+    let seed = try decodeHex(arguments[3], expectedByteCount: parameters.seedByteCount)
+    let expectedPublic = try decodeHex(
+      arguments[4],
+      expectedByteCount: parameters.publicKeyByteCount
+    )
+    let signature = try decodeHex(
+      arguments[5],
+      expectedByteCount: parameters.signatureByteCount
+    )
+    let message = try decodeHex(arguments[6], expectedByteCount: 64)
+    let context = try decodeHex(arguments[7], expectedByteCount: 19)
+    let pair = try parameters.benchmarkKeyPair(seed: seed.span)
+    let publicKey = parameters.benchmarkPublicKeyBytes(from: pair)
+    guard
+      equal(publicKey.span, expectedPublic.span),
+      try parameters.benchmarkVerify(
+        signature: signature.span,
+        message: message.span,
+        context: context.span,
+        using: pair
+      )
+    else {
+      throw ArgumentError.validationFailure
+    }
+    print("VALIDATED")
+  }
+
+  private static func verifyFixture<Parameters: MLDSABenchmarkParameterSet>(
+    _ parameters: Parameters.Type,
+    arguments: [String]
+  ) throws {
+    let encodedPublic = try decodeHex(
+      arguments[3],
+      expectedByteCount: parameters.publicKeyByteCount
+    )
+    let signature = try decodeHex(
+      arguments[4],
+      expectedByteCount: parameters.signatureByteCount
+    )
+    let message = try decodeHex(arguments[5], expectedByteCount: 64)
+    let context = try decodeHex(arguments[6], expectedByteCount: 19)
+    let valid = try parameters.benchmarkVerify(
+      signature: signature.span,
+      message: message.span,
+      context: context.span,
+      publicKeyBytes: encodedPublic.span
+    )
+    print("VERIFIED,\(valid ? 1 : 0)")
+  }
+
+  private static func runMemoryMeasurement<Parameters: MLDSABenchmarkParameterSet>(
+    _ parameters: Parameters.Type,
     operation: Operation,
     iterations: Int
   ) throws {
@@ -286,28 +777,29 @@ enum MLDSABenchmarkCommand {
       case .keyGeneration:
         // Initialize process-global allocator/runtime state outside the probe.
         // Key generation itself remains fully included in every measured loop.
-        _ = try memoryKeyGeneration(iterations: 1)
+        _ = try memoryKeyGeneration(parameters, iterations: 1)
         probe.start()
         do {
-          checksum = try memoryKeyGeneration(iterations: iterations)
+          checksum = try memoryKeyGeneration(parameters, iterations: iterations)
         } catch {
           probe.stopAndPrint()
           throw error
         }
       case .signing:
-        let seed = deterministicBytes(count: MLDSA65.seedByteCount, seed: 0x65)
-        let pair = try MLDSA65.keyPair(seed: seed.span)
+        let seed = deterministicBytes(count: parameters.seedByteCount, seed: 0x65)
+        let pair = try parameters.benchmarkKeyPair(seed: seed.span)
         let message = deterministicBytes(count: 1_024, seed: 0xA5)
         let context = deterministicBytes(count: 17, seed: 0xC3)
-        var signature = try MLDSA65.sign(
+        var signature = try parameters.benchmarkSign(
           message: message.span,
           context: context.span,
-          using: pair.privateKey,
+          using: pair,
           entropy: FixedEntropy(byte: 0x73)
         )
         probe.start()
         do {
           checksum = try memorySigning(
+            parameters,
             pair: pair,
             message: message,
             context: context,
@@ -319,22 +811,22 @@ enum MLDSABenchmarkCommand {
           throw error
         }
       case .verification:
-        let seed = deterministicBytes(count: MLDSA65.seedByteCount, seed: 0x65)
-        let pair = try MLDSA65.keyPair(seed: seed.span)
+        let seed = deterministicBytes(count: parameters.seedByteCount, seed: 0x65)
+        let pair = try parameters.benchmarkKeyPair(seed: seed.span)
         let message = deterministicBytes(count: 1_024, seed: 0xA5)
         let context = deterministicBytes(count: 17, seed: 0xC3)
-        let signature = try MLDSA65.sign(
+        let signature = try parameters.benchmarkSign(
           message: message.span,
           context: context.span,
-          using: pair.privateKey,
+          using: pair,
           entropy: FixedEntropy(byte: 0x73)
         )
         guard
-          try MLDSA65.verify(
+          try parameters.benchmarkVerify(
             signature: signature.span,
             message: message.span,
             context: context.span,
-            using: pair.publicKey
+            using: pair
           )
         else {
           throw ArgumentError.validationFailure
@@ -342,6 +834,7 @@ enum MLDSABenchmarkCommand {
         probe.start()
         do {
           checksum = try memoryVerification(
+            parameters,
             pair: pair,
             message: message,
             context: context,
@@ -360,24 +853,27 @@ enum MLDSABenchmarkCommand {
     #endif
   }
 
-  private static func memoryKeyGeneration(iterations: Int) throws -> UInt64 {
+  private static func memoryKeyGeneration<Parameters: MLDSABenchmarkParameterSet>(
+    _ parameters: Parameters.Type,
+    iterations: Int
+  ) throws -> UInt64 {
     let entropy = FixedEntropy(byte: 0x51)
     var checksum: UInt64 = 0
     var iteration = 0
     while iteration < iterations {
-      let pair = try MLDSA65.keyPair(using: entropy)
-      checksum &+= UInt64(
-        pair.publicKey.withBorrowedBytes {
-          $0[iteration % MLDSA65.publicKeyByteCount]
-        }
+      let pair = try parameters.benchmarkKeyPair(using: entropy)
+      checksum &+= parameters.benchmarkPublicByte(
+        at: iteration % parameters.publicKeyByteCount,
+        from: pair
       )
       iteration += 1
     }
     return checksum
   }
 
-  private static func memorySigning(
-    pair: borrowing MLDSA65KeyPair,
+  private static func memorySigning<Parameters: MLDSABenchmarkParameterSet>(
+    _ parameters: Parameters.Type,
+    pair: borrowing Parameters.BenchmarkKeyPair,
     message: borrowing ContiguousArray<UInt8>,
     context: borrowing ContiguousArray<UInt8>,
     signature: inout ContiguousArray<UInt8>,
@@ -388,10 +884,10 @@ enum MLDSABenchmarkCommand {
     var iteration = 0
     while iteration < iterations {
       var output = signature.mutableSpan
-      try MLDSA65.sign(
+      try parameters.benchmarkSign(
         message: message.span,
         context: context.span,
-        using: pair.privateKey,
+        using: pair,
         entropy: entropy,
         into: &output
       )
@@ -401,8 +897,9 @@ enum MLDSABenchmarkCommand {
     return checksum
   }
 
-  private static func memoryVerification(
-    pair: borrowing MLDSA65KeyPair,
+  private static func memoryVerification<Parameters: MLDSABenchmarkParameterSet>(
+    _ parameters: Parameters.Type,
+    pair: borrowing Parameters.BenchmarkKeyPair,
     message: borrowing ContiguousArray<UInt8>,
     context: borrowing ContiguousArray<UInt8>,
     signature: borrowing ContiguousArray<UInt8>,
@@ -412,11 +909,11 @@ enum MLDSABenchmarkCommand {
     var iteration = 0
     while iteration < iterations {
       guard
-        try MLDSA65.verify(
+        try parameters.benchmarkVerify(
           signature: signature.span,
           message: message.span,
           context: context.span,
-          using: pair.publicKey
+          using: pair
         )
       else {
         throw ArgumentError.validationFailure

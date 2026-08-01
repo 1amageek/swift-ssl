@@ -4,25 +4,15 @@ import SwiftSSLCore
   import simd
 #endif
 
-enum MLDSA65Core {
-  private typealias Coefficients = ContiguousArray<UInt32>
+private enum MLDSAArithmeticConstants {
+  static let degree = 256
+  static let prime: UInt32 = 8_380_417
+  static let primeNegInverse: UInt32 = 4_236_238_847
+  static let halfPrime: UInt32 = 4_190_208
+  static let inverseDegreeDoubleMontgomery: UInt32 = 41_978
+  static let droppedBits = 13
 
-  private static let degree = 256
-  private static let k = 6
-  private static let l = 5
-  private static let prime: UInt32 = 8_380_417
-  private static let primeNegInverse: UInt32 = 4_236_238_847
-  private static let halfPrime: UInt32 = 4_190_208
-  private static let inverseDegreeDoubleMontgomery: UInt32 = 41_978
-  private static let droppedBits = 13
-  private static let eta: UInt32 = 4
-  private static let gamma1: UInt32 = 1 << 19
-  private static let gamma2: UInt32 = (prime - 1) / 32
-  private static let beta: UInt32 = 196
-  private static let omega = 55
-  private static let tau = 49
-
-  private static let roots: [UInt32] = [
+  static let roots: [UInt32] = [
     4_193_792, 25_847, 5_771_523, 7_861_508, 237_124, 7_602_457,
     7_504_169, 466_468, 1_826_347, 2_353_451, 8_021_166, 6_288_512,
     3_119_733, 5_495_562, 3_111_497, 2_680_103, 2_725_464, 1_024_112,
@@ -67,11 +57,38 @@ enum MLDSA65Core {
     1_612_842, 4_834_730, 7_826_001, 3_919_660, 8_332_111, 7_018_208,
     3_937_738, 1_400_424, 7_534_263, 1_976_782,
   ]
+}
+
+struct MLDSACore {
+  private typealias Coefficients = ContiguousArray<UInt32>
+
+  let parameterSet: MLDSAParameterSet
+
+  init(parameterSet: MLDSAParameterSet) {
+    self.parameterSet = parameterSet
+  }
+  private var degree: Int { MLDSAArithmeticConstants.degree }
+  private var k: Int { parameterSet.k }
+  private var l: Int { parameterSet.l }
+  private var prime: UInt32 { MLDSAArithmeticConstants.prime }
+  private var primeNegInverse: UInt32 { MLDSAArithmeticConstants.primeNegInverse }
+  private var halfPrime: UInt32 { MLDSAArithmeticConstants.halfPrime }
+  private var inverseDegreeDoubleMontgomery: UInt32 {
+    MLDSAArithmeticConstants.inverseDegreeDoubleMontgomery
+  }
+  private var droppedBits: Int { MLDSAArithmeticConstants.droppedBits }
+  private var eta: UInt32 { parameterSet.eta }
+  private var gamma1: UInt32 { parameterSet.gamma1 }
+  private var gamma2: UInt32 { (prime - 1) / parameterSet.gamma2Divisor }
+  private var beta: UInt32 { parameterSet.beta }
+  private var omega: Int { parameterSet.omega }
+  private var tau: Int { parameterSet.tau }
+  private var roots: [UInt32] { MLDSAArithmeticConstants.roots }
 
   struct GeneratedKeyPair {
     let publicKey: OwnedBytes
-    let expandedPublicKey: MLDSA65ExpandedPublicKey
-    let expandedPrivateKey: MLDSA65ExpandedPrivateKey
+    let expandedPublicKey: MLDSAExpandedPublicKey
+    let expandedPrivateKey: MLDSAExpandedPrivateKey
   }
 
   private struct DecodedPrivateKey {
@@ -83,28 +100,46 @@ enum MLDSA65Core {
     var t0NTT: Coefficients
 
     mutating func erase() {
-      wipe(&key)
-      wipe(&s1NTT)
-      wipe(&s2NTT)
-      wipe(&t0NTT)
+      Self.erase(&key)
+      Self.erase(&s1NTT)
+      Self.erase(&s2NTT)
+      Self.erase(&t0NTT)
+    }
+
+    private static func erase(_ bytes: inout ContiguousArray<UInt8>) {
+      bytes.withUnsafeMutableBufferPointer { buffer in
+        guard let pointer = buffer.baseAddress else { return }
+        SecureWipe.erase(
+          UnsafeMutableRawPointer(pointer),
+          byteCount: buffer.count
+        )
+      }
+    }
+
+    private static func erase(_ coefficients: inout Coefficients) {
+      coefficients.withUnsafeMutableBufferPointer { buffer in
+        guard let pointer = buffer.baseAddress else { return }
+        SecureWipe.eraseUInt32Words(
+          pointer,
+          wordCount: buffer.count
+        )
+      }
     }
   }
 
   private struct SigningWorkspace: ~Copyable {
-    private static let yOffset = 0
-    private static let wOffset = yOffset + l * degree
-    private static let reusableVectorOffset = wOffset + k * degree
-    private static let challengeOffset = reusableVectorOffset + k * degree
-    private static let cs1Offset = challengeOffset + degree
-    private static let cs2Offset = cs1Offset + l * degree
-    private static let zOffset = cs2Offset + k * degree
-    private static let hintOffset = zOffset + l * degree
-    private static let coefficientCount = hintOffset + k * degree
-    private static let maskByteCount = 2 * 640
-    private static let coefficientByteCount =
-      coefficientCount * MemoryLayout<UInt32>.stride
-    private static let allocationByteCount = coefficientByteCount + maskByteCount
-
+    private let yOffset: Int
+    private let wOffset: Int
+    private let reusableVectorOffset: Int
+    private let challengeOffset: Int
+    private let cs1Offset: Int
+    private let cs2Offset: Int
+    private let zOffset: Int
+    private let hintOffset: Int
+    private let coefficientCount: Int
+    private let maskByteCount: Int
+    private let coefficientByteCount: Int
+    private let allocationByteCount: Int
     private let allocation: UnsafeMutableRawPointer
     private let pointer: UnsafeMutablePointer<UInt32>
     private let maskBytes: UnsafeMutablePointer<UInt8>
@@ -115,22 +150,36 @@ enum MLDSA65Core {
     // - pointers are lent only to the synchronous nonescaping closure;
     // - no pointer crosses a Sendable boundary or outlives this owner;
     // - deinit volatile-erases all secret intermediates before exactly-once release.
-    init() {
+    init(parameterSet: MLDSAParameterSet) {
+      let degree = MLDSAArithmeticConstants.degree
+      yOffset = 0
+      wOffset = parameterSet.l * degree
+      reusableVectorOffset = wOffset + parameterSet.k * degree
+      challengeOffset = reusableVectorOffset + parameterSet.k * degree
+      cs1Offset = challengeOffset + degree
+      cs2Offset = cs1Offset + parameterSet.l * degree
+      zOffset = cs2Offset + parameterSet.k * degree
+      hintOffset = zOffset + parameterSet.l * degree
+      coefficientCount = hintOffset + parameterSet.k * degree
+      maskByteCount = 2 * parameterSet.maskPolynomialByteCount
+      coefficientByteCount = coefficientCount * MemoryLayout<UInt32>.stride
+      allocationByteCount = coefficientByteCount + maskByteCount
+      precondition(allocationByteCount.isMultiple(of: MemoryLayout<UInt64>.stride))
       let allocation = UnsafeMutableRawPointer.allocate(
-        byteCount: Self.allocationByteCount,
+        byteCount: allocationByteCount,
         alignment: MemoryLayout<UInt64>.alignment
       )
       self.allocation = allocation
       pointer = allocation.bindMemory(
         to: UInt32.self,
-        capacity: Self.coefficientCount
+        capacity: coefficientCount
       )
-      pointer.initialize(repeating: 0, count: Self.coefficientCount)
-      maskBytes = allocation.advanced(by: Self.coefficientByteCount).bindMemory(
+      pointer.initialize(repeating: 0, count: coefficientCount)
+      maskBytes = allocation.advanced(by: coefficientByteCount).bindMemory(
         to: UInt8.self,
-        capacity: Self.maskByteCount
+        capacity: maskByteCount
       )
-      maskBytes.initialize(repeating: 0, count: Self.maskByteCount)
+      maskBytes.initialize(repeating: 0, count: maskByteCount)
     }
 
     borrowing func withBuffers<Result, Failure: Error>(
@@ -147,32 +196,31 @@ enum MLDSA65Core {
       ) throws(Failure) -> Result
     ) throws(Failure) -> Result {
       try body(
-        pointer.advanced(by: Self.yOffset),
-        pointer.advanced(by: Self.wOffset),
-        pointer.advanced(by: Self.reusableVectorOffset),
-        pointer.advanced(by: Self.challengeOffset),
-        pointer.advanced(by: Self.cs1Offset),
-        pointer.advanced(by: Self.cs2Offset),
-        pointer.advanced(by: Self.zOffset),
-        pointer.advanced(by: Self.hintOffset),
+        pointer.advanced(by: yOffset),
+        pointer.advanced(by: wOffset),
+        pointer.advanced(by: reusableVectorOffset),
+        pointer.advanced(by: challengeOffset),
+        pointer.advanced(by: cs1Offset),
+        pointer.advanced(by: cs2Offset),
+        pointer.advanced(by: zOffset),
+        pointer.advanced(by: hintOffset),
         maskBytes
       )
     }
 
     deinit {
-      precondition(Self.allocationByteCount.isMultiple(of: 8))
       SecureWipe.eraseUInt64Words(
         allocation,
-        wordCount: Self.allocationByteCount / MemoryLayout<UInt64>.stride
+        wordCount: allocationByteCount / MemoryLayout<UInt64>.stride
       )
-      pointer.deinitialize(count: Self.coefficientCount)
-      maskBytes.deinitialize(count: Self.maskByteCount)
+      pointer.deinitialize(count: coefficientCount)
+      maskBytes.deinitialize(count: maskByteCount)
       allocation.deallocate()
     }
   }
 
-  static func keyGenerate(seed: Span<UInt8>) throws(MLDSAError) -> GeneratedKeyPair {
-    precondition(seed.count == MLDSA65.seedByteCount)
+  func keyGenerate(seed: Span<UInt8>) throws(MLDSAError) -> GeneratedKeyPair {
+    precondition(seed.count == 32)
     var expandedSeed = try shake256(outputByteCount: 128) { sponge throws(MLDSAError) in
       try absorb(seed, into: &sponge)
       try absorbByte(UInt8(k), into: &sponge)
@@ -197,7 +245,7 @@ enum MLDSA65Core {
 
     var publicBytes = ContiguousArray<UInt8>(
       repeating: 0,
-      count: MLDSA65.publicKeyByteCount
+      count: parameterSet.publicKeyByteCount
     )
     encodePublicKey(rho: rho.span, t1: derived.t1, into: &publicBytes)
     let publicKeyHash = try shake256(
@@ -205,17 +253,19 @@ enum MLDSA65Core {
       absorbing: publicBytes.span
     )
 
-    precondition(publicBytes.count == MLDSA65.publicKeyByteCount)
+    precondition(publicBytes.count == parameterSet.publicKeyByteCount)
     nttVector(&s2, polynomialCount: k)
     nttVector(&derived.t0, polynomialCount: k)
     let expandedKey = try secretBytes(copying: secretKey.span)
-    let expandedPrivateKey = MLDSA65ExpandedPrivateKey(
+    let expandedPrivateKey = MLDSAExpandedPrivateKey(
+      parameterSet: parameterSet,
       key: consume expandedKey,
       takingS1NTT: &s1,
       takingS2NTT: &s2,
       takingT0NTT: &derived.t0
     )
-    let expandedPublicKey = MLDSA65ExpandedPublicKey(
+    let expandedPublicKey = MLDSAExpandedPublicKey(
+      parameterSet: parameterSet,
       encoded: publicBytes.span,
       publicKeyHash: publicKeyHash.span,
       t1: derived.t1.span
@@ -227,12 +277,12 @@ enum MLDSA65Core {
     )
   }
 
-  static func standardPrivateKeyRepresentation(
-    privateKey: borrowing MLDSA65ExpandedPrivateKey,
-    publicKey: borrowing MLDSA65ExpandedPublicKey
+  func standardPrivateKeyRepresentation(
+    privateKey: borrowing MLDSAExpandedPrivateKey,
+    publicKey: borrowing MLDSAExpandedPublicKey
   ) throws(MLDSAError) -> SecretBytes {
     var encoded = ContiguousArray<UInt8>()
-    encoded.reserveCapacity(MLDSA65.privateKeyByteCount)
+    encoded.reserveCapacity(parameterSet.privateKeyByteCount)
     defer { wipe(&encoded) }
     try privateKey.withMaterial {
       key, s1NTT, s2NTT, t0NTT throws(MLDSAError) in
@@ -256,13 +306,13 @@ enum MLDSA65Core {
         var encodedS1 = encodeSigned(
           s1,
           polynomialCount: l,
-          bits: 4,
+          bits: parameterSet.shortCoefficientBitCount,
           maximum: eta
         )
         var encodedS2 = encodeSigned(
           s2,
           polynomialCount: k,
-          bits: 4,
+          bits: parameterSet.shortCoefficientBitCount,
           maximum: eta
         )
         var encodedT0 = encodeSigned(
@@ -284,16 +334,16 @@ enum MLDSA65Core {
         append(encodedT0.span, to: &encoded)
       }
     }
-    precondition(encoded.count == MLDSA65.privateKeyByteCount)
+    precondition(encoded.count == parameterSet.privateKeyByteCount)
     return try secretBytes(copying: encoded.span)
   }
 
-  static func validatePrivateKeyAndDerivePublicKey(
+  func validatePrivateKeyAndDerivePublicKey(
     _ encoded: Span<UInt8>
   ) throws(MLDSAError) -> (
     OwnedBytes,
-    MLDSA65ExpandedPublicKey,
-    MLDSA65ExpandedPrivateKey
+    MLDSAExpandedPublicKey,
+    MLDSAExpandedPrivateKey
   ) {
     var decoded = try decodePrivateKey(encoded)
     defer { decoded.erase() }
@@ -318,27 +368,31 @@ enum MLDSA65Core {
       maximum: 1 << 12
     )
     defer { wipe(&encodedT0) }
-    let receivedT0 = encoded.extracting(1_536..<4_032)
+    let receivedT0 = encoded.extracting(
+      parameterSet.privateT0Offset..<parameterSet.privateKeyByteCount
+    )
     guard ConstantTime.equal(encodedT0.span, receivedT0) else {
       throw .invalidPrivateKeyEncoding
     }
 
     var publicBytes = ContiguousArray<UInt8>(
       repeating: 0,
-      count: MLDSA65.publicKeyByteCount
+      count: parameterSet.publicKeyByteCount
     )
     encodePublicKey(rho: decoded.rho.span, t1: derived.t1, into: &publicBytes)
     let expectedHash = try shake256(outputByteCount: 64, absorbing: publicBytes.span)
     guard ConstantTime.equal(expectedHash.span, decoded.publicKeyHash.span) else {
       throw .invalidPrivateKeyEncoding
     }
-    let expandedPrivateKey = try MLDSA65ExpandedPrivateKey(
+    let expandedPrivateKey = try MLDSAExpandedPrivateKey(
+      parameterSet: parameterSet,
       key: decoded.key.span,
       s1NTT: decoded.s1NTT.span,
       s2NTT: decoded.s2NTT.span,
       t0NTT: decoded.t0NTT.span
     )
-    let expandedPublicKey = MLDSA65ExpandedPublicKey(
+    let expandedPublicKey = MLDSAExpandedPublicKey(
+      parameterSet: parameterSet,
       encoded: publicBytes.span,
       publicKeyHash: expectedHash.span,
       t1: derived.t1.span
@@ -350,27 +404,28 @@ enum MLDSA65Core {
     )
   }
 
-  static func expandPublicKey(
+  func expandPublicKey(
     _ encoded: Span<UInt8>
-  ) throws(MLDSAError) -> MLDSA65ExpandedPublicKey {
-    precondition(encoded.count == MLDSA65.publicKeyByteCount)
+  ) throws(MLDSAError) -> MLDSAExpandedPublicKey {
+    precondition(encoded.count == parameterSet.publicKeyByteCount)
     let t1 = decodeUnsigned(
-      encoded.extracting(32..<MLDSA65.publicKeyByteCount),
+      encoded.extracting(32..<parameterSet.publicKeyByteCount),
       polynomialCount: k,
       bits: 10
     )
     let publicKeyHash = try shake256(outputByteCount: 64, absorbing: encoded)
-    return MLDSA65ExpandedPublicKey(
+    return MLDSAExpandedPublicKey(
+      parameterSet: parameterSet,
       encoded: encoded,
       publicKeyHash: publicKeyHash.span,
       t1: t1.span
     )
   }
 
-  static func expandPublicMaterial(
+  func expandPublicMaterial(
     rho: Span<UInt8>,
     t1: Span<UInt32>
-  ) throws(MLDSAError) -> MLDSA65ExpandedPublicMaterial {
+  ) throws(MLDSAError) -> MLDSAExpandedPublicMaterial {
     precondition(rho.count == 32)
     precondition(t1.count == k * degree)
     var t1NTT = Coefficients(repeating: 0, count: t1.count)
@@ -382,22 +437,23 @@ enum MLDSA65Core {
     scalePower2RoundVector(&t1NTT)
     nttVector(&t1NTT, polynomialCount: k)
     let matrix = try expandMatrix(rho: rho)
-    return MLDSA65ExpandedPublicMaterial(
+    return MLDSAExpandedPublicMaterial(
+      parameterSet: parameterSet,
       t1NTT: t1NTT.span,
       matrix: matrix.span
     )
   }
 
-  static func sign(
+  func sign(
     message: Span<UInt8>,
     context: Span<UInt8>,
-    privateKey: borrowing MLDSA65ExpandedPrivateKey,
-    publicKey: borrowing MLDSA65ExpandedPublicKey,
+    privateKey: borrowing MLDSAExpandedPrivateKey,
+    publicKey: borrowing MLDSAExpandedPublicKey,
     randomizer: Span<UInt8>
   ) throws(MLDSAError) -> ContiguousArray<UInt8> {
     var signature = ContiguousArray<UInt8>(
       repeating: 0,
-      count: MLDSA65.signatureByteCount
+      count: parameterSet.signatureByteCount
     )
     var output = signature.mutableSpan
     try sign(
@@ -411,15 +467,15 @@ enum MLDSA65Core {
     return signature
   }
 
-  static func sign(
+  func sign(
     message: Span<UInt8>,
     context: Span<UInt8>,
-    privateKey: borrowing MLDSA65ExpandedPrivateKey,
-    publicKey: borrowing MLDSA65ExpandedPublicKey,
+    privateKey: borrowing MLDSAExpandedPrivateKey,
+    publicKey: borrowing MLDSAExpandedPublicKey,
     randomizer: Span<UInt8>,
     into signature: inout MutableSpan<UInt8>
   ) throws(MLDSAError) {
-    precondition(signature.count == MLDSA65.signatureByteCount)
+    precondition(signature.count == parameterSet.signatureByteCount)
     try privateKey.withMaterial {
       key, s1NTT, s2NTT, t0NTT throws(MLDSAError) in
       try publicKey.withMaterial {
@@ -440,7 +496,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func signExpanded(
+  private func signExpanded(
     message: Span<UInt8>,
     context: Span<UInt8>,
     key: Span<UInt8>,
@@ -452,7 +508,7 @@ enum MLDSA65Core {
     randomizer: Span<UInt8>,
     into signature: inout MutableSpan<UInt8>
   ) throws(MLDSAError) {
-    precondition(randomizer.count == MLDSA65.randomizerByteCount)
+    precondition(randomizer.count == 32)
 
     var mu = try messageRepresentative(
       publicKeyHash: publicKeyHash,
@@ -467,7 +523,7 @@ enum MLDSA65Core {
     }
     defer { wipe(&rhoPrime) }
 
-    let workspace = SigningWorkspace()
+    let workspace = SigningWorkspace(parameterSet: parameterSet)
     try workspace.withBuffers {
       y, w, reusableVector, challenge, cs1, cs2, z, hint, maskBytes throws(MLDSAError) in
       var kappa = 0
@@ -490,10 +546,10 @@ enum MLDSA65Core {
         var encodedW1 = encodeUnsigned(
           UnsafePointer(reusableVector),
           coefficientCount: k * degree,
-          bits: 4
+          bits: parameterSet.highBitsCoefficientBitCount
         )
         defer { wipe(&encodedW1) }
-        var challengeHash = try shake256(outputByteCount: 48) {
+        var challengeHash = try shake256(outputByteCount: parameterSet.challengeByteCount) {
           sponge throws(MLDSAError) in
           try absorb(mu.span, into: &sponge)
           try absorb(encodedW1.span, into: &sponge)
@@ -558,13 +614,13 @@ enum MLDSA65Core {
           bitPack(
             UnsafePointer(z),
             coefficientCount: l * degree,
-            bits: 20,
+            bits: parameterSet.maskCoefficientBitCount,
             maximum: gamma1,
-            into: destination.advanced(by: 48)
+            into: destination.advanced(by: parameterSet.signatureZOffset)
           )
           encodeHint(
             hint,
-            into: destination.advanced(by: 3_248)
+            into: destination.advanced(by: parameterSet.signatureHintOffset)
           )
         }
         return
@@ -573,11 +629,11 @@ enum MLDSA65Core {
     }
   }
 
-  static func verify(
+  func verify(
     signature: Span<UInt8>,
     message: Span<UInt8>,
     context: Span<UInt8>,
-    publicKey: borrowing MLDSA65ExpandedPublicKey
+    publicKey: borrowing MLDSAExpandedPublicKey
   ) throws(MLDSAError) -> Bool {
     try publicKey.withMaterial {
       _, publicKeyHash, t1NTT, matrix throws(MLDSAError) in
@@ -592,7 +648,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func verifyExpanded(
+  private func verifyExpanded(
     signature: Span<UInt8>,
     message: Span<UInt8>,
     context: Span<UInt8>,
@@ -600,7 +656,7 @@ enum MLDSA65Core {
     t1NTT: UnsafePointer<UInt32>,
     matrix: UnsafePointer<UInt32>
   ) throws(MLDSAError) -> Bool {
-    precondition(signature.count == MLDSA65.signatureByteCount)
+    precondition(signature.count == parameterSet.signatureByteCount)
     guard var decodedSignature = decodeSignature(signature) else {
       return false
     }
@@ -642,8 +698,12 @@ enum MLDSA65Core {
     subtractVector(product, from: &az)
     inverseNTTVector(&az, polynomialCount: k)
     useHintVector(decodedSignature.hint, value: &az)
-    let encodedW1 = encodeUnsigned(az, polynomialCount: k, bits: 4)
-    let expectedChallenge = try shake256(outputByteCount: 48) {
+    let encodedW1 = encodeUnsigned(
+      az,
+      polynomialCount: k,
+      bits: parameterSet.highBitsCoefficientBitCount
+    )
+    let expectedChallenge = try shake256(outputByteCount: parameterSet.challengeByteCount) {
       sponge throws(MLDSAError) in
       try absorb(mu.span, into: &sponge)
       try absorb(encodedW1.span, into: &sponge)
@@ -651,7 +711,7 @@ enum MLDSA65Core {
     return ConstantTime.equal(expectedChallenge.span, decodedSignature.challenge.span)
   }
 
-  private static func derivePublic(
+  private func derivePublic(
     rho: Span<UInt8>,
     s1: inout Coefficients,
     s2: Coefficients
@@ -671,12 +731,12 @@ enum MLDSA65Core {
     return (t1, t0)
   }
 
-  private static func decodePrivateKey(
+  private func decodePrivateKey(
     _ encoded: Span<UInt8>
   ) throws(MLDSAError) -> DecodedPrivateKey {
-    guard encoded.count == MLDSA65.privateKeyByteCount else {
+    guard encoded.count == parameterSet.privateKeyByteCount else {
       throw .invalidPrivateKeyLength(
-        expected: MLDSA65.privateKeyByteCount,
+        expected: parameterSet.privateKeyByteCount,
         actual: encoded.count
       )
     }
@@ -685,9 +745,9 @@ enum MLDSA65Core {
     let publicKeyHash = copy(encoded.extracting(64..<128))
     guard
       var s1 = decodeSigned(
-        encoded.extracting(128..<768),
+        encoded.extracting(parameterSet.privateS1Offset..<parameterSet.privateS2Offset),
         polynomialCount: l,
-        bits: 4,
+        bits: parameterSet.shortCoefficientBitCount,
         maximum: eta,
         validateRange: true
       )
@@ -697,9 +757,9 @@ enum MLDSA65Core {
     }
     guard
       var s2 = decodeSigned(
-        encoded.extracting(768..<1_536),
+        encoded.extracting(parameterSet.privateS2Offset..<parameterSet.privateT0Offset),
         polynomialCount: k,
-        bits: 4,
+        bits: parameterSet.shortCoefficientBitCount,
         maximum: eta,
         validateRange: true
       )
@@ -710,7 +770,7 @@ enum MLDSA65Core {
     }
     guard
       var t0 = decodeSigned(
-        encoded.extracting(1_536..<4_032),
+        encoded.extracting(parameterSet.privateT0Offset..<parameterSet.privateKeyByteCount),
         polynomialCount: k,
         bits: 13,
         maximum: 1 << 12,
@@ -741,24 +801,26 @@ enum MLDSA65Core {
     let hint: Coefficients
   }
 
-  private static func decodeSignature(_ encoded: Span<UInt8>) -> DecodedSignature? {
-    let challenge = copy(encoded.extracting(0..<48))
+  private func decodeSignature(_ encoded: Span<UInt8>) -> DecodedSignature? {
+    let challenge = copy(encoded.extracting(0..<parameterSet.challengeByteCount))
     guard
       let z = decodeSigned(
-        encoded.extracting(48..<3_248),
+        encoded.extracting(parameterSet.signatureZOffset..<parameterSet.signatureHintOffset),
         polynomialCount: l,
-        bits: 20,
+        bits: parameterSet.maskCoefficientBitCount,
         maximum: gamma1,
         validateRange: false
       ),
-      let hint = decodeHint(encoded.extracting(3_248..<3_309))
+      let hint = decodeHint(
+        encoded.extracting(parameterSet.signatureHintOffset..<parameterSet.signatureByteCount)
+      )
     else {
       return nil
     }
     return DecodedSignature(challenge: challenge, z: z, hint: hint)
   }
 
-  private static func messageRepresentative(
+  private func messageRepresentative(
     publicKeyHash: Span<UInt8>,
     message: Span<UInt8>,
     context: Span<UInt8>
@@ -772,7 +834,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func expandMatrix(
+  private func expandMatrix(
     rho: Span<UInt8>
   ) throws(MLDSAError) -> Coefficients {
     var matrix = Coefficients(repeating: 0, count: k * l * degree)
@@ -801,7 +863,7 @@ enum MLDSA65Core {
     return matrix
   }
 
-  private static func expandShort(
+  private func expandShort(
     seed: Span<UInt8>,
     start: Int,
     count: Int
@@ -819,7 +881,8 @@ enum MLDSA65Core {
         )
         sampler.sampleMLDSAShort(
           first: pointer.advanced(by: polynomial * degree),
-          second: pointer.advanced(by: (polynomial + 1) * degree)
+          second: pointer.advanced(by: (polynomial + 1) * degree),
+          eta: eta
         )
         polynomial += 2
       }
@@ -846,12 +909,12 @@ enum MLDSA65Core {
         while offset < block.count && done < degree {
           let low = UInt32(block[offset] & 0x0F)
           let high = UInt32(block[offset] >> 4)
-          if low < 9 {
-            vector[base + done] = modSubtract(eta, low)
+          if let coefficient = shortCoefficient(low) {
+            vector[base + done] = coefficient
             done += 1
           }
-          if done < degree && high < 9 {
-            vector[base + done] = modSubtract(eta, high)
+          if done < degree, let coefficient = shortCoefficient(high) {
+            vector[base + done] = coefficient
             done += 1
           }
           offset += 1
@@ -862,7 +925,15 @@ enum MLDSA65Core {
     return vector
   }
 
-  private static func expandMask(
+  @inline(__always)
+  private func shortCoefficient(_ nibble: UInt32) -> UInt32? {
+    let limit: UInt32 = eta == 4 ? 9 : 15
+    guard nibble < limit else { return nil }
+    let reduced = eta == 4 ? nibble : nibble - 5 * ((205 * nibble) >> 10)
+    return modSubtract(eta, reduced)
+  }
+
+  private func expandMask(
     seed: Span<UInt8>,
     startingAt start: Int,
     into vector: UnsafeMutablePointer<UInt32>,
@@ -878,16 +949,19 @@ enum MLDSA65Core {
       )
       sampler.squeezeMLDSAMasks(
         first: scratch,
-        second: scratch.advanced(by: 640),
-        byteCount: 640
+        second: scratch.advanced(by: parameterSet.maskPolynomialByteCount),
+        byteCount: parameterSet.maskPolynomialByteCount
       )
       let firstEncoded = Span(
-        _unsafeElements: UnsafeBufferPointer(start: scratch, count: 640)
+        _unsafeElements: UnsafeBufferPointer(
+          start: scratch,
+          count: parameterSet.maskPolynomialByteCount
+        )
       )
       let secondEncoded = Span(
         _unsafeElements: UnsafeBufferPointer(
-          start: scratch.advanced(by: 640),
-          count: 640
+          start: scratch.advanced(by: parameterSet.maskPolynomialByteCount),
+          count: parameterSet.maskPolynomialByteCount
         )
       )
       guard
@@ -895,7 +969,7 @@ enum MLDSA65Core {
           firstEncoded,
           into: vector.advanced(by: polynomial * degree),
           valueCount: degree,
-          bits: 20,
+          bits: parameterSet.maskCoefficientBitCount,
           maximum: gamma1,
           validateRange: false
         ),
@@ -903,7 +977,7 @@ enum MLDSA65Core {
           secondEncoded,
           into: vector.advanced(by: (polynomial + 1) * degree),
           valueCount: degree,
-          bits: 20,
+          bits: parameterSet.maskCoefficientBitCount,
           maximum: gamma1,
           validateRange: false
         )
@@ -923,18 +997,24 @@ enum MLDSA65Core {
         sponge.erase()
         throw error
       }
-      var output = MutableSpan(_unsafeStart: scratch, count: 640)
+      var output = MutableSpan(
+        _unsafeStart: scratch,
+        count: parameterSet.maskPolynomialByteCount
+      )
       sponge.squeeze(into: &output)
       sponge.erase()
       let encoded = Span(
-        _unsafeElements: UnsafeBufferPointer(start: scratch, count: 640)
+        _unsafeElements: UnsafeBufferPointer(
+          start: scratch,
+          count: parameterSet.maskPolynomialByteCount
+        )
       )
       guard
         decodeSigned(
           encoded,
           into: vector.advanced(by: polynomial * degree),
           valueCount: degree,
-          bits: 20,
+          bits: parameterSet.maskCoefficientBitCount,
           maximum: gamma1,
           validateRange: false
         )
@@ -944,7 +1024,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func sampleInBall(
+  private func sampleInBall(
     seed: Span<UInt8>
   ) throws(MLDSAError) -> Coefficients {
     var polynomial = Coefficients(repeating: 0, count: degree)
@@ -957,7 +1037,7 @@ enum MLDSA65Core {
     return polynomial
   }
 
-  private static func sampleInBall(
+  private func sampleInBall(
     seed: Span<UInt8>,
     into polynomial: UnsafeMutablePointer<UInt32>
   ) throws(MLDSAError) {
@@ -1000,7 +1080,7 @@ enum MLDSA65Core {
     sponge.erase()
   }
 
-  private static func power2RoundVector(
+  private func power2RoundVector(
     _ input: Coefficients,
     high: inout Coefficients,
     low: inout Coefficients
@@ -1037,7 +1117,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func scalePower2RoundVector(_ value: inout Coefficients) {
+  private func scalePower2RoundVector(_ value: inout Coefficients) {
     var index = 0
     while index < value.count {
       value[index] <<= UInt32(droppedBits)
@@ -1045,7 +1125,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func highBitsVector(
+  private func highBitsVector(
     _ input: Coefficients,
     into output: inout Coefficients
   ) {
@@ -1056,7 +1136,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func highBitsVector(
+  private func highBitsVector(
     _ input: UnsafePointer<UInt32>,
     into output: UnsafeMutablePointer<UInt32>,
     count: Int
@@ -1068,7 +1148,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func lowBitsVector(
+  private func lowBitsVector(
     _ input: Coefficients,
     into output: inout Coefficients
   ) {
@@ -1079,7 +1159,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func lowBitsVector(
+  private func lowBitsVector(
     _ value: UnsafeMutablePointer<UInt32>,
     count: Int
   ) {
@@ -1090,20 +1170,26 @@ enum MLDSA65Core {
     }
   }
 
-  private static func highBits(_ value: UInt32) -> UInt32 {
+  private func highBits(_ value: UInt32) -> UInt32 {
     var result = (value + 127) >> 7
-    result = (result * 1_025 + (1 << 21)) >> 22
-    return result & 15
+    if parameterSet.gamma2Divisor == 32 {
+      result = (result * 1_025 + (1 << 21)) >> 22
+      return result & 15
+    }
+    precondition(parameterSet.gamma2Divisor == 88)
+    result = (result * 11_275 + (1 << 23)) >> 24
+    let wrapMask = UInt32(bitPattern: (Int32(43) - Int32(result)) >> 31)
+    return result ^ (wrapMask & result)
   }
 
-  private static func lowBits(_ value: UInt32) -> Int32 {
+  private func lowBits(_ value: UInt32) -> Int32 {
     let high = highBits(value)
     var low = Int32(value) - Int32(high * 2 * gamma2)
     low -= ((Int32(halfPrime) - low) >> 31) & Int32(prime)
     return low
   }
 
-  private static func makeHintVector(
+  private func makeHintVector(
     ct0: Coefficients,
     cs2: Coefficients,
     w: Coefficients,
@@ -1119,7 +1205,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func makeHintVector(
+  private func makeHintVector(
     ct0: UnsafePointer<UInt32>,
     cs2: UnsafePointer<UInt32>,
     w: UnsafePointer<UInt32>,
@@ -1136,7 +1222,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func useHintVector(
+  private func useHintVector(
     _ hint: Coefficients,
     value: inout Coefficients
   ) {
@@ -1151,10 +1237,16 @@ enum MLDSA65Core {
           let high = highBits(coefficient)
           if hintPointer[index] == 0 {
             valuePointer[index] = high
+          } else if parameterSet.gamma2Divisor == 32 {
+            if lowBits(coefficient) > 0 {
+              valuePointer[index] = (high + 1) & 15
+            } else {
+              valuePointer[index] = (high &- 1) & 15
+            }
           } else if lowBits(coefficient) > 0 {
-            valuePointer[index] = (high + 1) & 15
+            valuePointer[index] = high == 43 ? 0 : high + 1
           } else {
-            valuePointer[index] = (high &- 1) & 15
+            valuePointer[index] = high == 0 ? 43 : high - 1
           }
           index += 1
         }
@@ -1162,7 +1254,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func encodeHint(_ hint: Coefficients) -> ContiguousArray<UInt8> {
+  private func encodeHint(_ hint: Coefficients) -> ContiguousArray<UInt8> {
     var encoded = ContiguousArray<UInt8>(repeating: 0, count: omega + k)
     var outputIndex = 0
     var polynomial = 0
@@ -1183,7 +1275,7 @@ enum MLDSA65Core {
     return encoded
   }
 
-  private static func encodeHint(
+  private func encodeHint(
     _ hint: UnsafePointer<UInt32>
   ) -> ContiguousArray<UInt8> {
     var encoded = ContiguousArray<UInt8>(repeating: 0, count: omega + k)
@@ -1206,7 +1298,7 @@ enum MLDSA65Core {
     return encoded
   }
 
-  private static func encodeHint(
+  private func encodeHint(
     _ hint: UnsafePointer<UInt32>,
     into encoded: UnsafeMutablePointer<UInt8>
   ) {
@@ -1229,7 +1321,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func decodeHint(_ encoded: Span<UInt8>) -> Coefficients? {
+  private func decodeHint(_ encoded: Span<UInt8>) -> Coefficients? {
     precondition(encoded.count == omega + k)
     var hint = Coefficients(repeating: 0, count: k * degree)
     var inputIndex = 0
@@ -1254,7 +1346,7 @@ enum MLDSA65Core {
     return hint
   }
 
-  private static func encodeUnsigned(
+  private func encodeUnsigned(
     _ coefficients: Coefficients,
     polynomialCount: Int,
     bits: Int
@@ -1263,14 +1355,14 @@ enum MLDSA65Core {
     return bitPack(coefficients, bits: bits) { $0 }
   }
 
-  private static func encodePublicKey(
+  private func encodePublicKey(
     rho: Span<UInt8>,
     t1: Coefficients,
     into encoded: inout ContiguousArray<UInt8>
   ) {
     precondition(rho.count == 32)
     precondition(t1.count == k * degree)
-    precondition(encoded.count == MLDSA65.publicKeyByteCount)
+    precondition(encoded.count == parameterSet.publicKeyByteCount)
     // Unsafe boundary invariants:
     // - encoded owns exactly 32 + (k * degree * 10 / 8) initialized bytes;
     // - rho and t1 are immutable synchronous borrows with validated counts;
@@ -1290,7 +1382,7 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func encodeUnsigned10(
+  private func encodeUnsigned10(
     _ coefficients: UnsafePointer<UInt32>,
     coefficientCount: Int,
     into encoded: UnsafeMutablePointer<UInt8>
@@ -1319,7 +1411,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func encodeUnsigned(
+  private func encodeUnsigned(
     _ coefficients: UnsafePointer<UInt32>,
     coefficientCount: Int,
     bits: Int
@@ -1332,7 +1424,7 @@ enum MLDSA65Core {
     )
   }
 
-  private static func encodeSigned(
+  private func encodeSigned(
     _ coefficients: Coefficients,
     polynomialCount: Int,
     bits: Int,
@@ -1342,7 +1434,7 @@ enum MLDSA65Core {
     return bitPack(coefficients, bits: bits) { modSubtract(maximum, $0) }
   }
 
-  private static func encodeSigned(
+  private func encodeSigned(
     _ coefficients: UnsafePointer<UInt32>,
     coefficientCount: Int,
     bits: Int,
@@ -1356,7 +1448,7 @@ enum MLDSA65Core {
     )
   }
 
-  private static func bitPack(
+  private func bitPack(
     _ coefficients: UnsafePointer<UInt32>,
     coefficientCount: Int,
     bits: Int,
@@ -1391,7 +1483,7 @@ enum MLDSA65Core {
     return encoded
   }
 
-  private static func bitPack(
+  private func bitPack(
     _ coefficients: UnsafePointer<UInt32>,
     coefficientCount: Int,
     bits: Int,
@@ -1426,7 +1518,7 @@ enum MLDSA65Core {
     precondition(outputIndex == byteCount && accumulatorBits == 0)
   }
 
-  private static func bitPack(
+  private func bitPack(
     _ coefficients: Coefficients,
     bits: Int,
     transform: (UInt32) -> UInt32
@@ -1455,7 +1547,7 @@ enum MLDSA65Core {
     return encoded
   }
 
-  private static func decodeUnsigned(
+  private func decodeUnsigned(
     _ encoded: Span<UInt8>,
     polynomialCount: Int,
     bits: Int
@@ -1463,7 +1555,7 @@ enum MLDSA65Core {
     bitUnpack(encoded, valueCount: polynomialCount * degree, bits: bits)
   }
 
-  private static func decodeSigned(
+  private func decodeSigned(
     _ encoded: Span<UInt8>,
     polynomialCount: Int,
     bits: Int,
@@ -1486,7 +1578,7 @@ enum MLDSA65Core {
     return decoded
   }
 
-  private static func decodeSigned(
+  private func decodeSigned(
     _ encoded: Span<UInt8>,
     into output: UnsafeMutablePointer<UInt32>,
     valueCount: Int,
@@ -1518,7 +1610,7 @@ enum MLDSA65Core {
     return true
   }
 
-  private static func bitUnpack(
+  private func bitUnpack(
     _ encoded: Span<UInt8>,
     valueCount: Int,
     bits: Int
@@ -1544,7 +1636,7 @@ enum MLDSA65Core {
     return output
   }
 
-  private static func matrixMultiply(
+  private func matrixMultiply(
     _ matrix: Span<UInt32>,
     vector: Span<UInt32>,
     into output: inout Coefficients
@@ -1571,7 +1663,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func matrixMultiply(
+  private func matrixMultiply(
     _ matrix: UnsafePointer<UInt32>,
     vector: UnsafePointer<UInt32>,
     into output: UnsafeMutablePointer<UInt32>
@@ -1611,7 +1703,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func vectorMultiplyScalar(
+  private func vectorMultiplyScalar(
     _ vector: Span<UInt32>,
     scalar: Span<UInt32>,
     into output: inout Coefficients,
@@ -1634,7 +1726,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func vectorMultiplyScalar(
+  private func vectorMultiplyScalar(
     _ vector: UnsafePointer<UInt32>,
     scalar: UnsafePointer<UInt32>,
     into output: UnsafeMutablePointer<UInt32>,
@@ -1657,7 +1749,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func addVector(
+  private func addVector(
     _ rhs: Coefficients,
     into output: inout Coefficients
   ) {
@@ -1677,7 +1769,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func addVectors(
+  private func addVectors(
     _ lhs: UnsafePointer<UInt32>,
     _ rhs: UnsafePointer<UInt32>,
     into output: UnsafeMutablePointer<UInt32>,
@@ -1699,7 +1791,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func subtractVector(
+  private func subtractVector(
     _ rhs: Coefficients,
     from output: inout Coefficients
   ) {
@@ -1717,7 +1809,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func subtractVectors(
+  private func subtractVectors(
     _ lhs: UnsafePointer<UInt32>,
     _ rhs: UnsafePointer<UInt32>,
     into output: UnsafeMutablePointer<UInt32>,
@@ -1730,7 +1822,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func maximumModPrime(_ coefficients: Coefficients) -> UInt32 {
+  private func maximumModPrime(_ coefficients: Coefficients) -> UInt32 {
     var maximum: UInt32 = 0
     var index = 0
     while index < coefficients.count {
@@ -1744,7 +1836,7 @@ enum MLDSA65Core {
     return maximum
   }
 
-  private static func maximumModPrime(
+  private func maximumModPrime(
     _ coefficients: UnsafePointer<UInt32>,
     count: Int
   ) -> UInt32 {
@@ -1761,7 +1853,7 @@ enum MLDSA65Core {
     return maximum
   }
 
-  private static func maximumSigned(_ coefficients: Coefficients) -> UInt32 {
+  private func maximumSigned(_ coefficients: Coefficients) -> UInt32 {
     var maximum: UInt32 = 0
     var index = 0
     while index < coefficients.count {
@@ -1774,7 +1866,7 @@ enum MLDSA65Core {
     return maximum
   }
 
-  private static func maximumSigned(
+  private func maximumSigned(
     _ coefficients: UnsafePointer<UInt32>,
     count: Int
   ) -> UInt32 {
@@ -1790,7 +1882,7 @@ enum MLDSA65Core {
     return maximum
   }
 
-  private static func countOnes(_ coefficients: Coefficients) -> Int {
+  private func countOnes(_ coefficients: Coefficients) -> Int {
     var count = 0
     var index = 0
     while index < coefficients.count {
@@ -1800,7 +1892,7 @@ enum MLDSA65Core {
     return count
   }
 
-  private static func countOnes(
+  private func countOnes(
     _ coefficients: UnsafePointer<UInt32>,
     count coefficientCount: Int
   ) -> Int {
@@ -1813,7 +1905,7 @@ enum MLDSA65Core {
     return count
   }
 
-  private static func nttVector(
+  private func nttVector(
     _ vector: inout Coefficients,
     polynomialCount: Int
   ) {
@@ -1829,7 +1921,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func nttVector(
+  private func nttVector(
     _ vector: UnsafeMutablePointer<UInt32>,
     polynomialCount: Int
   ) {
@@ -1840,7 +1932,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func inverseNTTVector(
+  private func inverseNTTVector(
     _ vector: inout Coefficients,
     polynomialCount: Int
   ) {
@@ -1855,7 +1947,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func inverseNTTVector(
+  private func inverseNTTVector(
     _ vector: UnsafeMutablePointer<UInt32>,
     polynomialCount: Int
   ) {
@@ -1866,7 +1958,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func nttPolynomial(
+  private func nttPolynomial(
     _ coefficients: inout Coefficients,
     base: Int
   ) {
@@ -1884,7 +1976,7 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func nttPolynomial(
+  private func nttPolynomial(
     _ polynomial: UnsafeMutablePointer<UInt32>
   ) {
     roots.withUnsafeBufferPointer { roots in
@@ -1898,9 +1990,22 @@ enum MLDSA65Core {
       nttStage(polynomial, rootTable: rootTable, step: 64, offset: 2)
       nttStage(polynomial, rootTable: rootTable, step: 128, offset: 1)
     }
+    // Eight lazy butterfly stages bound every coefficient below 9q. Reduce the
+    // complete polynomial once at the domain boundary so consumers retain the
+    // canonical [0, q) contract without paying two reductions per stage.
+    var index = 0
+    while index + 4 <= degree {
+      var values = loadSIMD4(polynomial.advanced(by: index))
+      values = conditionalSubtract(values, modulus: 8 * prime)
+      values = conditionalSubtract(values, modulus: 4 * prime)
+      values = conditionalSubtract(values, modulus: 2 * prime)
+      values = conditionalSubtract(values, modulus: prime)
+      storeSIMD4(values, to: polynomial.advanced(by: index))
+      index += 4
+    }
   }
 
-  private static func inverseNTTPolynomial(
+  private func inverseNTTPolynomial(
     _ coefficients: inout Coefficients,
     base: Int
   ) {
@@ -1914,7 +2019,7 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func inverseNTTPolynomial(
+  private func inverseNTTPolynomial(
     _ polynomial: UnsafeMutablePointer<UInt32>
   ) {
     roots.withUnsafeBufferPointer { roots in
@@ -1942,7 +2047,7 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func nttStage(
+  private func nttStage(
     _ coefficients: UnsafeMutablePointer<UInt32>,
     rootTable: UnsafePointer<UInt32>,
     step: Int,
@@ -1960,8 +2065,8 @@ enum MLDSA65Core {
         )
         storeSIMD4(
           combineHalves(
-            low: reduceOnce(even &+ odd),
-            high: modSubtract(even, odd)
+            low: even &+ odd,
+            high: SIMD2<UInt32>(repeating: prime) &+ even &- odd
           ),
           to: coefficients.advanced(by: start)
         )
@@ -1979,8 +2084,8 @@ enum MLDSA65Core {
         let oddInput = SIMD2(values[1], values[3])
         let rootValues = SIMD2(rootTable[step + group], rootTable[step + group + 1])
         let odd = reduceMontgomery(oddInput, multipliedBy: rootValues)
-        let evenOutput = reduceOnce(even &+ odd)
-        let oddOutput = modSubtract(even, odd)
+        let evenOutput = even &+ odd
+        let oddOutput = SIMD2<UInt32>(repeating: prime) &+ even &- odd
         storeSIMD4(
           SIMD4(evenOutput[0], oddOutput[0], evenOutput[1], oddOutput[1]),
           to: coefficients.advanced(by: start)
@@ -2001,11 +2106,11 @@ enum MLDSA65Core {
         let oddInput = loadSIMD4(coefficients.advanced(by: index + offset))
         let odd = reduceMontgomery(oddInput, multipliedBy: root)
         storeSIMD4(
-          reduceOnce(odd &+ even),
+          odd &+ even,
           to: coefficients.advanced(by: index)
         )
         storeSIMD4(
-          modSubtract(even, odd),
+          SIMD4<UInt32>(repeating: prime) &+ even &- odd,
           to: coefficients.advanced(by: index + offset)
         )
         index += 4
@@ -2015,8 +2120,8 @@ enum MLDSA65Core {
         let odd = reduceMontgomery(
           UInt64(root) * UInt64(coefficients[index + offset])
         )
-        coefficients[index] = reduceOnce(odd + even)
-        coefficients[index + offset] = modSubtract(even, odd)
+        coefficients[index] = odd + even
+        coefficients[index + offset] = prime + even - odd
         index += 1
       }
       start += 2 * offset
@@ -2025,7 +2130,7 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func inverseNTTStage(
+  private func inverseNTTStage(
     _ coefficients: UnsafeMutablePointer<UInt32>,
     rootTable: UnsafePointer<UInt32>,
     step: Int,
@@ -2113,14 +2218,14 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func loadSIMD4(
+  private func loadSIMD4(
     _ pointer: UnsafePointer<UInt32>
   ) -> SIMD4<UInt32> {
     UnsafeRawPointer(pointer).loadUnaligned(as: SIMD4<UInt32>.self)
   }
 
   @inline(__always)
-  private static func storeSIMD4(
+  private func storeSIMD4(
     _ value: SIMD4<UInt32>,
     to pointer: UnsafeMutablePointer<UInt32>
   ) {
@@ -2131,7 +2236,7 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func reduceMontgomery(
+  private func reduceMontgomery(
     _ values: SIMD4<UInt32>,
     multipliedBy multiplier: UInt32
   ) -> SIMD4<UInt32> {
@@ -2140,7 +2245,7 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func reduceMontgomery(
+  private func reduceMontgomery(
     _ lhs: SIMD4<UInt32>,
     multipliedBy rhs: SIMD4<UInt32>
   ) -> SIMD4<UInt32> {
@@ -2166,7 +2271,7 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func lowHalf(_ value: SIMD4<UInt32>) -> SIMD2<UInt32> {
+  private func lowHalf(_ value: SIMD4<UInt32>) -> SIMD2<UInt32> {
     #if os(macOS) && arch(arm64) && canImport(simd)
       return vget_low_u32(value)
     #else
@@ -2175,7 +2280,7 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func highHalf(_ value: SIMD4<UInt32>) -> SIMD2<UInt32> {
+  private func highHalf(_ value: SIMD4<UInt32>) -> SIMD2<UInt32> {
     #if os(macOS) && arch(arm64) && canImport(simd)
       return vget_high_u32(value)
     #else
@@ -2184,7 +2289,7 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func combineHalves(
+  private func combineHalves(
     low: SIMD2<UInt32>,
     high: SIMD2<UInt32>
   ) -> SIMD4<UInt32> {
@@ -2199,7 +2304,7 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func reduceMontgomery(
+  private func reduceMontgomery(
     _ lhs: SIMD2<UInt32>,
     multipliedBy rhs: SIMD2<UInt32>
   ) -> SIMD2<UInt32> {
@@ -2214,7 +2319,7 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func reduceMontgomery(
+  private func reduceMontgomery(
     _ values: SIMD2<UInt64>
   ) -> SIMD2<UInt32> {
     #if os(macOS) && arch(arm64) && canImport(simd)
@@ -2248,50 +2353,99 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func reduceOnce(_ values: SIMD4<UInt32>) -> SIMD4<UInt32> {
+  private func reduceOnce(_ values: SIMD4<UInt32>) -> SIMD4<UInt32> {
+    #if os(macOS) && arch(arm64) && canImport(simd)
+      // Every caller bounds each lane below 2q. When a lane is below q, the
+      // subtraction wraps to a larger unsigned value; otherwise it produces
+      // the canonical residue. AArch64 lowers this to SUB + UMIN.
+      return vminq_u32(
+        values,
+        values &- SIMD4<UInt32>(repeating: prime)
+      )
+    #else
     let subtracted = values &- SIMD4<UInt32>(repeating: prime)
     let mask =
       SIMD4<UInt32>(repeating: 0)
       &- (subtracted &>> SIMD4<UInt32>(repeating: 31))
     return (mask & values) | (~mask & subtracted)
+    #endif
   }
 
   @inline(__always)
-  private static func reduceOnce(_ values: SIMD2<UInt32>) -> SIMD2<UInt32> {
+  private func conditionalSubtract(
+    _ values: SIMD4<UInt32>,
+    modulus: UInt32
+  ) -> SIMD4<UInt32> {
+    let subtracted = values &- SIMD4<UInt32>(repeating: modulus)
+    #if os(macOS) && arch(arm64) && canImport(simd)
+      return vminq_u32(values, subtracted)
+    #else
+      let mask =
+        SIMD4<UInt32>(repeating: 0)
+        &- (subtracted &>> SIMD4<UInt32>(repeating: 31))
+      return (mask & values) | (~mask & subtracted)
+    #endif
+  }
+
+  @inline(__always)
+  private func reduceOnce(_ values: SIMD2<UInt32>) -> SIMD2<UInt32> {
+    #if os(macOS) && arch(arm64) && canImport(simd)
+      return vmin_u32(
+        values,
+        values &- SIMD2<UInt32>(repeating: prime)
+      )
+    #else
     let subtracted = values &- SIMD2<UInt32>(repeating: prime)
     let mask =
       SIMD2<UInt32>(repeating: 0)
       &- (subtracted &>> SIMD2<UInt32>(repeating: 31))
     return (mask & values) | (~mask & subtracted)
+    #endif
   }
 
   @inline(__always)
-  private static func modSubtract(
+  private func modSubtract(
     _ lhs: SIMD4<UInt32>,
     _ rhs: SIMD4<UInt32>
   ) -> SIMD4<UInt32> {
     let result = lhs &- rhs
+    #if os(macOS) && arch(arm64) && canImport(simd)
+      // Inputs are canonical. Underflow makes result the larger unsigned
+      // candidate, so UMIN selects result + q only for the wrapped lanes.
+      return vminq_u32(
+        result,
+        result &+ SIMD4<UInt32>(repeating: prime)
+      )
+    #else
     let mask =
       SIMD4<UInt32>(repeating: 0)
       &- (result &>> SIMD4<UInt32>(repeating: 31))
     return (mask & (result &+ SIMD4<UInt32>(repeating: prime)))
       | (~mask & result)
+    #endif
   }
 
   @inline(__always)
-  private static func modSubtract(
+  private func modSubtract(
     _ lhs: SIMD2<UInt32>,
     _ rhs: SIMD2<UInt32>
   ) -> SIMD2<UInt32> {
     let result = lhs &- rhs
+    #if os(macOS) && arch(arm64) && canImport(simd)
+      return vmin_u32(
+        result,
+        result &+ SIMD2<UInt32>(repeating: prime)
+      )
+    #else
     let mask =
       SIMD2<UInt32>(repeating: 0)
       &- (result &>> SIMD2<UInt32>(repeating: 31))
     return (mask & (result &+ SIMD2<UInt32>(repeating: prime)))
       | (~mask & result)
+    #endif
   }
 
-  private static func cancelInverseNTTScale(_ coefficients: inout Coefficients) {
+  private func cancelInverseNTTScale(_ coefficients: inout Coefficients) {
     var index = 0
     while index < coefficients.count {
       coefficients[index] = reduceMontgomery(UInt64(coefficients[index]))
@@ -2300,38 +2454,38 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func reduceOnce(_ value: UInt32) -> UInt32 {
+  private func reduceOnce(_ value: UInt32) -> UInt32 {
     let subtracted = value &- prime
     let mask = UInt32.zero &- (subtracted >> 31)
     return (mask & value) | (~mask & subtracted)
   }
 
   @inline(__always)
-  private static func modSubtract(_ lhs: UInt32, _ rhs: UInt32) -> UInt32 {
+  private func modSubtract(_ lhs: UInt32, _ rhs: UInt32) -> UInt32 {
     let result = lhs &- rhs
     let mask = UInt32.zero &- (result >> 31)
     return (mask & (result &+ prime)) | (~mask & result)
   }
 
   @inline(__always)
-  private static func reduceMontgomery(_ value: UInt64) -> UInt32 {
+  private func reduceMontgomery(_ value: UInt64) -> UInt32 {
     let multiplier = UInt32(truncatingIfNeeded: value) &* primeNegInverse
     let sum = value + UInt64(multiplier) * UInt64(prime)
     return reduceOnce(UInt32(truncatingIfNeeded: sum >> 32))
   }
 
   @inline(__always)
-  private static func constantTimeLessThan(_ lhs: UInt32, _ rhs: UInt32) -> UInt32 {
+  private func constantTimeLessThan(_ lhs: UInt32, _ rhs: UInt32) -> UInt32 {
     UInt32(truncatingIfNeeded: (UInt64(lhs) &- UInt64(rhs)) >> 63)
   }
 
   @inline(__always)
-  private static func constantTimeMaximum(_ lhs: UInt32, _ rhs: UInt32) -> UInt32 {
+  private func constantTimeMaximum(_ lhs: UInt32, _ rhs: UInt32) -> UInt32 {
     let mask = UInt32.zero &- constantTimeLessThan(lhs, rhs)
     return (mask & rhs) | (~mask & lhs)
   }
 
-  private static func shake256(
+  private func shake256(
     outputByteCount: Int,
     absorbing input: Span<UInt8>
   ) throws(MLDSAError) -> ContiguousArray<UInt8> {
@@ -2340,7 +2494,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func shake256(
+  private func shake256(
     outputByteCount: Int,
     _ absorbBody: (inout KeccakCore) throws(MLDSAError) -> Void
   ) throws(MLDSAError) -> ContiguousArray<UInt8> {
@@ -2358,7 +2512,7 @@ enum MLDSA65Core {
     return output
   }
 
-  private static func absorb(
+  private func absorb(
     _ input: Span<UInt8>,
     into sponge: inout KeccakCore
   ) throws(MLDSAError) {
@@ -2369,7 +2523,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func absorbByte(
+  private func absorbByte(
     _ byte: UInt8,
     into sponge: inout KeccakCore
   ) throws(MLDSAError) {
@@ -2380,7 +2534,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func append(
+  private func append(
     _ source: Span<UInt8>,
     to destination: inout ContiguousArray<UInt8>
   ) {
@@ -2391,7 +2545,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func copy(_ source: Span<UInt8>) -> ContiguousArray<UInt8> {
+  private func copy(_ source: Span<UInt8>) -> ContiguousArray<UInt8> {
     var result = ContiguousArray<UInt8>()
     result.reserveCapacity(source.count)
     append(source, to: &result)
@@ -2399,7 +2553,7 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func copyBytes(
+  private func copyBytes(
     _ source: Span<UInt8>,
     to destination: UnsafeMutablePointer<UInt8>,
     at destinationOffset: Int
@@ -2411,7 +2565,7 @@ enum MLDSA65Core {
     }
   }
 
-  private static func copyPolynomial(
+  private func copyPolynomial(
     _ source: Coefficients,
     sourceBase: Int,
     into destination: inout Coefficients,
@@ -2425,7 +2579,7 @@ enum MLDSA65Core {
   }
 
   @inline(__always)
-  private static func copyCoefficients(
+  private func copyCoefficients(
     from source: UnsafePointer<UInt32>,
     to destination: UnsafeMutablePointer<UInt32>,
     count: Int
@@ -2433,7 +2587,7 @@ enum MLDSA65Core {
     destination.update(from: source, count: count)
   }
 
-  private static func coefficients(
+  private func coefficients(
     copying source: UnsafePointer<UInt32>,
     count: Int
   ) -> Coefficients {
@@ -2444,7 +2598,7 @@ enum MLDSA65Core {
     return result
   }
 
-  private static func secretBytes(
+  private func secretBytes(
     copying source: Span<UInt8>
   ) throws(MLDSAError) -> SecretBytes {
     do {
@@ -2454,7 +2608,7 @@ enum MLDSA65Core {
     }
   }
 
-  static func wipe(_ bytes: inout ContiguousArray<UInt8>) {
+  func wipe(_ bytes: inout ContiguousArray<UInt8>) {
     bytes.withUnsafeMutableBufferPointer { buffer in
       guard let baseAddress = buffer.baseAddress else { return }
       SecureWipe.erase(
@@ -2464,12 +2618,12 @@ enum MLDSA65Core {
     }
   }
 
-  private static func wipe(_ coefficients: inout Coefficients) {
+  private func wipe(_ coefficients: inout Coefficients) {
     coefficients.withUnsafeMutableBufferPointer { buffer in
       guard let baseAddress = buffer.baseAddress else { return }
-      SecureWipe.erase(
-        UnsafeMutableRawPointer(baseAddress),
-        byteCount: buffer.count * MemoryLayout<UInt32>.stride
+      SecureWipe.eraseUInt32Words(
+        baseAddress,
+        wordCount: buffer.count
       )
     }
   }

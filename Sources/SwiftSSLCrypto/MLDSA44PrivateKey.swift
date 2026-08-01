@@ -1,17 +1,17 @@
 import SwiftSSLCore
 
-/// A noncopyable owner for a FIPS 204 ML-DSA-65 private key.
-public struct MLDSA65PrivateKey: ~Copyable, Sendable {
-  public static let byteCount = MLDSA65.privateKeyByteCount
-  public static let seedByteCount = MLDSA65.seedByteCount
+/// A noncopyable owner for a FIPS 204 ML-DSA-44 private key.
+public struct MLDSA44PrivateKey: ~Copyable, Sendable {
+  public static let byteCount = MLDSA44.privateKeyByteCount
+  public static let seedByteCount = MLDSA44.seedByteCount
 
   private let storage: SecretBytes
   private let storageKind: StorageKind
-  private let encodedPublicKey: MLDSA65PublicKey
+  private let encodedPublicKey: MLDSA44PublicKey
   private let expanded: MLDSAExpandedPrivateKey
 
   private static var core: MLDSACore {
-    MLDSACore(parameterSet: .mlDSA65)
+    MLDSACore(parameterSet: .mlDSA44)
   }
 
   private enum StorageKind: Sendable {
@@ -24,7 +24,7 @@ public struct MLDSA65PrivateKey: ~Copyable, Sendable {
       throw .invalidSeedLength(expected: Self.seedByteCount, actual: seed.count)
     }
     let generated = try Self.core.keyGenerate(seed: seed)
-    let publicKey = MLDSA65PublicKey(
+    let publicKey = MLDSA44PublicKey(
       owned: generated.publicKey,
       expanded: generated.expandedPublicKey
     )
@@ -48,7 +48,7 @@ public struct MLDSA65PrivateKey: ~Copyable, Sendable {
       seed throws(MLDSAError) in
       try Self.core.keyGenerate(seed: seed)
     }
-    let publicKey = MLDSA65PublicKey(
+    let publicKey = MLDSA44PublicKey(
       owned: generated.publicKey,
       expanded: generated.expandedPublicKey
     )
@@ -63,7 +63,7 @@ public struct MLDSA65PrivateKey: ~Copyable, Sendable {
       throw .invalidPrivateKeyLength(expected: Self.byteCount, actual: encoded.count)
     }
     let validated = try Self.core.validatePrivateKeyAndDerivePublicKey(encoded)
-    let publicKey = MLDSA65PublicKey(
+    let publicKey = MLDSA44PublicKey(
       owned: validated.0,
       expanded: validated.1
     )
@@ -79,7 +79,7 @@ public struct MLDSA65PrivateKey: ~Copyable, Sendable {
     expanded = validated.2
   }
 
-  public borrowing func publicKey() throws(MLDSAError) -> MLDSA65PublicKey {
+  public borrowing func publicKey() throws(MLDSAError) -> MLDSA44PublicKey {
     encodedPublicKey
   }
 

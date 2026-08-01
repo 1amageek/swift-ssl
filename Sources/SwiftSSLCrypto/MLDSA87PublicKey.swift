@@ -1,14 +1,14 @@
 import SwiftSSLCore
 
-/// An owned FIPS 204 ML-DSA-65 public key.
-public struct MLDSA65PublicKey: Sendable, Equatable {
-  public static let byteCount = MLDSA65.publicKeyByteCount
+/// An owned FIPS 204 ML-DSA-87 public key.
+public struct MLDSA87PublicKey: Sendable, Equatable {
+  public static let byteCount = MLDSA87.publicKeyByteCount
 
   private let storage: OwnedBytes
   let expanded: MLDSAExpandedPublicKey
 
   private static var core: MLDSACore {
-    MLDSACore(parameterSet: .mlDSA65)
+    MLDSACore(parameterSet: .mlDSA87)
   }
 
   public init(bytes: Span<UInt8>) throws(MLDSAError) {

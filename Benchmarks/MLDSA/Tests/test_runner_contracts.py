@@ -9,9 +9,18 @@ from pathlib import Path
 RUNNER_PATH = Path(__file__).resolve().parents[1] / "run_comparison.py"
 SPEC = importlib.util.spec_from_file_location("mldsa_runner", RUNNER_PATH)
 if SPEC is None or SPEC.loader is None:
-    raise RuntimeError("could not load ML-DSA-65 benchmark runner")
+    raise RuntimeError("could not load ML-DSA benchmark runner")
 runner = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(runner)
+
+MEMORY_RUNNER_PATH = Path(__file__).resolve().parents[1] / "run_memory.py"
+MEMORY_SPEC = importlib.util.spec_from_file_location(
+    "mldsa_memory_runner", MEMORY_RUNNER_PATH
+)
+if MEMORY_SPEC is None or MEMORY_SPEC.loader is None:
+    raise RuntimeError("could not load ML-DSA memory runner")
+memory_runner = importlib.util.module_from_spec(MEMORY_SPEC)
+MEMORY_SPEC.loader.exec_module(memory_runner)
 
 
 class RunnerContractTests(unittest.TestCase):
@@ -47,15 +56,20 @@ class RunnerContractTests(unittest.TestCase):
         self.assertEqual(lower, 1.25)
         self.assertEqual(upper, 1.25)
 
-    def test_fixture_record_requires_complete_mldsa65_lengths(self) -> None:
-        public_key = "01" * 1_952
-        signature = "02" * 3_309
-        self.assertEqual(
-            runner.parse_fixture_record(f"FIXTURE,{public_key},{signature}"),
-            (public_key, signature),
-        )
-        with self.assertRaises(runner.BenchmarkError):
-            runner.parse_fixture_record(f"FIXTURE,{public_key[:-2]},{signature}")
+    def test_fixture_record_requires_complete_parameter_set_lengths(self) -> None:
+        for parameter_set in runner.PARAMETER_SETS:
+            public_key = "01" * runner.PUBLIC_KEY_BYTES[parameter_set]
+            signature = "02" * runner.SIGNATURE_BYTES[parameter_set]
+            self.assertEqual(
+                runner.parse_fixture_record(
+                    f"FIXTURE,{public_key},{signature}", parameter_set
+                ),
+                (public_key, signature),
+            )
+            with self.assertRaises(runner.BenchmarkError):
+                runner.parse_fixture_record(
+                    f"FIXTURE,{public_key[:-2]},{signature}", parameter_set
+                )
 
     def test_convergence_uses_latest_three_observations(self) -> None:
         self.assertFalse(runner.convergence_reached([100.0, 101.0]))
@@ -76,6 +90,14 @@ class RunnerContractTests(unittest.TestCase):
             identity = runner.executable_identity(invocation)
             self.assertEqual(identity["invocationPath"], str(invocation))
             self.assertEqual(identity["resolvedPath"], str(Path("/bin/echo").resolve()))
+
+    def test_memory_budgets_cover_every_parameter_and_operation(self) -> None:
+        expected = {
+            f"mldsa{parameter_set}-{operation}"
+            for parameter_set in memory_runner.PARAMETER_SETS
+            for operation in ("keygen", "sign", "verify")
+        }
+        self.assertEqual(set(memory_runner.EXPECTED_BUDGETS), expected)
 
 
 if __name__ == "__main__":

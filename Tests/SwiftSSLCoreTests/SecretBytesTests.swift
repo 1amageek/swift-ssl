@@ -99,6 +99,21 @@ final class SecretBytesTests: XCTestCase {
         }
     }
 
+    func testSecureWipeOverwritesUInt32Words() {
+        let pointer = UnsafeMutablePointer<UInt32>.allocate(capacity: 8)
+        pointer.initialize(repeating: .max, count: 8)
+        defer {
+            pointer.deinitialize(count: 8)
+            pointer.deallocate()
+        }
+
+        SecureWipe.eraseUInt32Words(pointer, wordCount: 8)
+
+        for index in 0..<8 {
+            XCTAssertEqual(pointer[index], 0)
+        }
+    }
+
     func testSecureWipeOverwritesUInt64Words() {
         let pointer = UnsafeMutableRawPointer.allocate(
             byteCount: 8 * MemoryLayout<UInt64>.stride,

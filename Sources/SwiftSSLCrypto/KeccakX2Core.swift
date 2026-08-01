@@ -587,14 +587,26 @@ struct KeccakX2Core: ~Copyable {
 
   mutating func sampleMLDSAShort(
     first: UnsafeMutablePointer<UInt32>,
-    second: UnsafeMutablePointer<UInt32>
+    second: UnsafeMutablePointer<UInt32>,
+    eta: UInt32
   ) {
-    precondition(sensitivity == .secret)
+    precondition(sensitivity == .secret && (eta == 2 || eta == 4))
     // Unsafe boundary invariants:
     // - both destinations own 256 initialized UInt32 values and are disjoint;
     // - accepted counters are checked before every store and never exceed 256;
     // - no pointer crosses the synchronous borrow or a Sendable boundary;
     // - reset and deinit erase the uniquely owned secret SHAKE state.
+    if eta == 4 {
+      sampleMLDSAShortEta4(first: first, second: second)
+    } else {
+      sampleMLDSAShortEta2(first: first, second: second)
+    }
+  }
+
+  private mutating func sampleMLDSAShortEta4(
+    first: UnsafeMutablePointer<UInt32>,
+    second: UnsafeMutablePointer<UInt32>
+  ) {
     var firstCount = 0
     var secondCount = 0
     while firstCount < 256 || secondCount < 256 {
@@ -604,12 +616,45 @@ struct KeccakX2Core: ~Copyable {
         var byteIndex = 0
         while byteIndex < 8 && (firstCount < 256 || secondCount < 256) {
           let shift = UInt64(byteIndex * 8)
-          Self.appendMLDSAShortByte(
+          Self.appendMLDSAShortByteEta4(
             UInt8(truncatingIfNeeded: words[0] >> shift),
             into: first,
             count: &firstCount
           )
-          Self.appendMLDSAShortByte(
+          Self.appendMLDSAShortByteEta4(
+            UInt8(truncatingIfNeeded: words[1] >> shift),
+            into: second,
+            count: &secondCount
+          )
+          byteIndex += 1
+        }
+        laneIndex += 1
+      }
+      if firstCount < 256 || secondCount < 256 {
+        permute()
+      }
+    }
+  }
+
+  private mutating func sampleMLDSAShortEta2(
+    first: UnsafeMutablePointer<UInt32>,
+    second: UnsafeMutablePointer<UInt32>
+  ) {
+    var firstCount = 0
+    var secondCount = 0
+    while firstCount < 256 || secondCount < 256 {
+      var laneIndex = 0
+      while laneIndex < 17 && (firstCount < 256 || secondCount < 256) {
+        let words = state[laneIndex]
+        var byteIndex = 0
+        while byteIndex < 8 && (firstCount < 256 || secondCount < 256) {
+          let shift = UInt64(byteIndex * 8)
+          Self.appendMLDSAShortByteEta2(
+            UInt8(truncatingIfNeeded: words[0] >> shift),
+            into: first,
+            count: &firstCount
+          )
+          Self.appendMLDSAShortByteEta2(
             UInt8(truncatingIfNeeded: words[1] >> shift),
             into: second,
             count: &secondCount
@@ -666,7 +711,7 @@ struct KeccakX2Core: ~Copyable {
     count += value < 8_380_417 ? 1 : 0
   }
 
-  @inline(__always)
+  @_transparent
   private static func appendMLDSAMatrixCandidates(
     _ first: UInt64,
     _ second: UInt64,
@@ -734,30 +779,30 @@ struct KeccakX2Core: ~Copyable {
   }
 
   @inline(__always)
-  private static func appendMLDSAShortByte(
+  private static func appendMLDSAShortByteEta4(
     _ byte: UInt8,
     into polynomial: UnsafeMutablePointer<UInt32>,
     count: inout Int
   ) {
     if count <= 254 {
-      appendMLDSAShortCandidateWithCapacity(
+      appendMLDSAShortCandidateEta4WithCapacity(
         UInt32(byte & 0x0F),
         into: polynomial,
         count: &count
       )
-      appendMLDSAShortCandidateWithCapacity(
+      appendMLDSAShortCandidateEta4WithCapacity(
         UInt32(byte >> 4),
         into: polynomial,
         count: &count
       )
       return
     }
-    appendMLDSAShortCandidate(
+    appendMLDSAShortCandidateEta4(
       UInt32(byte & 0x0F),
       into: polynomial,
       count: &count
     )
-    appendMLDSAShortCandidate(
+    appendMLDSAShortCandidateEta4(
       UInt32(byte >> 4),
       into: polynomial,
       count: &count
@@ -765,7 +810,7 @@ struct KeccakX2Core: ~Copyable {
   }
 
   @inline(__always)
-  private static func appendMLDSAShortCandidateWithCapacity(
+  private static func appendMLDSAShortCandidateEta4WithCapacity(
     _ candidate: UInt32,
     into polynomial: UnsafeMutablePointer<UInt32>,
     count: inout Int
@@ -777,13 +822,82 @@ struct KeccakX2Core: ~Copyable {
   }
 
   @inline(__always)
-  private static func appendMLDSAShortCandidate(
+  private static func appendMLDSAShortCandidateEta4(
     _ candidate: UInt32,
     into polynomial: UnsafeMutablePointer<UInt32>,
     count: inout Int
   ) {
     if candidate < 9 && count < 256 {
       polynomial[count] = candidate <= 4 ? 4 - candidate : 8_380_421 - candidate
+      count += 1
+    }
+  }
+
+  @inline(__always)
+  private static func appendMLDSAShortByteEta2(
+    _ byte: UInt8,
+    into polynomial: UnsafeMutablePointer<UInt32>,
+    count: inout Int
+  ) {
+    if count <= 254 {
+      appendMLDSAShortCandidateEta2WithCapacity(
+        UInt32(byte & 0x0F),
+        into: polynomial,
+        count: &count
+      )
+      appendMLDSAShortCandidateEta2WithCapacity(
+        UInt32(byte >> 4),
+        into: polynomial,
+        count: &count
+      )
+      return
+    }
+    appendMLDSAShortCandidateEta2(
+      UInt32(byte & 0x0F),
+      into: polynomial,
+      count: &count
+    )
+    appendMLDSAShortCandidateEta2(
+      UInt32(byte >> 4),
+      into: polynomial,
+      count: &count
+    )
+  }
+
+  @inline(__always)
+  private static func appendMLDSAShortCandidateEta2WithCapacity(
+    _ candidate: UInt32,
+    into polynomial: UnsafeMutablePointer<UInt32>,
+    count: inout Int
+  ) {
+    let reduced: UInt32
+    if candidate >= 10 {
+      reduced = candidate - 10
+    } else if candidate >= 5 {
+      reduced = candidate - 5
+    } else {
+      reduced = candidate
+    }
+    polynomial[count] = reduced <= 2 ? 2 - reduced : 8_380_419 - reduced
+    count += candidate < 15 ? 1 : 0
+  }
+
+  @inline(__always)
+  private static func appendMLDSAShortCandidateEta2(
+    _ candidate: UInt32,
+    into polynomial: UnsafeMutablePointer<UInt32>,
+    count: inout Int
+  ) {
+    if candidate < 15 && count < 256 {
+      let reduced: UInt32
+      if candidate >= 10 {
+        reduced = candidate - 10
+      } else if candidate >= 5 {
+        reduced = candidate - 5
+      } else {
+        reduced = candidate
+      }
+      polynomial[count] = reduced <= 2 ? 2 - reduced : 8_380_419 - reduced
       count += 1
     }
   }
@@ -1074,17 +1188,23 @@ struct KeccakX2Core: ~Copyable {
 
       var row = 0
       while row < 25 {
+        // Load the complete row before the Chi step so each lane is read once.
+        // This keeps the unsafe state access bounded while allowing the ARM64
+        // backend to retain the five SIMD lanes in registers across all stores.
         let original0 = state[row]
         let original1 = state[row + 1]
-        state[row] = Self.bitClearAndXor(state[row], state[row + 2], original1)
+        let original2 = state[row + 2]
+        let original3 = state[row + 3]
+        let original4 = state[row + 4]
+        state[row] = Self.bitClearAndXor(original0, original2, original1)
         state[row + 1] = Self.bitClearAndXor(
-          state[row + 1], state[row + 3], state[row + 2]
+          original1, original3, original2
         )
         state[row + 2] = Self.bitClearAndXor(
-          state[row + 2], state[row + 4], state[row + 3]
+          original2, original4, original3
         )
-        state[row + 3] = Self.bitClearAndXor(state[row + 3], original0, state[row + 4])
-        state[row + 4] = Self.bitClearAndXor(state[row + 4], original1, original0)
+        state[row + 3] = Self.bitClearAndXor(original3, original0, original4)
+        state[row + 4] = Self.bitClearAndXor(original4, original1, original0)
         row += 5
       }
 

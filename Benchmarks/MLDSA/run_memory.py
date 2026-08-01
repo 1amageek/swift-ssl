@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and measure ML-DSA-65 allocation and bulk-copy budgets."""
+"""Build and measure ML-DSA allocation and bulk-copy budgets."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ MINIMUM_OS = "15.0"
 EXPECTED_SDK_VERSION = "27.0"
 ITERATION_COUNTS = (1, 10, 100)
 REPETITIONS = 3
+PARAMETER_SETS = (44, 65, 87)
 COUNTER_NAMES = (
     "mallocCalls",
     "mallocBytes",
@@ -41,9 +42,27 @@ COUNTER_NAMES = (
     "memmoveBytes",
 )
 EXPECTED_BUDGETS = {
+    "mldsa44-keygen": {
+        "allocationCalls": 23,
+        "allocationBytes": 44_928,
+        "bulkCopyCalls": 6,
+        "bulkCopyBytes": 0,
+    },
+    "mldsa44-sign": {
+        "allocationCalls": 30,
+        "allocationBytes": 38_800,
+        "bulkCopyCalls": 4,
+        "bulkCopyBytes": 16_384,
+    },
+    "mldsa44-verify": {
+        "allocationCalls": 14,
+        "allocationBytes": 23_480,
+        "bulkCopyCalls": 1,
+        "bulkCopyBytes": 0,
+    },
     "mldsa65-keygen": {
         "allocationCalls": 25,
-        "allocationBytes": 71_448,
+        "allocationBytes": 71_536,
         "bulkCopyCalls": 6,
         "bulkCopyBytes": 0,
     },
@@ -56,6 +75,24 @@ EXPECTED_BUDGETS = {
     "mldsa65-verify": {
         "allocationCalls": 14,
         "allocationBytes": 31_712,
+        "bulkCopyCalls": 1,
+        "bulkCopyBytes": 0,
+    },
+    "mldsa87-keygen": {
+        "allocationCalls": 25,
+        "allocationBytes": 111_088,
+        "bulkCopyCalls": 6,
+        "bulkCopyBytes": 0,
+    },
+    "mldsa87-sign": {
+        "allocationCalls": 48,
+        "allocationBytes": 71_120,
+        "bulkCopyCalls": 6,
+        "bulkCopyBytes": 43_008,
+    },
+    "mldsa87-verify": {
+        "allocationCalls": 14,
+        "allocationBytes": 42_200,
         "bulkCopyCalls": 1,
         "bulkCopyBytes": 0,
     },
@@ -425,39 +462,48 @@ def main() -> int:
 
         results: dict[str, Any] = {}
         all_passed = True
-        for operation in ("keygen", "sign", "verify"):
-            workload = f"mldsa65-{operation}"
-            observations: list[dict[str, Any]] = []
-            for iterations in ITERATION_COUNTS:
-                for repetition in range(REPETITIONS):
-                    measured = run(
-                        [str(worker), "--memory", operation, str(iterations)],
-                        env=injected_env,
-                    )
-                    counters, checksum = parse_allocation_output(measured.stdout)
-                    if checksum["iterations"] != iterations:
-                        raise MeasurementError("worker reported the wrong iteration count")
-                    observations.append(
-                        {
-                            "iterations": iterations,
-                            "repetition": repetition,
-                            "counters": counters,
-                            "checksum": checksum["value"],
-                        }
-                    )
-            derived = derive_linear_counters(observations)
-            failures = validate_budget(workload, derived)
-            passed = not failures
-            all_passed = all_passed and passed
-            results[workload] = {
-                "parameterSet": 65,
-                "operation": operation,
-                "passed": passed,
-                "failures": failures,
-                "budget": EXPECTED_BUDGETS[workload],
-                "derived": derived,
-                "observations": observations,
-            }
+        for parameter_set in PARAMETER_SETS:
+            for operation in ("keygen", "sign", "verify"):
+                workload = f"mldsa{parameter_set}-{operation}"
+                observations: list[dict[str, Any]] = []
+                for iterations in ITERATION_COUNTS:
+                    for repetition in range(REPETITIONS):
+                        measured = run(
+                            [
+                                str(worker),
+                                "--memory",
+                                str(parameter_set),
+                                operation,
+                                str(iterations),
+                            ],
+                            env=injected_env,
+                        )
+                        counters, checksum = parse_allocation_output(measured.stdout)
+                        if checksum["iterations"] != iterations:
+                            raise MeasurementError(
+                                "worker reported the wrong iteration count"
+                            )
+                        observations.append(
+                            {
+                                "iterations": iterations,
+                                "repetition": repetition,
+                                "counters": counters,
+                                "checksum": checksum["value"],
+                            }
+                        )
+                derived = derive_linear_counters(observations)
+                failures = validate_budget(workload, derived)
+                passed = not failures
+                all_passed = all_passed and passed
+                results[workload] = {
+                    "parameterSet": parameter_set,
+                    "operation": operation,
+                    "passed": passed,
+                    "failures": failures,
+                    "budget": EXPECTED_BUDGETS[workload],
+                    "derived": derived,
+                    "observations": observations,
+                }
 
         completed = dt.datetime.now(dt.timezone.utc)
         final_source_commit = run(["git", "rev-parse", "HEAD"], cwd=ROOT).stdout.strip()
@@ -538,7 +584,7 @@ def main() -> int:
         output = arguments.output
         if output is None:
             timestamp = completed.strftime("%Y%m%dT%H%M%SZ")
-            output = ROOT / "Benchmarks/MLDSA/Results" / f"{timestamp}-native-mldsa65-memory.json"
+            output = ROOT / "Benchmarks/MLDSA/Results" / f"{timestamp}-native-mldsa-memory.json"
         output = output.resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
         if output.exists():

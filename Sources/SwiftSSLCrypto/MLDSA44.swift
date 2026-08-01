@@ -1,20 +1,20 @@
 import SwiftSSLCore
 
-/// FIPS 204 ML-DSA-65 signing and verification.
-public enum MLDSA65: InPlaceContextualRandomizedDigitalSignature {
-  public typealias PublicKey = MLDSA65PublicKey
-  public typealias PrivateKey = MLDSA65PrivateKey
+/// FIPS 204 ML-DSA-44 signing and verification.
+public enum MLDSA44: InPlaceContextualRandomizedDigitalSignature {
+  public typealias PublicKey = MLDSA44PublicKey
+  public typealias PrivateKey = MLDSA44PrivateKey
 
   public static let seedByteCount = 32
-  public static let publicKeyByteCount = 1_952
-  public static let privateKeyByteCount = 4_032
-  public static let signatureByteCount = 3_309
+  public static let publicKeyByteCount = 1_312
+  public static let privateKeyByteCount = 2_560
+  public static let signatureByteCount = 2_420
   public static let randomizerByteCount = 32
   public static let maximumContextByteCount = 255
 
   public static func keyPair(
     using entropy: borrowing any EntropySource
-  ) throws(MLDSAError) -> MLDSA65KeyPair {
+  ) throws(MLDSAError) -> MLDSA44KeyPair {
     let seedByteCount: SecretByteCount
     do {
       seedByteCount = try SecretByteCount(Self.seedByteCount)
@@ -30,31 +30,25 @@ public enum MLDSA65: InPlaceContextualRandomizedDigitalSignature {
     } catch {
       throw .entropy(error)
     }
-    let privateKey = try MLDSA65PrivateKey(seedStorage: consume seed)
+    let privateKey = try MLDSA44PrivateKey(seedStorage: consume seed)
     let publicKey = try privateKey.publicKey()
-    return MLDSA65KeyPair(
-      publicKey: publicKey,
-      privateKey: privateKey
-    )
+    return MLDSA44KeyPair(publicKey: publicKey, privateKey: privateKey)
   }
 
-  public static func keyPair() throws(MLDSAError) -> MLDSA65KeyPair {
+  public static func keyPair() throws(MLDSAError) -> MLDSA44KeyPair {
     try keyPair(using: SystemEntropySource())
   }
 
-  public static func keyPair(seed: Span<UInt8>) throws(MLDSAError) -> MLDSA65KeyPair {
-    let privateKey = try MLDSA65PrivateKey(seed: seed)
+  public static func keyPair(seed: Span<UInt8>) throws(MLDSAError) -> MLDSA44KeyPair {
+    let privateKey = try MLDSA44PrivateKey(seed: seed)
     let publicKey = try privateKey.publicKey()
-    return MLDSA65KeyPair(
-      publicKey: publicKey,
-      privateKey: privateKey
-    )
+    return MLDSA44KeyPair(publicKey: publicKey, privateKey: privateKey)
   }
 
   public static func sign(
     message: Span<UInt8>,
     context: Span<UInt8>,
-    using privateKey: borrowing MLDSA65PrivateKey,
+    using privateKey: borrowing MLDSA44PrivateKey,
     entropy: borrowing any EntropySource
   ) throws(MLDSAError) -> ContiguousArray<UInt8> {
     var signature = ContiguousArray<UInt8>(
@@ -75,7 +69,7 @@ public enum MLDSA65: InPlaceContextualRandomizedDigitalSignature {
   public static func sign(
     message: Span<UInt8>,
     context: Span<UInt8>,
-    using privateKey: borrowing MLDSA65PrivateKey
+    using privateKey: borrowing MLDSA44PrivateKey
   ) throws(MLDSAError) -> ContiguousArray<UInt8> {
     try sign(
       message: message,
@@ -88,7 +82,7 @@ public enum MLDSA65: InPlaceContextualRandomizedDigitalSignature {
   public static func sign(
     message: Span<UInt8>,
     context: Span<UInt8>,
-    using privateKey: borrowing MLDSA65PrivateKey,
+    using privateKey: borrowing MLDSA44PrivateKey,
     entropy: borrowing any EntropySource,
     into signature: inout MutableSpan<UInt8>
   ) throws(MLDSAError) {
@@ -129,7 +123,7 @@ public enum MLDSA65: InPlaceContextualRandomizedDigitalSignature {
   public static func sign(
     message: Span<UInt8>,
     context: Span<UInt8>,
-    using privateKey: borrowing MLDSA65PrivateKey,
+    using privateKey: borrowing MLDSA44PrivateKey,
     into signature: inout MutableSpan<UInt8>
   ) throws(MLDSAError) {
     try sign(
@@ -145,7 +139,7 @@ public enum MLDSA65: InPlaceContextualRandomizedDigitalSignature {
     signature: Span<UInt8>,
     message: Span<UInt8>,
     context: Span<UInt8>,
-    using publicKey: borrowing MLDSA65PublicKey
+    using publicKey: borrowing MLDSA44PublicKey
   ) throws(MLDSAError) -> Bool {
     guard signature.count == Self.signatureByteCount else {
       throw .invalidSignatureLength(
@@ -156,7 +150,7 @@ public enum MLDSA65: InPlaceContextualRandomizedDigitalSignature {
     guard context.count <= Self.maximumContextByteCount else {
       throw .contextTooLong(limit: Self.maximumContextByteCount, actual: context.count)
     }
-    return try MLDSACore(parameterSet: .mlDSA65).verify(
+    return try MLDSACore(parameterSet: .mlDSA44).verify(
       signature: signature,
       message: message,
       context: context,
@@ -167,7 +161,7 @@ public enum MLDSA65: InPlaceContextualRandomizedDigitalSignature {
   package static func sign(
     message: Span<UInt8>,
     context: Span<UInt8>,
-    using privateKey: borrowing MLDSA65PrivateKey,
+    using privateKey: borrowing MLDSA44PrivateKey,
     randomizer: Span<UInt8>
   ) throws(MLDSAError) -> ContiguousArray<UInt8> {
     guard randomizer.count == Self.randomizerByteCount else {

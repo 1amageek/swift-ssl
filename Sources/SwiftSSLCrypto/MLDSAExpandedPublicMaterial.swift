@@ -1,10 +1,7 @@
 /// Immutable NTT-domain public coefficients cached after first use.
-final class MLDSA65ExpandedPublicMaterial {
-  static let t1CoefficientCount = 6 * 256
-  static let matrixCoefficientCount = 6 * 5 * 256
-  private static let coefficientCount =
-    t1CoefficientCount + matrixCoefficientCount
-
+final class MLDSAExpandedPublicMaterial {
+  private let t1CoefficientCount: Int
+  private let coefficientCount: Int
   private let coefficients: UnsafeMutablePointer<UInt32>
 
   // Unsafe ownership invariants:
@@ -13,13 +10,20 @@ final class MLDSA65ExpandedPublicMaterial {
   // - published pointers are immutable and scoped to a nonescaping closure;
   // - pointers never cross a mutation or Sendable boundary;
   // - deinit releases the initialized allocation exactly once.
-  init(t1NTT: Span<UInt32>, matrix: Span<UInt32>) {
-    precondition(t1NTT.count == Self.t1CoefficientCount)
-    precondition(matrix.count == Self.matrixCoefficientCount)
+  init(
+    parameterSet: MLDSAParameterSet,
+    t1NTT: Span<UInt32>,
+    matrix: Span<UInt32>
+  ) {
+    let t1CoefficientCount = parameterSet.k * 256
+    let matrixCoefficientCount = parameterSet.k * parameterSet.l * 256
+    let coefficientCount = t1CoefficientCount + matrixCoefficientCount
+    precondition(t1NTT.count == t1CoefficientCount)
+    precondition(matrix.count == matrixCoefficientCount)
     let coefficients = UnsafeMutablePointer<UInt32>.allocate(
-      capacity: Self.coefficientCount
+      capacity: coefficientCount
     )
-    coefficients.initialize(repeating: 0, count: Self.coefficientCount)
+    coefficients.initialize(repeating: 0, count: coefficientCount)
     var index = 0
     while index < t1NTT.count {
       coefficients[index] = t1NTT[index]
@@ -27,9 +31,11 @@ final class MLDSA65ExpandedPublicMaterial {
     }
     index = 0
     while index < matrix.count {
-      coefficients[Self.t1CoefficientCount + index] = matrix[index]
+      coefficients[t1CoefficientCount + index] = matrix[index]
       index += 1
     }
+    self.t1CoefficientCount = t1CoefficientCount
+    self.coefficientCount = coefficientCount
     self.coefficients = coefficients
   }
 
@@ -41,16 +47,16 @@ final class MLDSA65ExpandedPublicMaterial {
   ) throws(Failure) -> Result {
     try body(
       UnsafePointer(coefficients),
-      UnsafePointer(coefficients.advanced(by: Self.t1CoefficientCount))
+      UnsafePointer(coefficients.advanced(by: t1CoefficientCount))
     )
   }
 
   deinit {
-    coefficients.deinitialize(count: Self.coefficientCount)
+    coefficients.deinitialize(count: coefficientCount)
     coefficients.deallocate()
   }
 }
 
 // The backing coefficients are immutable after initialization. Every pointer
 // borrow is scoped and ARC retains the owner for the complete borrow.
-extension MLDSA65ExpandedPublicMaterial: @unchecked Sendable {}
+extension MLDSAExpandedPublicMaterial: @unchecked Sendable {}

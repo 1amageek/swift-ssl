@@ -22,6 +22,62 @@ struct Measurement {
   uint64_t checksum;
 };
 
+template <int ParameterSet>
+struct MLDSATraits;
+
+#define DEFINE_MLDSA_TRAITS(PARAMETER_SET)                                    \
+  template <>                                                                 \
+  struct MLDSATraits<PARAMETER_SET> {                                         \
+    using PrivateKey = MLDSA##PARAMETER_SET##_private_key;                    \
+    using PublicKey = MLDSA##PARAMETER_SET##_public_key;                      \
+    static constexpr size_t kPublicKeyBytes =                                 \
+        MLDSA##PARAMETER_SET##_PUBLIC_KEY_BYTES;                              \
+    static constexpr size_t kSignatureBytes =                                 \
+        MLDSA##PARAMETER_SET##_SIGNATURE_BYTES;                               \
+    static int Generate(uint8_t *encoded_public, uint8_t *seed,               \
+                        PrivateKey *private_key) {                            \
+      return MLDSA##PARAMETER_SET##_generate_key(encoded_public, seed,        \
+                                                  private_key);               \
+    }                                                                         \
+    static int PrivateFromSeed(PrivateKey *private_key, const uint8_t *seed,  \
+                               size_t seed_length) {                          \
+      return MLDSA##PARAMETER_SET##_private_key_from_seed(                    \
+          private_key, seed, seed_length);                                    \
+    }                                                                         \
+    static int PublicFromPrivate(PublicKey *public_key,                       \
+                                 const PrivateKey *private_key) {             \
+      return MLDSA##PARAMETER_SET##_public_from_private(public_key,           \
+                                                         private_key);        \
+    }                                                                         \
+    static int Sign(uint8_t *signature, const PrivateKey *private_key,        \
+                    const uint8_t *message, size_t message_length,            \
+                    const uint8_t *context, size_t context_length) {          \
+      return MLDSA##PARAMETER_SET##_sign(                                     \
+          signature, private_key, message, message_length, context,           \
+          context_length);                                                    \
+    }                                                                         \
+    static int Verify(const PublicKey *public_key, const uint8_t *signature,  \
+                      size_t signature_length, const uint8_t *message,        \
+                      size_t message_length, const uint8_t *context,          \
+                      size_t context_length) {                                \
+      return MLDSA##PARAMETER_SET##_verify(                                   \
+          public_key, signature, signature_length, message, message_length,   \
+          context, context_length);                                           \
+    }                                                                         \
+    static int Marshal(CBB *builder, const PublicKey *public_key) {           \
+      return MLDSA##PARAMETER_SET##_marshal_public_key(builder, public_key);  \
+    }                                                                         \
+    static int Parse(PublicKey *public_key, CBS *input) {                     \
+      return MLDSA##PARAMETER_SET##_parse_public_key(public_key, input);      \
+    }                                                                         \
+  }
+
+DEFINE_MLDSA_TRAITS(44);
+DEFINE_MLDSA_TRAITS(65);
+DEFINE_MLDSA_TRAITS(87);
+
+#undef DEFINE_MLDSA_TRAITS
+
 uint8_t HexNibble(char value) {
   if (value >= '0' && value <= '9') {
     return static_cast<uint8_t>(value - '0');
@@ -57,34 +113,50 @@ std::string EncodeHex(const uint8_t *bytes, size_t byte_count) {
   return result;
 }
 
-std::vector<uint8_t> MarshalPublicKey(const MLDSA65_public_key *public_key) {
+template <typename Traits>
+std::vector<uint8_t> MarshalPublicKey(
+    const typename Traits::PublicKey *public_key) {
   CBB builder;
-  if (!CBB_init(&builder, MLDSA65_PUBLIC_KEY_BYTES)) {
+  if (!CBB_init(&builder, Traits::kPublicKeyBytes)) {
     throw std::runtime_error("could not initialize public-key builder");
   }
   uint8_t *encoded = nullptr;
   size_t encoded_length = 0;
-  if (!MLDSA65_marshal_public_key(&builder, public_key) ||
+  if (!Traits::Marshal(&builder, public_key) ||
       !CBB_finish(&builder, &encoded, &encoded_length)) {
     CBB_cleanup(&builder);
     throw std::runtime_error("could not marshal public key");
   }
   std::vector<uint8_t> result(encoded, encoded + encoded_length);
   OPENSSL_free(encoded);
-  if (result.size() != MLDSA65_PUBLIC_KEY_BYTES) {
+  if (result.size() != Traits::kPublicKeyBytes) {
     throw std::runtime_error("marshaled public key has unexpected length");
   }
   return result;
 }
 
-MLDSA65_public_key ParsePublicKey(const std::vector<uint8_t> &encoded) {
+template <typename Traits>
+typename Traits::PublicKey ParsePublicKey(const std::vector<uint8_t> &encoded) {
   CBS input;
   CBS_init(&input, encoded.data(), encoded.size());
-  MLDSA65_public_key public_key;
-  if (!MLDSA65_parse_public_key(&public_key, &input)) {
+  typename Traits::PublicKey public_key;
+  if (!Traits::Parse(&public_key, &input) || CBS_len(&input) != 0) {
     throw std::runtime_error("could not parse public key");
   }
   return public_key;
+}
+
+int ParseParameterSet(std::string_view value) {
+  if (value == "44") {
+    return 44;
+  }
+  if (value == "65") {
+    return 65;
+  }
+  if (value == "87") {
+    return 87;
+  }
+  throw std::runtime_error("invalid parameter set");
 }
 
 Operation ParseOperation(std::string_view value) {
@@ -100,18 +172,19 @@ Operation ParseOperation(std::string_view value) {
   throw std::runtime_error("invalid operation");
 }
 
+template <typename Traits>
 Measurement Run(Operation operation, int iterations, int warmup_iterations) {
-  std::array<uint8_t, MLDSA65_PUBLIC_KEY_BYTES> encoded_public{};
+  std::array<uint8_t, Traits::kPublicKeyBytes> encoded_public{};
   std::array<uint8_t, MLDSA_SEED_BYTES> seed{};
-  std::array<uint8_t, MLDSA65_SIGNATURE_BYTES> signature{};
+  std::array<uint8_t, Traits::kSignatureBytes> signature{};
   std::array<uint8_t, 1024> message{};
   std::array<uint8_t, 17> context{};
-  MLDSA65_private_key private_key;
-  MLDSA65_public_key public_key;
-  if (!MLDSA65_generate_key(encoded_public.data(), seed.data(), &private_key) ||
-      !MLDSA65_public_from_private(&public_key, &private_key) ||
-      !MLDSA65_sign(signature.data(), &private_key, message.data(), message.size(),
-                    context.data(), context.size())) {
+  typename Traits::PrivateKey private_key;
+  typename Traits::PublicKey public_key;
+  if (!Traits::Generate(encoded_public.data(), seed.data(), &private_key) ||
+      !Traits::PublicFromPrivate(&public_key, &private_key) ||
+      !Traits::Sign(signature.data(), &private_key, message.data(),
+                    message.size(), context.data(), context.size())) {
     throw std::runtime_error("ML-DSA setup failed");
   }
 
@@ -119,20 +192,20 @@ Measurement Run(Operation operation, int iterations, int warmup_iterations) {
   const auto execute = [&](int iteration) {
     switch (operation) {
     case Operation::kKeyGeneration:
-      if (!MLDSA65_generate_key(encoded_public.data(), seed.data(), &private_key)) {
+      if (!Traits::Generate(encoded_public.data(), seed.data(), &private_key)) {
         throw std::runtime_error("ML-DSA key generation failed");
       }
       checksum += encoded_public[iteration % encoded_public.size()];
       break;
     case Operation::kSigning:
-      if (!MLDSA65_sign(signature.data(), &private_key, message.data(),
+      if (!Traits::Sign(signature.data(), &private_key, message.data(),
                         message.size(), context.data(), context.size())) {
         throw std::runtime_error("ML-DSA signing failed");
       }
       checksum += signature[iteration % signature.size()];
       break;
     case Operation::kVerification:
-      if (!MLDSA65_verify(&public_key, signature.data(), signature.size(),
+      if (!Traits::Verify(&public_key, signature.data(), signature.size(),
                           message.data(), message.size(), context.data(),
                           context.size())) {
         throw std::runtime_error("ML-DSA verification failed");
@@ -154,39 +227,56 @@ Measurement Run(Operation operation, int iterations, int warmup_iterations) {
   return {elapsed.count(), checksum};
 }
 
+Measurement Run(int parameter_set, Operation operation, int iterations,
+                int warmup_iterations) {
+  switch (parameter_set) {
+  case 44:
+    return Run<MLDSATraits<44>>(operation, iterations, warmup_iterations);
+  case 65:
+    return Run<MLDSATraits<65>>(operation, iterations, warmup_iterations);
+  case 87:
+    return Run<MLDSATraits<87>>(operation, iterations, warmup_iterations);
+  default:
+    throw std::runtime_error("invalid parameter set");
+  }
+}
+
+template <typename Traits>
 void EmitFixture(const std::vector<uint8_t> &seed,
                  const std::vector<uint8_t> &message,
                  const std::vector<uint8_t> &context) {
-  MLDSA65_private_key private_key;
-  MLDSA65_public_key public_key;
-  std::array<uint8_t, MLDSA65_SIGNATURE_BYTES> signature{};
-  if (!MLDSA65_private_key_from_seed(&private_key, seed.data(), seed.size()) ||
-      !MLDSA65_public_from_private(&public_key, &private_key) ||
-      !MLDSA65_sign(signature.data(), &private_key, message.data(), message.size(),
-                    context.data(), context.size())) {
+  typename Traits::PrivateKey private_key;
+  typename Traits::PublicKey public_key;
+  std::array<uint8_t, Traits::kSignatureBytes> signature{};
+  if (!Traits::PrivateFromSeed(&private_key, seed.data(), seed.size()) ||
+      !Traits::PublicFromPrivate(&public_key, &private_key) ||
+      !Traits::Sign(signature.data(), &private_key, message.data(),
+                    message.size(), context.data(), context.size())) {
     throw std::runtime_error("could not create BoringSSL fixture");
   }
-  const auto encoded_public = MarshalPublicKey(&public_key);
+  const auto encoded_public = MarshalPublicKey<Traits>(&public_key);
   std::cout << "FIXTURE," << EncodeHex(encoded_public.data(), encoded_public.size())
             << ',' << EncodeHex(signature.data(), signature.size()) << '\n';
 }
 
+template <typename Traits>
 void ValidateFixture(const std::vector<uint8_t> &seed,
                      const std::vector<uint8_t> &expected_public,
                      const std::vector<uint8_t> &signature,
                      const std::vector<uint8_t> &message,
                      const std::vector<uint8_t> &context) {
-  MLDSA65_private_key private_key;
-  MLDSA65_public_key derived_public;
-  if (!MLDSA65_private_key_from_seed(&private_key, seed.data(), seed.size()) ||
-      !MLDSA65_public_from_private(&derived_public, &private_key)) {
+  typename Traits::PrivateKey private_key;
+  typename Traits::PublicKey derived_public;
+  if (!Traits::PrivateFromSeed(&private_key, seed.data(), seed.size()) ||
+      !Traits::PublicFromPrivate(&derived_public, &private_key)) {
     throw std::runtime_error("could not derive BoringSSL key");
   }
-  if (MarshalPublicKey(&derived_public) != expected_public) {
+  if (MarshalPublicKey<Traits>(&derived_public) != expected_public) {
     throw std::runtime_error("public key mismatch");
   }
-  const MLDSA65_public_key parsed_public = ParsePublicKey(expected_public);
-  if (!MLDSA65_verify(&parsed_public, signature.data(), signature.size(),
+  const typename Traits::PublicKey parsed_public =
+      ParsePublicKey<Traits>(expected_public);
+  if (!Traits::Verify(&parsed_public, signature.data(), signature.size(),
                       message.data(), message.size(), context.data(),
                       context.size())) {
     throw std::runtime_error("SwiftSSL signature did not verify");
@@ -194,15 +284,98 @@ void ValidateFixture(const std::vector<uint8_t> &seed,
   std::cout << "VALIDATED\n";
 }
 
+template <typename Traits>
 void VerifyFixture(const std::vector<uint8_t> &encoded_public,
                    const std::vector<uint8_t> &signature,
                    const std::vector<uint8_t> &message,
                    const std::vector<uint8_t> &context) {
-  const MLDSA65_public_key public_key = ParsePublicKey(encoded_public);
-  const int valid = MLDSA65_verify(
+  const typename Traits::PublicKey public_key =
+      ParsePublicKey<Traits>(encoded_public);
+  const int valid = Traits::Verify(
       &public_key, signature.data(), signature.size(), message.data(),
       message.size(), context.data(), context.size());
   std::cout << "VERIFIED," << valid << '\n';
+}
+
+void EmitFixture(int parameter_set, const std::vector<uint8_t> &seed,
+                 const std::vector<uint8_t> &message,
+                 const std::vector<uint8_t> &context) {
+  switch (parameter_set) {
+  case 44:
+    return EmitFixture<MLDSATraits<44>>(seed, message, context);
+  case 65:
+    return EmitFixture<MLDSATraits<65>>(seed, message, context);
+  case 87:
+    return EmitFixture<MLDSATraits<87>>(seed, message, context);
+  default:
+    throw std::runtime_error("invalid parameter set");
+  }
+}
+
+void ValidateFixture(int parameter_set, const std::vector<uint8_t> &seed,
+                     const std::vector<uint8_t> &expected_public,
+                     const std::vector<uint8_t> &signature,
+                     const std::vector<uint8_t> &message,
+                     const std::vector<uint8_t> &context) {
+  switch (parameter_set) {
+  case 44:
+    return ValidateFixture<MLDSATraits<44>>(seed, expected_public, signature,
+                                            message, context);
+  case 65:
+    return ValidateFixture<MLDSATraits<65>>(seed, expected_public, signature,
+                                            message, context);
+  case 87:
+    return ValidateFixture<MLDSATraits<87>>(seed, expected_public, signature,
+                                            message, context);
+  default:
+    throw std::runtime_error("invalid parameter set");
+  }
+}
+
+void VerifyFixture(int parameter_set,
+                   const std::vector<uint8_t> &encoded_public,
+                   const std::vector<uint8_t> &signature,
+                   const std::vector<uint8_t> &message,
+                   const std::vector<uint8_t> &context) {
+  switch (parameter_set) {
+  case 44:
+    return VerifyFixture<MLDSATraits<44>>(encoded_public, signature, message,
+                                          context);
+  case 65:
+    return VerifyFixture<MLDSATraits<65>>(encoded_public, signature, message,
+                                          context);
+  case 87:
+    return VerifyFixture<MLDSATraits<87>>(encoded_public, signature, message,
+                                          context);
+  default:
+    throw std::runtime_error("invalid parameter set");
+  }
+}
+
+size_t PublicKeyBytes(int parameter_set) {
+  switch (parameter_set) {
+  case 44:
+    return MLDSATraits<44>::kPublicKeyBytes;
+  case 65:
+    return MLDSATraits<65>::kPublicKeyBytes;
+  case 87:
+    return MLDSATraits<87>::kPublicKeyBytes;
+  default:
+    throw std::runtime_error("invalid parameter set");
+  }
+}
+
+size_t SignatureBytes(int parameter_set) {
+  switch (parameter_set) {
+  case 44:
+    return MLDSATraits<44>::kSignatureBytes;
+  case 65:
+    return MLDSATraits<65>::kSignatureBytes;
+  case 87:
+    return MLDSATraits<87>::kSignatureBytes;
+  default:
+    throw std::runtime_error("invalid parameter set");
+  }
 }
 
 }  // namespace
@@ -213,34 +386,41 @@ int main(int argc, char **argv) {
       std::cout << "CAPABILITY,boringssl_asm," << CRYPTO_has_asm() << '\n';
       return 0;
     }
-    if (argc == 4 && argv[1][0] != '-') {
-      const int iterations = std::stoi(argv[2]);
-      const int warmup_iterations = std::stoi(argv[3]);
+    if (argc == 5 && argv[1][0] != '-') {
+      const int parameter_set = ParseParameterSet(argv[1]);
+      const int iterations = std::stoi(argv[3]);
+      const int warmup_iterations = std::stoi(argv[4]);
       if (iterations <= 0 || warmup_iterations < 0) {
         throw std::runtime_error("invalid iteration count");
       }
       const Measurement measurement =
-          Run(ParseOperation(argv[1]), iterations, warmup_iterations);
+          Run(parameter_set, ParseOperation(argv[2]), iterations,
+              warmup_iterations);
       std::cout << "RESULT," << measurement.nanoseconds << ','
                 << measurement.checksum << '\n';
       return 0;
     }
-    if (argc == 5 && std::string_view(argv[1]) == "--fixture") {
-      EmitFixture(DecodeHex(argv[2], MLDSA_SEED_BYTES),
-                  DecodeHex(argv[3], 64), DecodeHex(argv[4], 19));
+    if (argc == 6 && std::string_view(argv[1]) == "--fixture") {
+      const int parameter_set = ParseParameterSet(argv[2]);
+      EmitFixture(parameter_set, DecodeHex(argv[3], MLDSA_SEED_BYTES),
+                  DecodeHex(argv[4], 64), DecodeHex(argv[5], 19));
       return 0;
     }
-    if (argc == 7 && std::string_view(argv[1]) == "--validate") {
-      ValidateFixture(DecodeHex(argv[2], MLDSA_SEED_BYTES),
-                      DecodeHex(argv[3], MLDSA65_PUBLIC_KEY_BYTES),
-                      DecodeHex(argv[4], MLDSA65_SIGNATURE_BYTES),
-                      DecodeHex(argv[5], 64), DecodeHex(argv[6], 19));
+    if (argc == 8 && std::string_view(argv[1]) == "--validate") {
+      const int parameter_set = ParseParameterSet(argv[2]);
+      ValidateFixture(parameter_set,
+                      DecodeHex(argv[3], MLDSA_SEED_BYTES),
+                      DecodeHex(argv[4], PublicKeyBytes(parameter_set)),
+                      DecodeHex(argv[5], SignatureBytes(parameter_set)),
+                      DecodeHex(argv[6], 64), DecodeHex(argv[7], 19));
       return 0;
     }
-    if (argc == 6 && std::string_view(argv[1]) == "--verify") {
-      VerifyFixture(DecodeHex(argv[2], MLDSA65_PUBLIC_KEY_BYTES),
-                    DecodeHex(argv[3], MLDSA65_SIGNATURE_BYTES),
-                    DecodeHex(argv[4], 64), DecodeHex(argv[5], 19));
+    if (argc == 7 && std::string_view(argv[1]) == "--verify") {
+      const int parameter_set = ParseParameterSet(argv[2]);
+      VerifyFixture(parameter_set,
+                    DecodeHex(argv[3], PublicKeyBytes(parameter_set)),
+                    DecodeHex(argv[4], SignatureBytes(parameter_set)),
+                    DecodeHex(argv[5], 64), DecodeHex(argv[6], 19));
       return 0;
     }
     throw std::runtime_error("invalid arguments");

@@ -1,10 +1,9 @@
-# ADR 0040: Own ML-DSA-65 keys and scope signing workspaces
+# ADR 0040: Own FIPS 204 ML-DSA keys and scope signing workspaces
 
 ## Status
 
-Accepted on 2026-08-02 for the FIPS 204 ML-DSA-65 primitive. This decision
-does not enable ML-DSA in TLS or X.509 policy and does not complete the
-separately required ML-DSA-44 and ML-DSA-87 parameter sets.
+Accepted on 2026-08-02 for the FIPS 204 ML-DSA-44, ML-DSA-65, and ML-DSA-87
+primitives. This decision does not enable ML-DSA in TLS or X.509 policy.
 
 ## Context
 
@@ -20,9 +19,11 @@ the same semantic implementation.
 `ContextualRandomizedDigitalSignature` separates context-bound randomized
 signing and verification from unrelated signature schemes.
 `InPlaceContextualRandomizedDigitalSignature` refines it with caller-owned
-fixed-size signature output. `MLDSA65` is a statically dispatched FIPS 204
-implementation in `SwiftSSLCrypto`; `SwiftSSL` exposes its own equivalent key
-and error types rather than re-exporting implementation types.
+fixed-size signature output. `MLDSA44`, `MLDSA65`, and `MLDSA87` are statically
+dispatched FIPS 204 implementations over one internal parameterized core in
+`SwiftSSLCrypto`; `SwiftSSL` exposes its own equivalent key and error types
+rather than re-exporting implementation types. Distinct concrete key types
+make cross-parameter key use unrepresentable at the public API boundary.
 
 ```mermaid
 flowchart LR
@@ -40,8 +41,8 @@ flowchart LR
 The private key is noncopyable. Generated keys retain only the 32-byte seed as
 their serialized secret owner and transfer the already allocated NTT
 coefficient arrays into the immutable expanded owner. Imported keys retain the
-validated 4,032-byte FIPS representation. `standardRepresentation()` creates
-an explicit new secret owner instead of exposing internal storage.
+validated parameter-specific FIPS representation. `standardRepresentation()`
+creates an explicit new secret owner instead of exposing internal storage.
 
 The expanded public key owns its decoded public coefficients. Its derived NTT
 and matrix material is immutable and lazily published through one
@@ -74,19 +75,24 @@ caller owner
 
 The Native fixed-fixture memory budgets are:
 
-| Path | Balanced allocations | Requested bytes | Dynamic bulk-copy bytes |
+| Parameter set and path | Balanced allocations | Requested bytes | Dynamic bulk-copy bytes |
 |---|---:|---:|---:|
-| Key generation | 25 | 71,448 | 0 |
-| In-place signing | 62 | 59,248 | 40,960 |
-| Verification | 14 | 31,712 | 0 |
+| ML-DSA-44 key generation | 23 | 44,928 | 0 |
+| ML-DSA-44 in-place signing | 30 | 38,800 | 16,384 |
+| ML-DSA-44 verification | 14 | 23,480 | 0 |
+| ML-DSA-65 key generation | 25 | 71,536 | 0 |
+| ML-DSA-65 in-place signing | 62 | 59,248 | 40,960 |
+| ML-DSA-65 verification | 14 | 31,712 | 0 |
+| ML-DSA-87 key generation | 25 | 111,088 | 0 |
+| ML-DSA-87 in-place signing | 48 | 71,120 | 43,008 |
+| ML-DSA-87 verification | 14 | 42,200 | 0 |
 
-The signing copy is eight 5,120-byte transfers for the fixed benchmark
-fixture. Each rejection-sampling attempt must preserve the five-polynomial
-mask while transforming a second copy into the NTT domain. It is an explicit
-algorithm workspace fork, not input/output materialization or Swift COW.
-Attempt count and therefore total work vary with valid randomized signing.
-The benchmark fixture fixes entropy, message, and context so the release
-budget is deterministic.
+The signing copies preserve a parameter-specific mask vector while a second
+copy is transformed into the NTT domain. They are explicit algorithm
+workspace forks, not input/output materialization or Swift COW. Attempt count
+and therefore total work vary with valid randomized signing. The benchmark
+fixture fixes entropy, message, and context so the release budget is
+deterministic.
 
 Dynamic `memcpy`/`memmove` interposition cannot observe compiler-inlined scalar
 stores. The formal artifact is therefore combined with the owner/span source
@@ -128,5 +134,5 @@ ownership, or lifetime contracts.
 - Public-key expansion is amortized and race-safe without holding a lock during
   cryptographic work.
 - The primitive remains independent from TLS and certificate policy.
-- ML-DSA-44, ML-DSA-87, broader external vectors, automated constant-time
-  review, and security review remain separate completion responsibilities.
+- Broader external vectors, automated constant-time review, and security
+  review remain separate completion responsibilities.

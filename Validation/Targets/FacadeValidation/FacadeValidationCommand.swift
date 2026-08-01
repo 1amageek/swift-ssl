@@ -1,4 +1,5 @@
 import SwiftSSL
+import SwiftSSLCore
 
 @main
 enum FacadeValidationCommand {
@@ -27,7 +28,9 @@ enum FacadeValidationCommand {
     try validateEd25519()
     try validateP256()
     try validateMLKEM()
-    try validateMLDSA()
+    try validateMLDSA65()
+    try validateMLDSA44()
+    try validateMLDSA87()
     try validateFailureContracts()
     print("swift-ssl facade validation: ok")
   }
@@ -112,10 +115,11 @@ enum FacadeValidationCommand {
       observedError = error
     }
     guard
-      observedError == .invalidEncapsulationLength(
-        expected: MLKEM768.encapsulationByteCount,
-        actual: MLKEM768.encapsulationByteCount - 1
-      ),
+      observedError
+        == .invalidEncapsulationLength(
+          expected: MLKEM768.encapsulationByteCount,
+          actual: MLKEM768.encapsulationByteCount - 1
+        ),
       shortEncapsulation == originalShortEncapsulation,
       untouchedSharedSecret == originalSharedSecret
     else {
@@ -123,7 +127,89 @@ enum FacadeValidationCommand {
     }
   }
 
-  private static func validateMLDSA() throws {
+  private static func validateMLDSA44() throws {
+    let seed = ContiguousArray<UInt8>(repeating: 0x24, count: MLDSA44.seedByteCount)
+    let pair = try MLDSA44.keyPair(seed: seed.span)
+    let message = ContiguousArray("swift-ssl facade ML-DSA-44".utf8)
+    let context = ContiguousArray("validation".utf8)
+    let signature = try MLDSA44.sign(
+      message: message.span,
+      context: context.span,
+      using: pair.privateKey,
+      entropy: FixedEntropy(byte: 0x73)
+    )
+    guard
+      try MLDSA44.verify(
+        signature: signature.span,
+        message: message.span,
+        context: context.span,
+        using: pair.publicKey
+      )
+    else {
+      throw Failure.mlDSA
+    }
+
+    var modified = message
+    modified[0] ^= 1
+    guard
+      try !MLDSA44.verify(
+        signature: signature.span,
+        message: modified.span,
+        context: context.span,
+        using: pair.publicKey
+      )
+    else {
+      throw Failure.mlDSA
+    }
+
+    let representation = try pair.privateKey.standardRepresentation()
+    let imported = try representation.withBorrowedBytes {
+      bytes throws(MLDSAError) in
+      try MLDSA44PrivateKey(encoded: bytes)
+    }
+    guard try imported.publicKey() == pair.publicKey else {
+      throw Failure.mlDSA
+    }
+    var corrupt = representation.withBorrowedBytes { copy($0) }
+    corrupt[128] = 0xFF
+    var importError: MLDSAError?
+    do {
+      let unused = try MLDSA44PrivateKey(encoded: corrupt.span)
+      _ = consume unused
+    } catch {
+      importError = error
+    }
+    guard importError == .invalidPrivateKeyEncoding else {
+      throw Failure.errorContract
+    }
+
+    var untouchedSignature = ContiguousArray<UInt8>(
+      repeating: 0xA5,
+      count: MLDSA44.signatureByteCount
+    )
+    let originalSignature = untouchedSignature
+    var entropyError: MLDSAError?
+    do {
+      var output = untouchedSignature.mutableSpan
+      try MLDSA44.sign(
+        message: message.span,
+        context: context.span,
+        using: pair.privateKey,
+        entropy: FailingEntropy(),
+        into: &output
+      )
+    } catch {
+      entropyError = error
+    }
+    guard
+      entropyError == .entropy(.sourceRejected),
+      untouchedSignature == originalSignature
+    else {
+      throw Failure.errorContract
+    }
+  }
+
+  private static func validateMLDSA65() throws {
     let seed = ContiguousArray<UInt8>(repeating: 0x42, count: MLDSA65.seedByteCount)
     let pair = try MLDSA65.keyPair(seed: seed.span)
     let message = ContiguousArray("swift-ssl facade ML-DSA-65".utf8)
@@ -134,24 +220,156 @@ enum FacadeValidationCommand {
       using: pair.privateKey,
       entropy: FixedEntropy(byte: 0x73)
     )
-    guard try MLDSA65.verify(
-      signature: signature.span,
-      message: message.span,
-      context: context.span,
-      using: pair.publicKey
-    ) else {
+    guard
+      try MLDSA65.verify(
+        signature: signature.span,
+        message: message.span,
+        context: context.span,
+        using: pair.publicKey
+      )
+    else {
       throw Failure.mlDSA
     }
 
     var modified = message
     modified[0] ^= 1
-    guard try !MLDSA65.verify(
-      signature: signature.span,
-      message: modified.span,
-      context: context.span,
-      using: pair.publicKey
-    ) else {
+    guard
+      try !MLDSA65.verify(
+        signature: signature.span,
+        message: modified.span,
+        context: context.span,
+        using: pair.publicKey
+      )
+    else {
       throw Failure.mlDSA
+    }
+
+    let representation = try pair.privateKey.standardRepresentation()
+    let imported = try representation.withBorrowedBytes {
+      bytes throws(MLDSAError) in
+      try MLDSA65PrivateKey(encoded: bytes)
+    }
+    guard try imported.publicKey() == pair.publicKey else {
+      throw Failure.mlDSA
+    }
+    var corrupt = representation.withBorrowedBytes { copy($0) }
+    corrupt[128] = 0xFF
+    var importError: MLDSAError?
+    do {
+      let unused = try MLDSA65PrivateKey(encoded: corrupt.span)
+      _ = consume unused
+    } catch {
+      importError = error
+    }
+    guard importError == .invalidPrivateKeyEncoding else {
+      throw Failure.errorContract
+    }
+
+    var untouchedSignature = ContiguousArray<UInt8>(
+      repeating: 0xA5,
+      count: MLDSA65.signatureByteCount
+    )
+    let originalSignature = untouchedSignature
+    var entropyError: MLDSAError?
+    do {
+      var output = untouchedSignature.mutableSpan
+      try MLDSA65.sign(
+        message: message.span,
+        context: context.span,
+        using: pair.privateKey,
+        entropy: FailingEntropy(),
+        into: &output
+      )
+    } catch {
+      entropyError = error
+    }
+    guard
+      entropyError == .entropy(.sourceRejected),
+      untouchedSignature == originalSignature
+    else {
+      throw Failure.errorContract
+    }
+  }
+
+  private static func validateMLDSA87() throws {
+    let seed = ContiguousArray<UInt8>(repeating: 0x78, count: MLDSA87.seedByteCount)
+    let pair = try MLDSA87.keyPair(seed: seed.span)
+    let message = ContiguousArray("swift-ssl facade ML-DSA-87".utf8)
+    let context = ContiguousArray("validation".utf8)
+    let signature = try MLDSA87.sign(
+      message: message.span,
+      context: context.span,
+      using: pair.privateKey,
+      entropy: FixedEntropy(byte: 0x73)
+    )
+    guard
+      try MLDSA87.verify(
+        signature: signature.span,
+        message: message.span,
+        context: context.span,
+        using: pair.publicKey
+      )
+    else {
+      throw Failure.mlDSA
+    }
+
+    var modified = message
+    modified[0] ^= 1
+    guard
+      try !MLDSA87.verify(
+        signature: signature.span,
+        message: modified.span,
+        context: context.span,
+        using: pair.publicKey
+      )
+    else {
+      throw Failure.mlDSA
+    }
+
+    let representation = try pair.privateKey.standardRepresentation()
+    let imported = try representation.withBorrowedBytes {
+      bytes throws(MLDSAError) in
+      try MLDSA87PrivateKey(encoded: bytes)
+    }
+    guard try imported.publicKey() == pair.publicKey else {
+      throw Failure.mlDSA
+    }
+    var corrupt = representation.withBorrowedBytes { copy($0) }
+    corrupt[128] = 0xFF
+    var importError: MLDSAError?
+    do {
+      let unused = try MLDSA87PrivateKey(encoded: corrupt.span)
+      _ = consume unused
+    } catch {
+      importError = error
+    }
+    guard importError == .invalidPrivateKeyEncoding else {
+      throw Failure.errorContract
+    }
+
+    var untouchedSignature = ContiguousArray<UInt8>(
+      repeating: 0xA5,
+      count: MLDSA87.signatureByteCount
+    )
+    let originalSignature = untouchedSignature
+    var entropyError: MLDSAError?
+    do {
+      var output = untouchedSignature.mutableSpan
+      try MLDSA87.sign(
+        message: message.span,
+        context: context.span,
+        using: pair.privateKey,
+        entropy: FailingEntropy(),
+        into: &output
+      )
+    } catch {
+      entropyError = error
+    }
+    guard
+      entropyError == .entropy(.sourceRejected),
+      untouchedSignature == originalSignature
+    else {
+      throw Failure.errorContract
     }
   }
 
@@ -392,18 +610,22 @@ enum FacadeValidationCommand {
     let modifiedMessage = ContiguousArray<UInt8>([0])
     let publicKey = try Ed25519PublicKey(bytes: publicKeyBytes.span)
 
-    guard try Ed25519.verify(
-      signature: signature.span,
-      message: emptyMessage.span,
-      using: publicKey
-    ) else {
+    guard
+      try Ed25519.verify(
+        signature: signature.span,
+        message: emptyMessage.span,
+        using: publicKey
+      )
+    else {
       throw Failure.ed25519
     }
-    guard try !Ed25519.verify(
-      signature: signature.span,
-      message: modifiedMessage.span,
-      using: publicKey
-    ) else {
+    guard
+      try !Ed25519.verify(
+        signature: signature.span,
+        message: modifiedMessage.span,
+        using: publicKey
+      )
+    else {
       throw Failure.ed25519
     }
   }
@@ -437,11 +659,13 @@ enum FacadeValidationCommand {
       0x56, 0xC3, 0x5C, 0x0B, 0x3E, 0xE8, 0xAF, 0x64,
     ])
     let signingKey = try P256PublicKey(bytes: signingPublicKey.span)
-    guard try P256ECDSA.verify(
-      signature: rawSignature.span,
-      messageHash: digest.span,
-      publicKey: signingKey
-    ) else {
+    guard
+      try P256ECDSA.verify(
+        signature: rawSignature.span,
+        messageHash: digest.span,
+        publicKey: signingKey
+      )
+    else {
       throw Failure.p256ECDSA
     }
   }
@@ -467,10 +691,11 @@ enum FacadeValidationCommand {
         observedError = error
       }
       guard
-        observedError == .invalidOutputLength(
-          expected: SHA256.digestByteCount,
-          actual: length
-        ),
+        observedError
+          == .invalidOutputLength(
+            expected: SHA256.digestByteCount,
+            actual: length
+          ),
         output == original
       else {
         throw Failure.errorContract
@@ -498,10 +723,11 @@ enum FacadeValidationCommand {
         observedError = error
       }
       guard
-        observedError == .invalidOutputLength(
-          expected: HMACSHA256.tagByteCount,
-          actual: length
-        ),
+        observedError
+          == .invalidOutputLength(
+            expected: HMACSHA256.tagByteCount,
+            actual: length
+          ),
         output == original
       else {
         throw Failure.errorContract
@@ -525,10 +751,11 @@ enum FacadeValidationCommand {
       extractError = error
     }
     guard
-      extractError == .invalidPseudorandomKeyOutputLength(
-        expected: HKDFSHA256.pseudorandomKeyByteCount,
-        actual: shortPseudorandomKeyOutput.count
-      ),
+      extractError
+        == .invalidPseudorandomKeyOutputLength(
+          expected: HKDFSHA256.pseudorandomKeyByteCount,
+          actual: shortPseudorandomKeyOutput.count
+        ),
       shortPseudorandomKeyOutput == originalPseudorandomKeyOutput
     else {
       throw Failure.errorContract
@@ -551,10 +778,11 @@ enum FacadeValidationCommand {
       expandError = error
     }
     guard
-      expandError == .outputTooLong(
-        limit: HKDFSHA256.maximumOutputByteCount,
-        actual: oversizedOutput.count
-      ),
+      expandError
+        == .outputTooLong(
+          limit: HKDFSHA256.maximumOutputByteCount,
+          actual: oversizedOutput.count
+        ),
       oversizedOutput == originalOversizedOutput
     else {
       throw Failure.errorContract
@@ -598,6 +826,15 @@ enum FacadeValidationCommand {
         destination[index] = byte
         index += 1
       }
+    }
+  }
+
+  private struct FailingEntropy: EntropySource {
+    func fill(_ destination: inout MutableSpan<UInt8>) throws(EntropyError) {
+      if !destination.isEmpty {
+        destination[0] = 0xC3
+      }
+      throw .sourceRejected
     }
   }
 
