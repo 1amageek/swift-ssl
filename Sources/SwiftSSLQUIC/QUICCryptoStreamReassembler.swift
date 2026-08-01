@@ -7,7 +7,7 @@ import SwiftSSLCore
 /// is copied once because the caller's frame storage is borrowed and may not
 /// outlive `receive`; contiguous delivery borrows the stable owner without an
 /// additional materialization.
-public struct QUICCryptoStreamReassembler: ~Copyable, Sendable {
+public struct QUICCryptoStreamReassembler: QUICCryptoStreamReassembling, ~Copyable, Sendable {
     public static let defaultMaximumBufferedByteCount = 1 * 1024 * 1024
     public static let maximumPermittedBufferByteCount = 16 * 1024 * 1024
     public static let maximumQUICOffset: UInt64 = (UInt64(1) << 62) - 1
