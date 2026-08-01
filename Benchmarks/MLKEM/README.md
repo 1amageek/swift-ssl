@@ -90,3 +90,26 @@ lower95CI(median(BoringSSL elapsed / SwiftSSL elapsed)) >= 1.10
 Timing evidence does not establish allocation or logical-copy counts. Those
 remain a separate instrumented release artifact even though this worker uses
 the public in-place encapsulation and decapsulation APIs.
+
+## Formal result
+
+The 2026-08-01 run used SwiftSSL commit
+`a96fee3d2e688fa331ff50a2582c7a97f9886f65` and passed every workload gate.
+
+| Workload | Swift median ns/op | BoringSSL median ns/op | Paired speedup | 95% bootstrap CI |
+|---|---:|---:|---:|---:|
+| ML-KEM-768 key generation | 9,774.244 | 12,254.085 | 1.2540x | 1.2490–1.2557 |
+| ML-KEM-768 encapsulation | 4,486.583 | 5,635.634 | 1.2545x | 1.2521–1.2579 |
+| ML-KEM-768 decapsulation | 7,777.706 | 8,658.050 | 1.1128x | 1.1089–1.1150 |
+| ML-KEM-1024 key generation | 14,216.063 | 19,141.245 | 1.3450x | 1.3426–1.3470 |
+| ML-KEM-1024 encapsulation | 5,772.702 | 7,561.406 | 1.3109x | 1.3074–1.3135 |
+| ML-KEM-1024 decapsulation | 10,429.674 | 11,746.667 | 1.1267x | 1.1248–1.1305 |
+
+The raw artifact is
+[`Results/20260801T115837Z-native-mlkem.json`](Results/20260801T115837Z-native-mlkem.json)
+with SHA-256
+`7c6b21acdb079a55779d64b21cdf03accac1d8df75c18d67b3383f41cba83ec8`.
+It records the clean source commits and archives, tool and worker hashes,
+compile contracts, code-generation gates, interoperability transaction,
+quiescence observations, calibration, convergence, all 30 samples, and the
+10,000-resample paired confidence intervals.

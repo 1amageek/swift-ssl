@@ -75,7 +75,7 @@ Correctness tests live under `Tests/`. Long-running differential, interoperabili
 | SHA3-256/512 and SHAKE128/256 | FIPS 202 empty-message and incremental SHA3 vectors; SHAKE output vectors; strict output-length validation; scoped incremental contexts | Independent differential corpus, long-message boundary corpus, target execution, sanitizer/code-generation review, and release benchmark |
 | X25519 | RFC 7748 Alice public-key vector, independent shared-secret vector, four deterministic field vectors, all-zero peer rejection, invalid-length failures, Native façade, WASI, and Embedded WASI target validation | Independent differential corpus, malformed-coordinate corpus, sanitizer/code-generation review, measured allocation/copy counts, and release benchmark |
 | Ed25519 | Owned noncopyable private seed, owned validated public key, separate signing/verification protocol capabilities, fixed-iteration scalar reduction, and mask-selected secret scalar multiplication | RFC 8032 signing/verification vector, modified-message and noncanonical-scalar failures, Native/WASI/Embedded façade verification, Native TLS/Core tests, dedicated Native/WASI/Embedded QUIC/TLS handshakes, focused ASan covering 11 Ed25519/Core/QUIC tests, and manual optimized ARM64 control-flow inspection | Broader RFC 8032 corpus, automated constant-time code-generation gate, TSan/UBSan, allocation/copy measurement, interoperability, and release benchmark |
-| ML-KEM-768/1024 | FIPS 203 key generation, encapsulation, decapsulation, implicit rejection, noncopyable erased private/shared-secret owners, expanded-key reuse, caller-owned output, SIMD NTT, and two-stream Keccak | NIST ACVP/TR1 fixtures, arithmetic differential and boundary tests, typed no-write failure tests, 24-test focused ASan, Native/WASI/Embedded WASI façade execution, six secure-wipe code-generation configurations, and bidirectional pinned-BoringSSL interoperability | Formal committed timing artifact, measured allocation/copy counts, broader external corpus, automated constant-time review, TSan/UBSan availability statement, and security review |
+| ML-KEM-768/1024 | FIPS 203 key generation, encapsulation, decapsulation, implicit rejection, noncopyable erased private/shared-secret owners, expanded-key reuse, caller-owned output, SIMD NTT, and two-stream Keccak | NIST ACVP/TR1 fixtures, arithmetic differential and boundary tests, typed no-write failure tests, 24-test focused ASan, Native/WASI/Embedded WASI façade execution, six secure-wipe code-generation configurations, bidirectional pinned-BoringSSL interoperability, and a committed formal timing artifact whose six workloads pass the `1.10x` confidence-bound gate | Measured allocation/copy counts, broader external corpus, automated constant-time review, TSan/UBSan availability statement, and security review |
 | ECDSA P-256/P-384/P-521 verification | Verification-only fixed-width raw-signature arithmetic, typed owned public keys, strict DER signature decoding including P-521 long-form lengths, SHA-256/384/512 certificate verification, curve SPKI validation, and mutation failures | Independent raw-signature vectors; real X.509 certificates signed with ECDSA-with-SHA256, SHA384, and SHA512; malformed/modified signature failures; dedicated Native/WASI/Embedded Release validation of P-256/P-384/P-521 success and mutation routes | Broader independent differential corpus, measured allocation/copy counts, sanitizer coverage, formal benchmark, and security review; public-input verification has no secret-dependent timing contract |
 | RSA-PSS verification | Verification-only SHA-256/384/512 EMSA-PSS, canonical 2048–4096-bit public keys, bounded Montgomery public exponentiation, strict X.509 PSS parameters, and explicit failure contracts | Independent SHA-256/384/512 signatures including a 4096-bit SHA-512 fixture, 512 Montgomery differential cases, key/length/salt boundaries, signature mutations, real X.509 success/failure, focused ASan including the maximum modulus, and Native/WASI/Embedded WASI runtime validation | Broader external corpus, measured allocation/copy counts, formal benchmark, and security review |
 | X.509 path validation | Bounded unordered path search, issuer/subject DER-name matching, validity-window checks, trust-anchor boundary, BasicConstraints CA/pathLen, optional keyCertSign, and SAN-only hostname verification | Real P-256 leaf/root chain, SAN match, modified leaf signature failure, non-CA issuer rejection, hostname mismatch rejection, and bounded path behavior | RFC 5280 policy processing, name constraints, CRL/OCSP, CT, delegated credentials, and broader interoperability |
@@ -121,6 +121,32 @@ waived or represented as complete.
 The prior high-load invalidation remains at
 `.test-artifacts/benchmark/20260731T113521Z-native-sha256.json` and is not part
 of these ratios.
+
+### ML-KEM formal benchmark
+
+| Benchmark | Swift median ns/op | BoringSSL median ns/op | Ratio | 95% bootstrap CI |
+|---|---:|---:|---:|---:|
+| ML-KEM-768 key generation | 9,774.244 | 12,254.085 | 1.2540x | 1.2490–1.2557 |
+| ML-KEM-768 encapsulation | 4,486.583 | 5,635.634 | 1.2545x | 1.2521–1.2579 |
+| ML-KEM-768 decapsulation | 7,777.706 | 8,658.050 | 1.1128x | 1.1089–1.1150 |
+| ML-KEM-1024 key generation | 14,216.063 | 19,141.245 | 1.3450x | 1.3426–1.3470 |
+| ML-KEM-1024 encapsulation | 5,772.702 | 7,561.406 | 1.3109x | 1.3074–1.3135 |
+| ML-KEM-1024 decapsulation | 10,429.674 | 11,746.667 | 1.1267x | 1.1248–1.1305 |
+
+Formal ML-KEM status (2026-08-01 JST): all six workloads passed because every
+paired 95% bootstrap confidence-interval lower bound exceeded `1.10x`. The run
+used 30 balanced randomized pairs per workload, 10,000 bootstrap resamples,
+the pinned Swift compiler and SDK, and BoringSSL commit
+`ae49d2681a56ca7b8609f6039a770fda2a8eb550`. Before timing, the runner verified
+bidirectional ciphertext/shared-secret interoperability, identical implicit
+rejection, matching arm64/macOS/SDK load commands, BoringSSL assembly use, and
+the expected Swift ARM SHA3 and SIMD NTT code generation. The committed raw
+artifact is
+[`Benchmarks/MLKEM/Results/20260801T115837Z-native-mlkem.json`](Benchmarks/MLKEM/Results/20260801T115837Z-native-mlkem.json)
+(SHA-256
+`7c6b21acdb079a55779d64b21cdf03accac1d8df75c18d67b3383f41cba83ec8`).
+This timing artifact does not claim allocation or logical-copy counts; those
+remain a separate release gate.
 
 See [docs/VERIFICATION.md](docs/VERIFICATION.md) for gates and measurement rules.
 
