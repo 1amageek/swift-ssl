@@ -84,6 +84,10 @@ VALIDATION_PATTERNS = (
     re.compile(r"^CIPHERTEXT,([0-9a-f]+)$"),
     re.compile(r"^PLAINTEXT,([0-9a-f]+)$"),
 )
+REQUIRED_SWIFT_SYMBOLS = (
+    "HPKEX25519",
+    "X25519FieldElement",
+)
 
 
 def parse_positive_integer(value: str) -> int:
@@ -242,13 +246,12 @@ def inspect_worker_codegen(
         timeout_seconds=120,
         environment=environment,
     ).stdout
-    required_swift_symbols = (
-        "X25519FieldElement",
-        "HPKEX25519",
-        "GHASHARM64Kernel",
-        "HPKESHA256LabeledKDF",
-    )
-    missing_swift = [symbol for symbol in required_swift_symbols if symbol not in swift_symbols]
+    # Public route and field-arithmetic symbols remain observable in Release.
+    # Private AES-GCM and labeled-KDF helpers may be fully inlined and stripped,
+    # so their execution evidence is the required instruction sequence below.
+    missing_swift = [
+        symbol for symbol in REQUIRED_SWIFT_SYMBOLS if symbol not in swift_symbols
+    ]
     if missing_swift:
         raise BenchmarkError(f"Swift HPKE symbols are missing: {missing_swift}")
     swift_disassembly = support.run_command(

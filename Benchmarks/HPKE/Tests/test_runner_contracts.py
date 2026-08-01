@@ -50,6 +50,12 @@ class RunnerContractTests(unittest.TestCase):
             ],
         )
 
+    def test_codegen_symbol_gate_uses_release_stable_routes(self) -> None:
+        self.assertEqual(
+            runner.REQUIRED_SWIFT_SYMBOLS,
+            ("HPKEX25519", "X25519FieldElement"),
+        )
+
     def test_balanced_orders_are_equal_and_reproducible(self) -> None:
         first = runner.balanced_orders(30, random.Random(42))
         second = runner.balanced_orders(30, random.Random(42))
