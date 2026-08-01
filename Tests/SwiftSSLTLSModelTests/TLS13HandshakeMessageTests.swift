@@ -1,6 +1,7 @@
 import SwiftSSLCore
 import SwiftSSLCrypto
 import SwiftSSLTLS
+import SwiftSSLX509
 import XCTest
 
 final class TLS13HandshakeMessageTests: XCTestCase {
@@ -238,6 +239,50 @@ final class TLS13HandshakeMessageTests: XCTestCase {
             signatureScheme: .ecdsaP256SHA256,
             verificationInstant: verificationInstant
         )
+    }
+
+    func testTLS13SigningKeyBuildsFromRFC5915ECPrivateKey() throws {
+        var der: ContiguousArray<UInt8> = [
+            0x30, 0x75,
+            0x02, 0x01, 0x01,
+            0x04, 0x20
+        ]
+        der.append(contentsOf: Array(repeating: UInt8(0), count: 31) + [1])
+        der.append(contentsOf: [
+            0xA0, 0x0A,
+            0x06, 0x08, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07,
+            0x81, 0x42, 0x00
+        ])
+        der.append(contentsOf: bytes(
+            "046B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296" +
+            "4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5"
+        ))
+
+        let parsed = try ECPrivateKey(der: der.span, expectedCurve: .prime256v1)
+        let signingKey = try TLS13SigningKey.fromECPrivateKey(parsed)
+        XCTAssertEqual(signingKey.signatureScheme, .ecdsaP256SHA256)
+        XCTAssertEqual(
+            try signingKey.publicKeyBytes(),
+            bytes(
+                "046B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296" +
+                "4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5"
+            )
+        )
+
+        var mismatchedDER = der
+        mismatchedDER[mismatchedDER.count - 1] ^= 1
+        do {
+            let mismatched = try ECPrivateKey(
+                der: mismatchedDER.span,
+                expectedCurve: .prime256v1
+            )
+            let unused = try TLS13SigningKey.fromECPrivateKey(mismatched)
+            _ = consume unused
+            _ = consume mismatched
+            XCTFail("TLS accepted an EC private key with a mismatched public field")
+        } catch {
+            XCTAssertEqual(error as? CryptoInputError, .invalidPeerKey)
+        }
     }
 
     func testP384ECDSAClientServerHandshakeCompletes() throws {

@@ -107,7 +107,7 @@ var targets: [Target] = [
   ),
   .testTarget(
     name: "SwiftSSLTLSModelTests",
-    dependencies: ["SwiftSSLCore", "SwiftSSLTLS", "SwiftSSLQUIC"],
+    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLX509", "SwiftSSLTLS", "SwiftSSLQUIC"],
     swiftSettings: ownershipSettings
   ),
 ]

@@ -130,7 +130,7 @@ public struct PrivateKeyInfo: Sendable, Hashable {
         privateKeyRange.count
     }
 
-    public borrowing func withPrivateKeyBytes<Result, Failure: Error>(
+    public borrowing func withPrivateKeyBytes<Result: ~Copyable, Failure: Error>(
         _ body: (Span<UInt8>) throws(Failure) -> Result
     ) throws(Failure) -> Result {
         let bytes: Span<UInt8>
