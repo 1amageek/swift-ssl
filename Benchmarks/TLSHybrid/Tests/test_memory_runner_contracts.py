@@ -57,6 +57,7 @@ class MemoryRunnerContractTests(unittest.TestCase):
         self.assertIn("support.create_snapshot(ROOT, snapshot)", text)
         self.assertIn("source checkout changed during formal measurement", text)
         self.assertIn("os.replace(temporary_output, output)", text)
+        self.assertIn("observations={counter_evidence!r}", text)
         self.assertIn('"--product",\n            "swift-ssl-tls-hybrid-benchmark"', text)
 
 

@@ -253,7 +253,20 @@ def main() -> int:
                             "checksum": checksum["value"],
                         }
                     )
-            derived = support.derive_linear_counters(observations)
+            try:
+                derived = support.derive_linear_counters(observations)
+            except MeasurementError as error:
+                counter_evidence = [
+                    {
+                        "iterations": observation["iterations"],
+                        "repetition": observation["repetition"],
+                        "counters": observation["counters"],
+                    }
+                    for observation in observations
+                ]
+                raise MeasurementError(
+                    f"{workload}: {error}; observations={counter_evidence!r}"
+                ) from error
             failures = validate_budget(workload, derived)
             passed = not failures
             all_passed = all_passed and passed
