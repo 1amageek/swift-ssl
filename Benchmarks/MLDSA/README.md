@@ -1,8 +1,8 @@
-# ML-DSA-65 comparison benchmark
+# FIPS 204 ML-DSA comparison benchmark
 
 This manually invoked Native benchmark compares the public SwiftSSL
-ML-DSA-65 key-generation, randomized signing, and verification paths with the
-same operations in pinned official BoringSSL commit
+ML-DSA-44, ML-DSA-65, and ML-DSA-87 key-generation, randomized signing, and
+verification paths with the same operations in pinned official BoringSSL commit
 `ae49d2681a56ca7b8609f6039a770fda2a8eb550`.
 
 The benchmark is enabled only when `SWIFT_SSL_ENABLE_BENCHMARKS=1`. It is not a
@@ -17,11 +17,12 @@ flowchart LR
     BoringSSL --> Evidence
 ```
 
-Key generation includes deterministic injected entropy in both timed paths.
-Signing and verification reuse equivalent pre-expanded keys and use the same
-1,024-byte message and 17-byte context. Signing uses a deterministic 32-byte
-randomizer for repeatable rejection-sampling work. Checksums consume operation
-output so the compiler cannot remove the work.
+Timed key generation and signing include each implementation's public entropy
+acquisition path. Signing and verification reuse equivalent pre-expanded keys
+and use the same 1,024-byte message and 17-byte context. Deterministic seeds and
+randomizers are used only by the untimed bidirectional interoperability
+transaction and verification fixture. Checksums consume operation output so
+the compiler cannot remove the work.
 
 ## Formal timing runner
 
@@ -64,8 +65,8 @@ percent of their median. The runner requires AC power, normal power mode, no
 thermal/performance warning, no competing compiler/linker build, and bounded
 load before convergence and every measured pair.
 
-Each of key generation, signing, and verification independently passes only
-when:
+Each parameter set's key generation, signing, and verification independently
+passes only when:
 
 ```text
 lower95CI(median(BoringSSL elapsed / SwiftSSL elapsed)) >= 1.10
@@ -91,9 +92,9 @@ inside every operation.
 The public message, context, signature, and public-key encodings remain
 borrowed. In-place signing writes directly to caller storage. Key generation
 and verification have zero per-operation dynamic bulk-copy bytes. The fixed
-signing fixture records 40,960 bytes: eight algorithm-required 5,120-byte mask
-forks across deterministic rejection-sampling attempts, not API-boundary or
-COW copies.
+signing fixtures record parameter-specific algorithm-required mask forks
+across deterministic rejection-sampling attempts, not API-boundary or COW
+copies.
 
 Dynamic interposition cannot observe compiler-inlined scalar copies. Memory
 evidence is therefore combined with source ownership review, caller-output
@@ -102,35 +103,57 @@ tests, and failure-preservation tests.
 ## Result status
 
 The formal Native memory artifact
-[`20260801T174946Z-native-mldsa65-memory.json`](Results/20260801T174946Z-native-mldsa65-memory.json)
+[`20260801T193538Z-native-mldsa-memory.json`](Results/20260801T193538Z-native-mldsa-memory.json)
 was measured from clean source commit
-`392cd9eb021a88f234de88a0365f4f60ed9257e1`. Its SHA-256 is
-`4fc194e98febebecc97b782e10a5511aec873c9f3e83d3e3a4dea70905358c71`.
+`9344ef40c60fb783839c5c7ccb90893e11874c64`. Its SHA-256 is
+`de46a497d115c1ab1805100f8167362f021b1f9acf258ce0d766eb1d144b1c4a`.
 
-| Operation | Allocations/op | Allocated bytes/op | Dynamic bulk-copy bytes/op | Gate |
+| Parameter set and operation | Allocations/op | Allocated bytes/op | Dynamic bulk-copy bytes/op | Gate |
 |---|---:|---:|---:|---|
-| Key generation | 25 | 71,448 | 0 | Pass |
-| Signing | 62 | 59,248 | 40,960 | Pass |
-| Verification | 14 | 31,712 | 0 | Pass |
+| ML-DSA-44 key generation | 23 | 44,928 | 0 | Pass |
+| ML-DSA-44 signing | 30 | 38,800 | 16,384 | Pass |
+| ML-DSA-44 verification | 14 | 23,488 | 0 | Pass |
+| ML-DSA-65 key generation | 25 | 71,536 | 0 | Pass |
+| ML-DSA-65 signing | 62 | 59,248 | 40,960 | Pass |
+| ML-DSA-65 verification | 14 | 31,712 | 0 | Pass |
+| ML-DSA-87 key generation | 25 | 111,088 | 0 | Pass |
+| ML-DSA-87 signing | 48 | 71,120 | 43,008 | Pass |
+| ML-DSA-87 verification | 14 | 42,240 | 0 | Pass |
 
 All counters were deterministic and exactly linear at 1, 10, and 100
 operations across three fresh processes. Allocation and free slopes balance,
 and no per-operation `calloc` or `realloc` was observed.
 
+The preceding formal artifact
+[`20260801T193412Z-native-mldsa-memory.json`](Results/20260801T193412Z-native-mldsa-memory.json)
+(SHA-256
+`853291d7a32aeef4d0b14c86b9ed39e759e6240daea2b8525fcc2934fa651622`)
+is retained as failed audit evidence. Its measurements were linear and
+balanced, but it exposed two incorrectly transcribed verification byte
+budgets: ML-DSA-44 differed by 8 bytes and ML-DSA-87 by 40 bytes. The corrected
+gate changed only those descriptive budget literals before the passing rerun.
+
 The formal Native timing artifact
-[`20260801T175050Z-native-mldsa.json`](Results/20260801T175050Z-native-mldsa.json)
+[`20260801T193601Z-native-mldsa.json`](Results/20260801T193601Z-native-mldsa.json)
 was measured from clean SwiftSSL source commit
-`76c2bce2b3bcd3933b5efe91a50e3a98b8baa16b` and clean BoringSSL commit
+`06a2e5eb12c2d6159945e5f48ffb06159e747ce8` and clean BoringSSL commit
 `ae49d2681a56ca7b8609f6039a770fda2a8eb550`. Its SHA-256 is
-`550ea6676dcf6e1e102e6a3893684dd2ebeaf51e2ee59d49e037ef34abff031c`.
+`50acd6db3b8ff88f85001e6485f765670c1a8b58e08b8ee73df61d17ed5f261b`.
 
-| Operation | Swift median ns/op | BoringSSL median ns/op | Median speedup | 95% bootstrap CI | Gate |
+| Parameter set and operation | Swift median ns/op | BoringSSL median ns/op | Median speedup | 95% bootstrap CI | Gate |
 |---|---:|---:|---:|---:|---|
-| Key generation | 43,970.823 | 52,303.088 | 1.1885x | 1.1875–1.1903x | Pass |
-| Signing | 141,255.908 | 162,381.079 | 1.1547x | 1.1456–1.1637x | Pass |
-| Verification | 18,650.249 | 36,402.081 | 1.9492x | 1.9429–1.9574x | Pass |
+| ML-DSA-44 key generation | 22,327.662 | 26,261.101 | 1.1757x | 1.1726–1.1796x | Pass |
+| ML-DSA-44 signing | 80,587.003 | 109,498.017 | 1.3565x | 1.3485–1.3676x | Pass |
+| ML-DSA-44 verification | 12,792.972 | 24,525.670 | 1.9170x | 1.9129–1.9213x | Pass |
+| ML-DSA-65 key generation | 38,098.185 | 52,777.962 | 1.3855x | 1.3837–1.3867x | Pass |
+| ML-DSA-65 signing | 125,748.938 | 169,388.929 | 1.3475x | 1.3418–1.3498x | Pass |
+| ML-DSA-65 verification | 15,819.651 | 37,162.846 | 2.3523x | 2.3289–2.3604x | Pass |
+| ML-DSA-87 key generation | 58,567.892 | 67,511.403 | 1.1534x | 1.1517–1.1547x | Pass |
+| ML-DSA-87 signing | 133,549.000 | 196,773.756 | 1.4788x | 1.4646–1.4866x | Pass |
+| ML-DSA-87 verification | 21,459.804 | 59,675.048 | 2.7822x | 2.7742–2.7894x | Pass |
 
-All three lower confidence bounds exceed the `1.10x` target. The artifact also
-records successful bidirectional signature interoperability, mutated-signature
-rejection by both implementations, BoringSSL assembly use, 434 ML-DSA SIMD
-Montgomery instructions, and ARM SHA3 instruction counts in the Swift worker.
+All nine lower confidence bounds exceed the `1.10x` target. The artifact also
+records successful bidirectional signature interoperability and
+mutated-signature rejection for every parameter set, BoringSSL assembly use,
+530 ML-DSA SIMD Montgomery instructions, and ARM SHA3 instruction counts in
+the Swift worker.

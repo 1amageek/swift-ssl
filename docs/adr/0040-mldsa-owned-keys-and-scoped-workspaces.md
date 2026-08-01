@@ -125,6 +125,27 @@ ownership, or lifetime contracts.
 | Platform | One algorithm source across all targets | Branch only for real platform capability differences | Aligned; no ML-DSA semantic target branch |
 | Tests | Production API, official vectors, negative paths, and interop | Evidence ladder before completion | Aligned; require target execution, sanitizer, memory, and formal timing evidence |
 
+## Accepted evidence
+
+The formal Native timing artifact is
+`Benchmarks/MLDSA/Results/20260801T193601Z-native-mldsa.json` (SHA-256
+`50acd6db3b8ff88f85001e6485f765670c1a8b58e08b8ee73df61d17ed5f261b`).
+It measured clean SwiftSSL commit
+`06a2e5eb12c2d6159945e5f48ffb06159e747ce8` against clean official BoringSSL
+commit `ae49d2681a56ca7b8609f6039a770fda2a8eb550`. All nine 30-pair workloads
+passed the `1.10x` lower-95%-confidence-bound gate; the narrowest result was
+ML-DSA-87 key generation at `1.1534x` with a `1.1517x...1.1547x` interval.
+
+The formal Native memory artifact is
+`Benchmarks/MLDSA/Results/20260801T193538Z-native-mldsa-memory.json` (SHA-256
+`de46a497d115c1ab1805100f8167362f021b1f9acf258ce0d766eb1d144b1c4a`).
+Every allocation and copy counter was exactly linear at 1, 10, and 100
+operations across three fresh processes; allocation and free slopes balanced.
+The failed predecessor artifact
+`Benchmarks/MLDSA/Results/20260801T193412Z-native-mldsa-memory.json` is retained:
+it identified 8-byte and 40-byte transcription errors in the ML-DSA-44 and
+ML-DSA-87 verification budgets before the clean passing rerun.
+
 ## Consequences
 
 - Callers can choose an owned convenience signature or exact-size in-place

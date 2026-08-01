@@ -35,7 +35,7 @@ The implementation target is deliberately smaller than BoringSSL's historical AP
 |---|---|---|
 | Core | Owned and borrowed bytes, strict cursors/builders, secret ownership, constant-time utilities, typed errors | Foundation implemented; verification incomplete |
 | Symmetric crypto | AES-GCM, ChaCha20-Poly1305, AES block operations needed by GCM, SHA-2/SHA-3/SHAKE, HMAC, HKDF | AES-128/192/256-GCM, ChaCha20-Poly1305, SHA-256/384/512, SHA3-256/512, SHAKE128/256, HMAC-SHA-256/384/512, and HKDF-SHA-256/384/512 are implemented with vectors and typed failures |
-| Public-key crypto | X25519 key agreement, Ed25519 signing, verification-only NIST ECDSA and RSA-PSS, ML-KEM, ML-DSA, approved hybrid groups | RFC 7748 X25519, RFC 8032 Ed25519, FIPS 203 ML-KEM-768/1024, FIPS 204 ML-DSA-65, and draft-05 X25519MLKEM768 own secret operations; ECDSA P-256/P-384/P-521 and RSA-PSS SHA-256/384/512 are verification-only certificate capabilities; ML-DSA-44/87 and additional approved hybrids remain required |
+| Public-key crypto | X25519 key agreement, Ed25519 signing, verification-only NIST ECDSA and RSA-PSS, ML-KEM, ML-DSA, approved hybrid groups | RFC 7748 X25519, RFC 8032 Ed25519, FIPS 203 ML-KEM-768/1024, FIPS 204 ML-DSA-44/65/87, and draft-05 X25519MLKEM768 own secret operations; ECDSA P-256/P-384/P-521 and RSA-PSS SHA-256/384/512 are verification-only certificate capabilities; additional approved hybrids remain required |
 | Formats | Strict DER, PEM, SPKI, PKCS #8, encrypted PKCS #8, PKCS #12, certificate containers | Strict DER primitives/writer, strict RFC 7468 PEM, SPKI, unencrypted PKCS #8, and RFC 5915 ECPrivateKey decoding with curve/key consistency checks are implemented; encrypted/container formats planned |
 | PKI | X.509 parsing, path construction, policy processing, hostname verification, revocation inputs, trust-provider boundary | Strict X.509 validity, Ed25519, ECDSA P-256/P-384/P-521, and RSA-PSS-with-SHA2 certificate-signature verification, bounded trust-anchor path construction with BasicConstraints/keyCertSign checks, v3 extension parsing, and SAN-only DNS identity matching are implemented; policy, revocation, and trust-store acquisition remain required |
 | TLS | TLS 1.3, resumption, 0-RTT policy, client authentication, key update, ECH, certificate compression, delegated credentials, raw public keys | One record-independent client/server state-machine core owns transcript, Ed25519 authentication, role-specific X25519 or draft-05 X25519MLKEM768 key exchange, key schedule, Finished, resumption, and traffic-secret updates for both Stream TLS and QUIC; the Stream adapter owns record framing/protection and all three TLS 1.3 AEAD suites, KeyUpdate, and encrypted NewSessionTicket transport; other listed protocol features remain required |
@@ -43,7 +43,7 @@ The implementation target is deliberately smaller than BoringSSL's historical AP
 | QUIC | RFC 9001 handshake adapter and traffic-secret events; QUIC packet protection remains owned by the QUIC stack | Ordered action/secret output, RFC 9001 v1 Initial secret derivation, bounded per-encryption-level CRYPTO stream reassembly, zero-copy TLS handshake-message framing, record-independent TLS state transitions, role-correct read/write handshake and 1-RTT secret events, full-handshake completion, and PSK resumption are implemented; QUIC transport parameters, ALPN policy, packet-stack integration, fuzzing, and external interoperability remain required |
 | Additional modern constructions | HPKE and narrowly scoped protocol constructions required by the modern profile | RFC 9180 X25519 DHKEM Base/PSK/Auth/AuthPSK with HKDF-SHA256/384/512, AES-GCM, and ChaCha20-Poly1305 is implemented and vector-tested; P-256 DHKEM, ECH, and hybrid profiles remain required |
 | Platform composition | Entropy and clock capabilities supplied explicitly per operation | HMAC-DRBG consumes the injected `EntropySource`; concrete platform adapters are not yet provided |
-| Public façade | Curated application-facing API without blanket lower-module exports | Explicit AES-GCM, ChaCha20-Poly1305, SHA-2, SHA-3/SHAKE, HMAC, HKDF, X25519, Ed25519, ML-KEM-768/1024, and verification-only P-256 ECDSA adapters; P-384/P-521 certificate verification remains in the lower PKI/crypto modules |
+| Public façade | Curated application-facing API without blanket lower-module exports | Explicit AES-GCM, ChaCha20-Poly1305, SHA-2, SHA-3/SHAKE, HMAC, HKDF, X25519, Ed25519, ML-KEM-768/1024, ML-DSA-44/65/87, and verification-only P-256 ECDSA adapters; P-384/P-521 certificate verification remains in the lower PKI/crypto modules |
 
 The following are intentionally absent: SSL, TLS 1.0-1.2, DTLS 1.0-1.2, renegotiation, record compression, CBC cipher suites, RC4, DES/3DES, Blowfish, CAST, MD4, MD5, SHA-1 handshake signatures, DSA, legacy finite-field DH, the C API/ABI, `BIO`, `ENGINE`, `ex_data`, and the thread-local error queue.
 
@@ -76,7 +76,7 @@ Correctness tests live under `Tests/`. Long-running differential, interoperabili
 | X25519 | RFC 7748 Alice public-key vector, independent shared-secret vector, four deterministic field vectors, all-zero peer rejection, invalid-length failures, Native façade, WASI, and Embedded WASI target validation | Independent differential corpus, malformed-coordinate corpus, sanitizer/code-generation review, measured allocation/copy counts, and release benchmark |
 | Ed25519 | Owned noncopyable private seed, owned validated public key, separate signing/verification protocol capabilities, fixed-iteration scalar reduction, and mask-selected secret scalar multiplication | RFC 8032 signing/verification vector, modified-message and noncanonical-scalar failures, Native/WASI/Embedded façade verification, Native TLS/Core tests, dedicated Native/WASI/Embedded QUIC/TLS handshakes, focused ASan covering 11 Ed25519/Core/QUIC tests, and manual optimized ARM64 control-flow inspection | Broader RFC 8032 corpus, automated constant-time code-generation gate, TSan/UBSan, allocation/copy measurement, interoperability, and release benchmark |
 | ML-KEM-768/1024 | FIPS 203 key generation, encapsulation, decapsulation, implicit rejection, noncopyable erased private/shared-secret owners, expanded-key reuse, caller-owned output, SIMD NTT, and two-stream Keccak | NIST ACVP/TR1 fixtures, arithmetic differential and boundary tests, typed no-write failure tests, 24-test focused ASan, Native/WASI/Embedded WASI façade execution, six secure-wipe code-generation configurations, bidirectional pinned-BoringSSL interoperability, a committed formal timing artifact whose six workloads pass the `1.10x` confidence-bound gate, and a committed formal allocation/dynamic-copy artifact | Broader external corpus, automated constant-time review, TSan/UBSan availability statement, and security review |
-| ML-DSA-65 | FIPS 204 key generation, randomized context-bound signing, verification, noncopyable erased private owner, synchronized immutable expanded-public cache, caller-owned signature output, scoped raw signing workspace, SIMD NTT, and two-stream Keccak | NIST ACVP key-generation fixture, Wycheproof seeded-signature fixture, deterministic and randomized signing tests, typed no-write entropy failure, malformed-key rejection, Native/WASI/Embedded WASI façade execution, ASan-instrumented XCTest and non-XCTest façade execution, bidirectional pinned-BoringSSL interoperability, and committed formal timing plus allocation/dynamic-copy artifacts | Broader external corpus, automated constant-time review, TSan/UBSan availability statement, ML-DSA-44/87, and security review |
+| ML-DSA-44/65/87 | FIPS 204 key generation, randomized context-bound signing, verification, distinct parameter-specific public key types, noncopyable erased private owners, synchronized immutable expanded-public caches, caller-owned signature output, scoped raw signing workspaces, SIMD NTT, and two-stream Keccak | NIST ACVP key-generation fixtures and Wycheproof seeded-signature fixtures for all three parameter sets; deterministic/randomized signing, typed no-write entropy failure, and malformed-key rejection; Native/WASI/Embedded WASI façade execution; ASan façade execution; bidirectional pinned-BoringSSL interoperability and mutation rejection; committed formal timing and allocation/dynamic-copy artifacts covering all nine operations | Broader external corpus, automated constant-time review, TSan/UBSan availability statement, and security review |
 | TLS X25519MLKEM768 | `draft-ietf-tls-ecdhe-mlkem-05` group `0x11EC`; role-specific one-shot protocols; 1,216-byte client share, 1,120-byte server share, and 64-byte combined secret; borrowed received shares and direct final-owner output | Native key-exchange/Core/Stream/QUIC success and negative tests, X25519 no-write low-order failure, dedicated Native/WASI/Embedded runtime execution, Hybrid ASan execution, committed formal bidirectional pinned-BoringSSL interoperability and `1.10x` timing-gate pass, and a committed formal allocation/dynamic-copy artifact | Second independent peer, automated constant-time review, broader corpus, and security review |
 | ECDSA P-256/P-384/P-521 verification | Verification-only fixed-width raw-signature arithmetic, typed owned public keys, strict DER signature decoding including P-521 long-form lengths, SHA-256/384/512 certificate verification, curve SPKI validation, and mutation failures | Independent raw-signature vectors; real X.509 certificates signed with ECDSA-with-SHA256, SHA384, and SHA512; malformed/modified signature failures; dedicated Native/WASI/Embedded Release validation of P-256/P-384/P-521 success and mutation routes | Broader independent differential corpus, measured allocation/copy counts, sanitizer coverage, formal benchmark, and security review; public-input verification has no secret-dependent timing contract |
 | RSA-PSS verification | Verification-only SHA-256/384/512 EMSA-PSS, canonical 2048–4096-bit public keys, bounded Montgomery public exponentiation, strict X.509 PSS parameters, and explicit failure contracts | Independent SHA-256/384/512 signatures including a 4096-bit SHA-512 fixture, 512 Montgomery differential cases, key/length/salt boundaries, signature mutations, real X.509 success/failure, focused ASan including the maximum modulus, and Native/WASI/Embedded WASI runtime validation | Broader external corpus, measured allocation/copy counts, formal benchmark, and security review |
@@ -198,40 +198,54 @@ The committed raw artifact is
 (SHA-256
 `36658642dc4c2bc791288b55fd089f18ac6772cb4b50c0f1dca057a58ec339c5`).
 
-### ML-DSA-65 formal benchmark and memory evidence
+### FIPS 204 ML-DSA formal benchmark and memory evidence
 
 | Benchmark | Swift median ns/op | BoringSSL median ns/op | Ratio | 95% bootstrap CI |
 |---|---:|---:|---:|---:|
-| ML-DSA-65 key generation | 43,970.823 | 52,303.088 | 1.1885x | 1.1875–1.1903 |
-| ML-DSA-65 signing | 141,255.908 | 162,381.079 | 1.1547x | 1.1456–1.1637 |
-| ML-DSA-65 verification | 18,650.249 | 36,402.081 | 1.9492x | 1.9429–1.9574 |
+| ML-DSA-44 key generation | 22,327.662 | 26,261.101 | 1.1757x | 1.1726–1.1796 |
+| ML-DSA-44 signing | 80,587.003 | 109,498.017 | 1.3565x | 1.3485–1.3676 |
+| ML-DSA-44 verification | 12,792.972 | 24,525.670 | 1.9170x | 1.9129–1.9213 |
+| ML-DSA-65 key generation | 38,098.185 | 52,777.962 | 1.3855x | 1.3837–1.3867 |
+| ML-DSA-65 signing | 125,748.938 | 169,388.929 | 1.3475x | 1.3418–1.3498 |
+| ML-DSA-65 verification | 15,819.651 | 37,162.846 | 2.3523x | 2.3289–2.3604 |
+| ML-DSA-87 key generation | 58,567.892 | 67,511.403 | 1.1534x | 1.1517–1.1547 |
+| ML-DSA-87 signing | 133,549.000 | 196,773.756 | 1.4788x | 1.4646–1.4866 |
+| ML-DSA-87 verification | 21,459.804 | 59,675.048 | 2.7822x | 2.7742–2.7894 |
 
-All three formal timing workloads passed the `1.10x` lower-confidence-bound
-gate. The run used 30 balanced randomized pairs, 10,000 bootstrap resamples,
-clean SwiftSSL commit `76c2bce2b3bcd3933b5efe91a50e3a98b8baa16b`, and clean
-BoringSSL commit `ae49d2681a56ca7b8609f6039a770fda2a8eb550`. It also proved
-bidirectional signature interoperability, mutation rejection, BoringSSL
-assembly use, and the expected Swift SIMD NTT and ARM SHA3 code generation.
+All nine formal timing workloads passed the `1.10x` lower-confidence-bound
+gate. The run used 30 balanced randomized pairs per workload, 10,000 bootstrap
+resamples, clean SwiftSSL commit
+`06a2e5eb12c2d6159945e5f48ffb06159e747ce8`, and clean BoringSSL commit
+`ae49d2681a56ca7b8609f6039a770fda2a8eb550`. It also proved bidirectional
+signature interoperability and mutation rejection for all three parameter
+sets, BoringSSL assembly use, 530 Swift ML-DSA SIMD Montgomery instructions,
+and ARM SHA3 instruction generation.
 
 | Path | Allocation/free calls per operation | Requested bytes | Dynamic bulk-copy bytes |
 |---|---:|---:|---:|
-| ML-DSA-65 key generation | 25 / 25 | 71,448 | 0 |
+| ML-DSA-44 key generation | 23 / 23 | 44,928 | 0 |
+| ML-DSA-44 in-place signing | 30 / 30 | 38,800 | 16,384 |
+| ML-DSA-44 verification | 14 / 14 | 23,488 | 0 |
+| ML-DSA-65 key generation | 25 / 25 | 71,536 | 0 |
 | ML-DSA-65 in-place signing | 62 / 62 | 59,248 | 40,960 |
 | ML-DSA-65 verification | 14 / 14 | 31,712 | 0 |
+| ML-DSA-87 key generation | 25 / 25 | 111,088 | 0 |
+| ML-DSA-87 in-place signing | 48 / 48 | 71,120 | 43,008 |
+| ML-DSA-87 verification | 14 / 14 | 42,240 | 0 |
 
-The signing copy is eight algorithm-required 5,120-byte mask forks for the
-fixed rejection-sampling fixture; it is not caller-input, caller-output, or COW
-materialization. Counts are exact linear slopes over 1, 10, and 100 operations
-in three fresh processes each.
+The signing copies are parameter-specific algorithm-required mask forks for
+the fixed rejection-sampling fixtures; they are not caller-input,
+caller-output, or COW materialization. Counts are exact linear slopes over 1,
+10, and 100 operations in three fresh processes each.
 
 The committed timing artifact is
-[`Benchmarks/MLDSA/Results/20260801T175050Z-native-mldsa.json`](Benchmarks/MLDSA/Results/20260801T175050Z-native-mldsa.json)
+[`Benchmarks/MLDSA/Results/20260801T193601Z-native-mldsa.json`](Benchmarks/MLDSA/Results/20260801T193601Z-native-mldsa.json)
 (SHA-256
-`550ea6676dcf6e1e102e6a3893684dd2ebeaf51e2ee59d49e037ef34abff031c`).
+`50acd6db3b8ff88f85001e6485f765670c1a8b58e08b8ee73df61d17ed5f261b`).
 The committed memory artifact is
-[`Benchmarks/MLDSA/Results/20260801T174946Z-native-mldsa65-memory.json`](Benchmarks/MLDSA/Results/20260801T174946Z-native-mldsa65-memory.json)
+[`Benchmarks/MLDSA/Results/20260801T193538Z-native-mldsa-memory.json`](Benchmarks/MLDSA/Results/20260801T193538Z-native-mldsa-memory.json)
 (SHA-256
-`4fc194e98febebecc97b782e10a5511aec873c9f3e83d3e3a4dea70905358c71`).
+`de46a497d115c1ab1805100f8167362f021b1f9acf258ce0d766eb1d144b1c4a`).
 
 ### X25519MLKEM768 TLS allocation and zero-copy evidence
 

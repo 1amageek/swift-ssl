@@ -119,9 +119,15 @@ Hot paths define a budget before optimization.
 | ML-KEM-1024 key generation | 17 balanced allocations requesting 31,008 bytes; owned serialized/expanded keys and algorithm workspaces; 0 dynamic bulk-copy bytes beyond fixed process overhead |
 | ML-KEM-1024 in-place encapsulation | 5 balanced aligned workspace allocations requesting 7,632 bytes; 0 general `malloc`; 0 caller-input/output materializations; 0 dynamic bulk-copy bytes |
 | ML-KEM-1024 in-place decapsulation | 11 balanced aligned workspace/secret allocations requesting 12,336 bytes; 0 general `malloc`; 0 caller-input/output materializations; 0 dynamic bulk-copy bytes |
-| ML-DSA-65 key generation | 25 balanced allocations requesting 71,448 bytes for owned serialized/expanded keys and algorithm workspaces; 0 dynamic bulk-copy bytes |
-| ML-DSA-65 in-place signing, fixed fixture | 62 balanced allocations requesting 59,248 bytes; caller message/context remain borrowed and signature output remains caller-owned; eight algorithm-required 5,120-byte mask forks across deterministic rejection-sampling attempts; no COW or API-boundary materialization |
+| ML-DSA-44 key generation | 23 balanced allocations requesting 44,928 bytes for owned serialized/expanded keys and algorithm workspaces; 0 dynamic bulk-copy bytes |
+| ML-DSA-44 in-place signing, fixed fixture | 30 balanced allocations requesting 38,800 bytes; caller message/context remain borrowed and signature output remains caller-owned; 16,384 algorithm-workspace copy bytes; no COW or API-boundary materialization |
+| ML-DSA-44 verification | 14 balanced allocations requesting 23,488 bytes; signature/message/context remain borrowed; decoded `z` is consumed as its NTT workspace; 0 dynamic bulk-copy bytes |
+| ML-DSA-65 key generation | 25 balanced allocations requesting 71,536 bytes for owned serialized/expanded keys and algorithm workspaces; 0 dynamic bulk-copy bytes |
+| ML-DSA-65 in-place signing, fixed fixture | 62 balanced allocations requesting 59,248 bytes; caller message/context remain borrowed and signature output remains caller-owned; 40,960 algorithm-workspace copy bytes; no COW or API-boundary materialization |
 | ML-DSA-65 verification | 14 balanced allocations requesting 31,712 bytes; signature/message/context remain borrowed; decoded `z` is consumed as its NTT workspace; 0 dynamic bulk-copy bytes |
+| ML-DSA-87 key generation | 25 balanced allocations requesting 111,088 bytes for owned serialized/expanded keys and algorithm workspaces; 0 dynamic bulk-copy bytes |
+| ML-DSA-87 in-place signing, fixed fixture | 48 balanced allocations requesting 71,120 bytes; caller message/context remain borrowed and signature output remains caller-owned; 43,008 algorithm-workspace copy bytes; no COW or API-boundary materialization |
+| ML-DSA-87 verification | 14 balanced allocations requesting 42,240 bytes; signature/message/context remain borrowed; decoded `z` is consumed as its NTT workspace; 0 dynamic bulk-copy bytes |
 | X25519MLKEM768 client offer | 17 balanced allocations requesting 15,656 bytes for final owners, noncopyable key material, and ML-KEM workspaces; 0 dynamic bulk-copy bytes |
 | X25519MLKEM768 server accept | 15 balanced allocations requesting 14,464 bytes for final owners, noncopyable key material, and ML-KEM workspaces; borrowed client share; 0 dynamic bulk-copy bytes |
 | X25519MLKEM768 full round trip | 45 balanced allocations requesting 40,032 bytes; role-specific received shares remain borrowed; 0 dynamic bulk-copy bytes |
@@ -141,6 +147,13 @@ The committed X25519MLKEM768 steady-state measurement is
 It executes one exact-path operation outside each probe window to initialize
 Swift runtime metadata. Cold-start allocation is not part of the reported
 per-operation slopes.
+
+The committed FIPS 204 ML-DSA memory measurement is
+`Benchmarks/MLDSA/Results/20260801T193538Z-native-mldsa-memory.json` (SHA-256
+`de46a497d115c1ab1805100f8167362f021b1f9acf258ce0d766eb1d144b1c4a`).
+It covers key generation, signing, and verification for ML-DSA-44, ML-DSA-65,
+and ML-DSA-87 with exact linear slopes at 1, 10, and 100 operations across
+three fresh processes.
 
 ## 7. Benchmark methodology
 
