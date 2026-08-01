@@ -5,14 +5,25 @@ import SwiftSSLCore
 /// The type owns its expanded key schedule. Callers must validate that both
 /// spans contain exactly one AES block before entering this internal boundary.
 struct AESBlockCipher: ~Copyable {
-  private let roundKeys: [UInt32]
+  #if arch(arm64) && canImport(simd)
+    private var hardwareRoundKeys: SIMD64<UInt32>
+  #else
+    private var roundKeys: SIMD64<UInt32>
+  #endif
   let roundCount: Int
 
   init(key: Span<UInt8>) {
     let wordCount = key.count / 4
-    roundCount = wordCount + 6
+    let roundCount = wordCount + 6
 
-    var words = [UInt32](repeating: 0, count: 4 * (roundCount + 1))
+    var words = SIMD64<UInt32>(repeating: 0)
+    defer {
+      withUnsafeMutableBytes(of: &words) { bytes in
+        guard let baseAddress = bytes.baseAddress else { return }
+        SecureWipe.erase(baseAddress, byteCount: bytes.count)
+      }
+    }
+    let expandedWordCount = 4 * (roundCount + 1)
     var index = 0
     while index < wordCount {
       let offset = index * 4
@@ -26,7 +37,7 @@ struct AESBlockCipher: ~Copyable {
 
     var next = wordCount
     var rcon: UInt8 = 1
-    while next < words.count {
+    while next < expandedWordCount {
       var word = words[next - 1]
       if next % wordCount == 0 {
         word = Self.subWord(Self.rotatedWord(word)) ^ (UInt32(rcon) << 24)
@@ -38,66 +49,98 @@ struct AESBlockCipher: ~Copyable {
       next += 1
     }
 
-    roundKeys = words
-  }
-
-  deinit {
-    // The noncopyable owner is being destroyed, so this immutable view is
-    // uniquely owned for the wipe even though the stored array is `let`.
-    roundKeys.withUnsafeBufferPointer { buffer in
-      guard let baseAddress = buffer.baseAddress else {
-        return
+    #if arch(arm64) && canImport(simd)
+      var hardwareRoundKeys = SIMD64<UInt32>(repeating: 0)
+      var round = 0
+      while round <= roundCount {
+        var column = 0
+        while column < 4 {
+          hardwareRoundKeys[round * 4 + column] =
+            words[round * 4 + column].byteSwapped
+          column += 1
+        }
+        round += 1
       }
-      SecureWipe.erase(
-        UnsafeMutableRawPointer(mutating: baseAddress),
-        byteCount: buffer.count * MemoryLayout<UInt32>.stride
-      )
-    }
+      self.hardwareRoundKeys = hardwareRoundKeys
+    #else
+      self.roundKeys = words
+    #endif
+    self.roundCount = roundCount
   }
 
   func encrypt(_ input: Span<UInt8>, into output: inout MutableSpan<UInt8>) {
-    var state = [UInt8](repeating: 0, count: 16)
-    var index = 0
-    while index < 16 {
-      state[index] = input[index]
-      index += 1
-    }
+    #if arch(arm64) && canImport(simd)
+      AESARM64Kernel.encrypt(
+        input,
+        into: &output,
+        roundKeys: hardwareRoundKeys,
+        roundCount: roundCount
+      )
+    #else
+      var state = SIMD16<UInt8>(repeating: 0)
+      var index = 0
+      while index < 16 {
+        state[index] = input[index]
+        index += 1
+      }
 
-    addRoundKey(&state, round: 0)
-    var round = 1
-    while round < roundCount {
+      addRoundKey(&state, round: 0)
+      var round = 1
+      while round < roundCount {
+        substituteBytes(&state)
+        shiftRows(&state)
+        mixColumns(&state)
+        addRoundKey(&state, round: round)
+        round += 1
+      }
       substituteBytes(&state)
       shiftRows(&state)
-      mixColumns(&state)
-      addRoundKey(&state, round: round)
-      round += 1
-    }
-    substituteBytes(&state)
-    shiftRows(&state)
-    addRoundKey(&state, round: roundCount)
+      addRoundKey(&state, round: roundCount)
 
-    index = 0
-    while index < 16 {
-      output[index] = state[index]
-      index += 1
-    }
+      index = 0
+      while index < 16 {
+        output[index] = state[index]
+        index += 1
+      }
+    #endif
   }
 
-  private func addRoundKey(_ state: inout [UInt8], round: Int) {
-    let base = round * 4
-    var column = 0
-    while column < 4 {
-      let word = roundKeys[base + column]
-      let offset = column * 4
-      state[offset] ^= UInt8(truncatingIfNeeded: word >> 24)
-      state[offset + 1] ^= UInt8(truncatingIfNeeded: word >> 16)
-      state[offset + 2] ^= UInt8(truncatingIfNeeded: word >> 8)
-      state[offset + 3] ^= UInt8(truncatingIfNeeded: word)
-      column += 1
+  #if arch(arm64) && canImport(simd)
+    @inline(__always)
+    func xorFourCounters(
+      _ input: Span<UInt8>,
+      at offset: Int,
+      startingAt counter: SIMD16<UInt8>,
+      into output: inout MutableSpan<UInt8>
+    ) {
+      AESARM64Kernel.xorFourCounters(
+        input,
+        at: offset,
+        startingAt: counter,
+        into: &output,
+        roundKeys: hardwareRoundKeys,
+        roundCount: roundCount
+      )
     }
-  }
+  #endif
 
-  private func substituteBytes(_ state: inout [UInt8]) {
+  #if !arch(arm64) || !canImport(simd)
+    private func addRoundKey(_ state: inout SIMD16<UInt8>, round: Int) {
+      let base = round * 4
+      var column = 0
+      while column < 4 {
+        let word = roundKeys[base + column]
+        let offset = column * 4
+        state[offset] ^= UInt8(truncatingIfNeeded: word >> 24)
+        state[offset + 1] ^= UInt8(truncatingIfNeeded: word >> 16)
+        state[offset + 2] ^= UInt8(truncatingIfNeeded: word >> 8)
+        state[offset + 3] ^= UInt8(truncatingIfNeeded: word)
+        column += 1
+      }
+    }
+  #endif
+
+  private func substituteBytes(_ state: inout SIMD16<UInt8>) {
     var index = 0
     while index < 16 {
       state[index] = sBox[Int(state[index])]
@@ -105,21 +148,16 @@ struct AESBlockCipher: ~Copyable {
     }
   }
 
-  private func shiftRows(_ state: inout [UInt8]) {
-    var shifted = [UInt8](repeating: 0, count: 16)
-    var row = 0
-    while row < 4 {
-      var column = 0
-      while column < 4 {
-        shifted[column * 4 + row] = state[((column + row) % 4) * 4 + row]
-        column += 1
-      }
-      row += 1
-    }
-    state = shifted
+  private func shiftRows(_ state: inout SIMD16<UInt8>) {
+    state = SIMD16(
+      state[0], state[5], state[10], state[15],
+      state[4], state[9], state[14], state[3],
+      state[8], state[13], state[2], state[7],
+      state[12], state[1], state[6], state[11]
+    )
   }
 
-  private func mixColumns(_ state: inout [UInt8]) {
+  private func mixColumns(_ state: inout SIMD16<UInt8>) {
     var column = 0
     while column < 4 {
       let offset = column * 4
@@ -157,6 +195,32 @@ struct AESBlockCipher: ~Copyable {
 
   private static func gmul3(_ value: UInt8) -> UInt8 {
     gmul2(value) ^ value
+  }
+
+  deinit {
+    // Unsafe boundary invariants:
+    // - AESBlockCipher is noncopyable, so destruction wipes its unique inline
+    //   key schedule exactly once.
+    // - Each SIMD64 contains exactly 64 initialized UInt32 lanes.
+    // - deinit exposes self immutably, but no live alias can observe the unique
+    //   noncopyable value; the scoped mutating raw pointer is used only to wipe.
+    #if arch(arm64) && canImport(simd)
+      withUnsafeBytes(of: hardwareRoundKeys) { bytes in
+        guard let baseAddress = bytes.baseAddress else { return }
+        SecureWipe.erase(
+          UnsafeMutableRawPointer(mutating: baseAddress),
+          byteCount: bytes.count
+        )
+      }
+    #else
+      withUnsafeBytes(of: roundKeys) { bytes in
+        guard let baseAddress = bytes.baseAddress else { return }
+        SecureWipe.erase(
+          UnsafeMutableRawPointer(mutating: baseAddress),
+          byteCount: bytes.count
+        )
+      }
+    #endif
   }
 }
 

@@ -170,7 +170,7 @@ Early data is not an established session. Acceptance is independently decided fr
 
 ### 6.1 TLS stream profile
 
-The profile owns TLS 1.3 records, transcript/key schedule, encrypted NewSessionTicket transport, ticket/state/PSK binder values, post-handshake KeyUpdate, close, and supported modern extensions. It consumes and emits byte streams but performs no I/O. PSK identity selection, binder transcript construction, ticket age validation, and the resumed handshake are explicit engine operations. Cross-process ticket replay coordination and ticket persistence remain application policy boundaries.
+The profile owns TLS 1.3 records, transcript/key schedule, encrypted NewSessionTicket transport, ticket/state/PSK binder values, post-handshake KeyUpdate, close, and supported modern extensions. It consumes and emits byte streams but performs no I/O. Application traffic and exporter secrets use the transcript through Server Finished; a distinct resumption-master owner is created only from the transcript through Client Finished. Ticket issuance returns both the encrypted wire output and the move-only server state that the application must persist. PSK identity selection, binder transcript construction, ticket age validation, and the resumed handshake are explicit engine operations. Cross-process ticket replay coordination and ticket persistence remain application policy boundaries.
 
 ### 6.2 DTLS profile
 
@@ -190,7 +190,7 @@ TLS records, TLS application-data records, compatibility ChangeCipherSpec, EndOf
 
 ### 6.4 ECH
 
-ECH owns config parsing/selection, HPKE inner/outer processing, padding, confirmation, HelloRetryRequest continuation, and accepted/rejected state. DNS SVCB/HTTPS lookup, immutable key snapshot rotation, and retry transport establishment are external responsibilities.
+ECH owns config parsing/selection, HPKE inner/outer processing, padding, confirmation, HelloRetryRequest continuation, and accepted/rejected state. The current callable profile implements those responsibilities except HelloRetryRequest continuation and second-ClientHello confirmation, which remain explicit completion work. DNS SVCB/HTTPS lookup, immutable key snapshot rotation, and retry transport establishment are external responsibilities.
 
 An authenticated ECH rejection is a terminal `ECHRetryRequired` outcome for the current transport. The engine does not release origin application data or consume tickets on that connection.
 

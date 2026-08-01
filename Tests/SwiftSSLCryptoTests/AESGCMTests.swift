@@ -214,6 +214,75 @@ final class AESGCMTests: XCTestCase {
     }
   }
 
+  #if canImport(Darwin) && arch(arm64) && canImport(simd)
+    func testARM64FourBlockGHASHMatchesSequentialEvaluation() {
+      var state: UInt64 = 0x9e37_79b9_7f4a_7c15
+      func nextWord() -> UInt64 {
+        state = state &* 0xd134_2543_de82_ef95 &+ 0xa409_3822_299f_31d0
+        return state
+      }
+
+      for _ in 0..<1_000 {
+        let hash = (nextWord(), nextWord())
+        let squared = GHASHARM64Kernel.multiply(
+          xHigh: hash.0,
+          xLow: hash.1,
+          hashHigh: hash.0,
+          hashLow: hash.1
+        )
+        let cubed = GHASHARM64Kernel.multiply(
+          xHigh: squared.0,
+          xLow: squared.1,
+          hashHigh: hash.0,
+          hashLow: hash.1
+        )
+        let fourth = GHASHARM64Kernel.multiply(
+          xHigh: squared.0,
+          xLow: squared.1,
+          hashHigh: squared.0,
+          hashLow: squared.1
+        )
+        let blocks = SIMD8<UInt64>(
+          nextWord(), nextWord(),
+          nextWord(), nextWord(),
+          nextWord(), nextWord(),
+          nextWord(), nextWord()
+        )
+        let accumulator = (nextWord(), nextWord())
+
+        var expected = GHASHARM64Kernel.multiply(
+          xHigh: accumulator.0 ^ blocks[0],
+          xLow: accumulator.1 ^ blocks[1],
+          hashHigh: hash.0,
+          hashLow: hash.1
+        )
+        var blockIndex = 1
+        while blockIndex < 4 {
+          expected = GHASHARM64Kernel.multiply(
+            xHigh: expected.0 ^ blocks[blockIndex * 2],
+            xLow: expected.1 ^ blocks[blockIndex * 2 + 1],
+            hashHigh: hash.0,
+            hashLow: hash.1
+          )
+          blockIndex += 1
+        }
+        let actual = GHASHARM64Kernel.multiplyFour(
+          accumulatorHigh: accumulator.0,
+          accumulatorLow: accumulator.1,
+          blocks: blocks,
+          hashPowers: SIMD8(
+            hash.0, hash.1,
+            squared.0, squared.1,
+            cubed.0, cubed.1,
+            fourth.0, fourth.1
+          )
+        )
+        XCTAssertEqual(actual.0, expected.0)
+        XCTAssertEqual(actual.1, expected.1)
+      }
+    }
+  #endif
+
   private func bytes(_ value: String) -> ContiguousArray<UInt8> {
     var result = ContiguousArray<UInt8>()
     result.reserveCapacity(value.count / 2)

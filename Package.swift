@@ -58,6 +58,10 @@ var products: [Product] = [
     name: "swift-ssl-nist-verification-validation",
     targets: ["SwiftSSLNISTVerificationValidation"]
   ),
+  .executable(
+    name: "swift-ssl-ech-interop-validation",
+    targets: ["SwiftSSLECHInteropValidation"]
+  ),
 ]
 
 var targets: [Target] = [
@@ -134,6 +138,12 @@ var targets: [Target] = [
     path: "Validation/Targets/NISTVerificationValidation",
     swiftSettings: nistValidationSettings
   ),
+  .executableTarget(
+    name: "SwiftSSLECHInteropValidation",
+    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLTLS"],
+    path: "Validation/Targets/ECHInteropValidation",
+    swiftSettings: ownershipSettings
+  ),
   .testTarget(
     name: "SwiftSSLCoreTests",
     dependencies: ["SwiftSSLCore"],
@@ -156,7 +166,9 @@ var targets: [Target] = [
   ),
   .testTarget(
     name: "SwiftSSLTLSModelTests",
-    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLX509", "SwiftSSLTLS", "SwiftSSLQUIC"],
+    dependencies: [
+      "SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLX509", "SwiftSSLTLS", "SwiftSSLQUIC",
+    ],
     swiftSettings: ownershipSettings
   ),
 ]
@@ -215,6 +227,20 @@ if ProcessInfo.processInfo.environment["SWIFT_SSL_ENABLE_BENCHMARKS"] == "1" {
       name: "SwiftSSLMLDSABenchmark",
       dependencies: ["SwiftSSL"],
       path: "Benchmarks/MLDSA/SwiftWorker",
+      swiftSettings: ownershipSettings
+    )
+  )
+  products.append(
+    .executable(
+      name: "swift-ssl-hpke-benchmark",
+      targets: ["SwiftSSLHPKEBenchmark"]
+    )
+  )
+  targets.append(
+    .executableTarget(
+      name: "SwiftSSLHPKEBenchmark",
+      dependencies: ["SwiftSSLCore", "SwiftSSLCrypto"],
+      path: "Benchmarks/HPKE/SwiftWorker",
       swiftSettings: ownershipSettings
     )
   )

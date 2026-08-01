@@ -43,5 +43,6 @@ flowchart LR
   recipient sequence.
 - The RFC 9180 A.2 Base, PSK, Auth, and AuthPSK vectors and all four modes are
   tested independently of round-trip-only fixtures.
-- Broader KEM and protocol integration remain explicit work rather than being
-  hidden behind a generic algorithm enum.
+- RFC 9849 ECH integration is governed by ADR 0041. Broader KEM integration
+  remains explicit work rather than being hidden behind a generic algorithm
+  enum.

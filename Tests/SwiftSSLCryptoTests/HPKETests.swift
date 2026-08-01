@@ -5,17 +5,18 @@ import XCTest
 
 final class HPKETests: XCTestCase {
   func testRFC9180X25519ChaChaBaseVector() throws {
-    let recipientPrivate = try X25519PrivateKey(
-      bytes: bytes(
-        "8057991eef8f1f1af18f4a9491d16a1ce333f695d4db8e38da75975c4478e0fb"
-      ).span)
+    let recipientPrivate = X25519KeyPair(
+      privateKey: try X25519PrivateKey(
+        bytes: bytes(
+          "8057991eef8f1f1af18f4a9491d16a1ce333f695d4db8e38da75975c4478e0fb"
+        ).span))
     let entropy = FixedEntropy(
       bytes: bytes(
         "f4ec9b33b792c372c1d2c2063507b684ef925b8c75a42dbcbf57d63ccd381600"
       ))
     let info = bytes("4f6465206f6e2061204772656369616e2055726e")
     var setup = try HPKEX25519.setupBaseSender(
-      recipientPublicKey: recipientPrivate.publicKey(),
+      recipientPublicKey: recipientPrivate.publicKey,
       info: info.span,
       kdf: .sha256,
       aead: .chaCha20Poly1305,
@@ -27,7 +28,7 @@ final class HPKETests: XCTestCase {
     )
     var recipient = try HPKEX25519.setupBaseRecipient(
       encapsulation: setup.encapsulation.span,
-      recipientPrivateKey: recipientPrivate,
+      recipientKeyPair: recipientPrivate,
       info: info.span,
       kdf: .sha256,
       aead: .chaCha20Poly1305
@@ -63,22 +64,24 @@ final class HPKETests: XCTestCase {
   }
 
   func testRFC9180X25519ChaChaAuthVector() throws {
-    let recipientPrivate = try X25519PrivateKey(
-      bytes: bytes(
-        "3ca22a6d1cda1bb9480949ec5329d3bf0b080ca4c45879c95eddb55c70b80b82"
-      ).span)
-    let senderPrivate = try X25519PrivateKey(
-      bytes: bytes(
-        "2def0cb58ffcf83d1062dd085c8aceca7f4c0c3fd05912d847b61f3e54121f05"
-      ).span)
+    let recipientPrivate = X25519KeyPair(
+      privateKey: try X25519PrivateKey(
+        bytes: bytes(
+          "3ca22a6d1cda1bb9480949ec5329d3bf0b080ca4c45879c95eddb55c70b80b82"
+        ).span))
+    let senderPrivate = X25519KeyPair(
+      privateKey: try X25519PrivateKey(
+        bytes: bytes(
+          "2def0cb58ffcf83d1062dd085c8aceca7f4c0c3fd05912d847b61f3e54121f05"
+        ).span))
     let entropy = FixedEntropy(
       bytes: bytes(
         "c94619e1af28971c8fa7957192b7e62a71ca2dcdde0a7cc4a8a9e741d600ab13"
       ))
     let info = bytes("4f6465206f6e2061204772656369616e2055726e")
     var setup = try HPKEX25519.setupAuthSender(
-      recipientPublicKey: recipientPrivate.publicKey(),
-      senderPrivateKey: senderPrivate,
+      recipientPublicKey: recipientPrivate.publicKey,
+      senderKeyPair: senderPrivate,
       info: info.span,
       kdf: .sha256,
       aead: .chaCha20Poly1305,
@@ -90,8 +93,8 @@ final class HPKETests: XCTestCase {
     )
     var recipient = try HPKEX25519.setupAuthRecipient(
       encapsulation: setup.encapsulation.span,
-      recipientPrivateKey: recipientPrivate,
-      senderPublicKey: senderPrivate.publicKey(),
+      recipientKeyPair: recipientPrivate,
+      senderPublicKey: senderPrivate.publicKey,
       info: info.span,
       kdf: .sha256,
       aead: .chaCha20Poly1305
@@ -124,10 +127,11 @@ final class HPKETests: XCTestCase {
   }
 
   func testRFC9180X25519ChaChaPSKVector() throws {
-    let recipientPrivate = try X25519PrivateKey(
-      bytes: bytes(
-        "77d114e0212be51cb1d76fa99dd41cfd4d0166b08caa09074430a6c59ef17879"
-      ).span)
+    let recipientPrivate = X25519KeyPair(
+      privateKey: try X25519PrivateKey(
+        bytes: bytes(
+          "77d114e0212be51cb1d76fa99dd41cfd4d0166b08caa09074430a6c59ef17879"
+        ).span))
     let psk = bytes(
       "0247fd33b913760fa1fa51e1892d9f307fbe65eb171e8132c2af18555a738b82"
     )
@@ -138,7 +142,7 @@ final class HPKETests: XCTestCase {
         "0c35fdf49df7aa01cd330049332c40411ebba36e0c718ebc3edf5845795f6321"
       ))
     var setup = try HPKEX25519.setupPSKSender(
-      recipientPublicKey: recipientPrivate.publicKey(),
+      recipientPublicKey: recipientPrivate.publicKey,
       info: info.span,
       psk: psk.span,
       pskID: pskID.span,
@@ -152,7 +156,7 @@ final class HPKETests: XCTestCase {
     )
     var recipient = try HPKEX25519.setupPSKRecipient(
       encapsulation: setup.encapsulation.span,
-      recipientPrivateKey: recipientPrivate,
+      recipientKeyPair: recipientPrivate,
       info: info.span,
       psk: psk.span,
       pskID: pskID.span,
@@ -180,14 +184,16 @@ final class HPKETests: XCTestCase {
   }
 
   func testRFC9180X25519ChaChaAuthPSKVector() throws {
-    let recipientPrivate = try X25519PrivateKey(
-      bytes: bytes(
-        "7b36a42822e75bf3362dfabbe474b3016236408becb83b859a6909e22803cb0c"
-      ).span)
-    let senderPrivate = try X25519PrivateKey(
-      bytes: bytes(
-        "90761c5b0a7ef0985ed66687ad708b921d9803d51637c8d1cb72d03ed0f64418"
-      ).span)
+    let recipientPrivate = X25519KeyPair(
+      privateKey: try X25519PrivateKey(
+        bytes: bytes(
+          "7b36a42822e75bf3362dfabbe474b3016236408becb83b859a6909e22803cb0c"
+        ).span))
+    let senderPrivate = X25519KeyPair(
+      privateKey: try X25519PrivateKey(
+        bytes: bytes(
+          "90761c5b0a7ef0985ed66687ad708b921d9803d51637c8d1cb72d03ed0f64418"
+        ).span))
     let psk = bytes(
       "0247fd33b913760fa1fa51e1892d9f307fbe65eb171e8132c2af18555a738b82"
     )
@@ -198,8 +204,8 @@ final class HPKETests: XCTestCase {
         "5e6dd73e82b856339572b7245d3cbb073a7561c0bee52873490e305cbb710410"
       ))
     var setup = try HPKEX25519.setupAuthPSKSender(
-      recipientPublicKey: recipientPrivate.publicKey(),
-      senderPrivateKey: senderPrivate,
+      recipientPublicKey: recipientPrivate.publicKey,
+      senderKeyPair: senderPrivate,
       info: info.span,
       psk: psk.span,
       pskID: pskID.span,
@@ -213,8 +219,8 @@ final class HPKETests: XCTestCase {
     )
     var recipient = try HPKEX25519.setupAuthPSKRecipient(
       encapsulation: setup.encapsulation.span,
-      recipientPrivateKey: recipientPrivate,
-      senderPublicKey: senderPrivate.publicKey(),
+      recipientKeyPair: recipientPrivate,
+      senderPublicKey: senderPrivate.publicKey,
       info: info.span,
       psk: psk.span,
       pskID: pskID.span,
@@ -242,7 +248,8 @@ final class HPKETests: XCTestCase {
   }
 
   func testBaseRoundTripCoversAllKDFAndAEADChoices() throws {
-    let recipientPrivate = try X25519PrivateKey(bytes: bytes(repeating: 0x11, count: 32).span)
+    let recipientPrivate = X25519KeyPair(
+      privateKey: try X25519PrivateKey(bytes: bytes(repeating: 0x11, count: 32).span))
     let info = bytes("00112233445566778899aabbccddeeff")
     let plaintext = bytes("706c61696e74657874")
     let aad = bytes("616164")
@@ -253,7 +260,7 @@ final class HPKETests: XCTestCase {
       for aead in aeads {
         let entropy = FixedEntropy(bytes: bytes(repeating: 0x22, count: 32))
         var setup = try HPKEX25519.setupBaseSender(
-          recipientPublicKey: recipientPrivate.publicKey(),
+          recipientPublicKey: recipientPrivate.publicKey,
           info: info.span,
           kdf: kdf,
           aead: aead,
@@ -261,7 +268,7 @@ final class HPKETests: XCTestCase {
         )
         var recipient = try HPKEX25519.setupBaseRecipient(
           encapsulation: setup.encapsulation.span,
-          recipientPrivateKey: recipientPrivate,
+          recipientKeyPair: recipientPrivate,
           info: info.span,
           kdf: kdf,
           aead: aead
@@ -288,13 +295,14 @@ final class HPKETests: XCTestCase {
   }
 
   func testPSKRoundTripAndIdentityValidation() throws {
-    let recipientPrivate = try X25519PrivateKey(bytes: bytes(repeating: 0x31, count: 32).span)
+    let recipientPrivate = X25519KeyPair(
+      privateKey: try X25519PrivateKey(bytes: bytes(repeating: 0x31, count: 32).span))
     let psk = bytes("000102030405060708090a0b0c0d0e0f")
     let pskID = bytes("746573742d70736b")
     let info = bytes("696e666f")
     let entropy = FixedEntropy(bytes: bytes(repeating: 0x32, count: 32))
     var setup = try HPKEX25519.setupPSKSender(
-      recipientPublicKey: recipientPrivate.publicKey(),
+      recipientPublicKey: recipientPrivate.publicKey,
       info: info.span,
       psk: psk.span,
       pskID: pskID.span,
@@ -305,7 +313,7 @@ final class HPKETests: XCTestCase {
     let encapsulation = setup.encapsulation
     var recipient = try HPKEX25519.setupPSKRecipient(
       encapsulation: encapsulation.span,
-      recipientPrivateKey: recipientPrivate,
+      recipientKeyPair: recipientPrivate,
       info: info.span,
       psk: psk.span,
       pskID: pskID.span,
@@ -326,7 +334,7 @@ final class HPKETests: XCTestCase {
     do {
       _ = try HPKEX25519.setupPSKRecipient(
         encapsulation: encapsulation.span,
-        recipientPrivateKey: recipientPrivate,
+        recipientKeyPair: recipientPrivate,
         info: info.span,
         psk: ContiguousArray<UInt8>().span,
         pskID: pskID.span,
@@ -340,8 +348,10 @@ final class HPKETests: XCTestCase {
   }
 
   func testAuthAndAuthPSKRoundTrips() throws {
-    let recipientPrivate = try X25519PrivateKey(bytes: bytes(repeating: 0x41, count: 32).span)
-    let senderPrivate = try X25519PrivateKey(bytes: bytes(repeating: 0x42, count: 32).span)
+    let recipientPrivate = X25519KeyPair(
+      privateKey: try X25519PrivateKey(bytes: bytes(repeating: 0x41, count: 32).span))
+    let senderPrivate = X25519KeyPair(
+      privateKey: try X25519PrivateKey(bytes: bytes(repeating: 0x42, count: 32).span))
     let info = bytes("61757468")
     let psk = bytes("50534b2d736563726574")
     let pskID = bytes("70736b2d6964")
@@ -349,8 +359,8 @@ final class HPKETests: XCTestCase {
     let plaintext = bytes("617574682d7061796c6f6164")
 
     var authSetup = try HPKEX25519.setupAuthSender(
-      recipientPublicKey: recipientPrivate.publicKey(),
-      senderPrivateKey: senderPrivate,
+      recipientPublicKey: recipientPrivate.publicKey,
+      senderKeyPair: senderPrivate,
       info: info.span,
       kdf: .sha384,
       aead: .aes256GCM,
@@ -358,8 +368,8 @@ final class HPKETests: XCTestCase {
     )
     var authRecipient = try HPKEX25519.setupAuthRecipient(
       encapsulation: authSetup.encapsulation.span,
-      recipientPrivateKey: recipientPrivate,
-      senderPublicKey: senderPrivate.publicKey(),
+      recipientKeyPair: recipientPrivate,
+      senderPublicKey: senderPrivate.publicKey,
       info: info.span,
       kdf: .sha384,
       aead: .aes256GCM
@@ -376,8 +386,8 @@ final class HPKETests: XCTestCase {
     XCTAssertEqual(copy(authOpened.span), Array(plaintext))
 
     var authPSKSetup = try HPKEX25519.setupAuthPSKSender(
-      recipientPublicKey: recipientPrivate.publicKey(),
-      senderPrivateKey: senderPrivate,
+      recipientPublicKey: recipientPrivate.publicKey,
+      senderKeyPair: senderPrivate,
       info: info.span,
       psk: psk.span,
       pskID: pskID.span,
@@ -387,8 +397,8 @@ final class HPKETests: XCTestCase {
     )
     var authPSKRecipient = try HPKEX25519.setupAuthPSKRecipient(
       encapsulation: authPSKSetup.encapsulation.span,
-      recipientPrivateKey: recipientPrivate,
-      senderPublicKey: senderPrivate.publicKey(),
+      recipientKeyPair: recipientPrivate,
+      senderPublicKey: senderPrivate.publicKey,
       info: info.span,
       psk: psk.span,
       pskID: pskID.span,
@@ -408,9 +418,10 @@ final class HPKETests: XCTestCase {
   }
 
   func testAuthenticationFailureDoesNotAdvanceRecipientSequence() throws {
-    let recipientPrivate = try X25519PrivateKey(bytes: bytes(repeating: 0x51, count: 32).span)
+    let recipientPrivate = X25519KeyPair(
+      privateKey: try X25519PrivateKey(bytes: bytes(repeating: 0x51, count: 32).span))
     var setup = try HPKEX25519.setupBaseSender(
-      recipientPublicKey: recipientPrivate.publicKey(),
+      recipientPublicKey: recipientPrivate.publicKey,
       info: bytes("69").span,
       kdf: .sha256,
       aead: .aes128GCM,
@@ -418,7 +429,7 @@ final class HPKETests: XCTestCase {
     )
     var recipient = try HPKEX25519.setupBaseRecipient(
       encapsulation: setup.encapsulation.span,
-      recipientPrivateKey: recipientPrivate,
+      recipientKeyPair: recipientPrivate,
       info: bytes("69").span,
       kdf: .sha256,
       aead: .aes128GCM
@@ -441,6 +452,159 @@ final class HPKETests: XCTestCase {
     XCTAssertEqual(recipient.sequenceNumber, 1)
   }
 
+  func testInPlaceSealAndOpenMatchAllocatingAPI() throws {
+    let recipientPrivate = X25519KeyPair(
+      privateKey: try X25519PrivateKey(
+        bytes: bytes(repeating: 0x61, count: 32).span
+      ))
+    let info = bytes("696e2d706c616365")
+    let aad = bytes("616164")
+    let plaintext = bytes("7061796c6f61642d776974686f75742d636f7079")
+    let entropyBytes = bytes(repeating: 0x62, count: 32)
+    var allocatingSetup = try HPKEX25519.setupBaseSender(
+      recipientPublicKey: recipientPrivate.publicKey,
+      info: info.span,
+      kdf: .sha256,
+      aead: .aes128GCM,
+      using: FixedEntropy(bytes: entropyBytes)
+    )
+    var allocatingSender = allocatingSetup.takeContext()
+    let expected = try allocatingSender.seal(
+      plaintext: plaintext.span,
+      authenticatedData: aad.span
+    )
+
+    var inPlaceSetup = try HPKEX25519.setupBaseSender(
+      recipientPublicKey: recipientPrivate.publicKey,
+      info: info.span,
+      kdf: .sha256,
+      aead: .aes128GCM,
+      using: FixedEntropy(bytes: entropyBytes)
+    )
+    var recipient = try HPKEX25519.setupBaseRecipient(
+      encapsulation: inPlaceSetup.encapsulation.span,
+      recipientKeyPair: recipientPrivate,
+      info: info.span,
+      kdf: .sha256,
+      aead: .aes128GCM
+    )
+    var inPlaceSender = inPlaceSetup.takeContext()
+    var ciphertext = ContiguousArray<UInt8>(
+      repeating: 0xA5,
+      count: plaintext.count + HPKEAEAD.tagByteCount
+    )
+    var ciphertextSpan = ciphertext.mutableSpan
+    try inPlaceSender.seal(
+      plaintext: plaintext.span,
+      authenticatedData: aad.span,
+      into: &ciphertextSpan
+    )
+    XCTAssertEqual(Array(ciphertext), copy(expected.span))
+    XCTAssertEqual(inPlaceSender.sequenceNumber, 1)
+
+    var opened = ContiguousArray<UInt8>(repeating: 0xA5, count: plaintext.count)
+    var openedSpan = opened.mutableSpan
+    try recipient.open(
+      ciphertext: ciphertext.span,
+      authenticatedData: aad.span,
+      into: &openedSpan
+    )
+    XCTAssertEqual(opened, plaintext)
+    XCTAssertEqual(recipient.sequenceNumber, 1)
+  }
+
+  func testInPlaceFailuresPreserveDestinationAndSequence() throws {
+    let recipientPrivate = X25519KeyPair(
+      privateKey: try X25519PrivateKey(
+        bytes: bytes(repeating: 0x71, count: 32).span
+      ))
+    let info = bytes("69")
+    let aad = bytes("616164")
+    let plaintext = bytes("706c61696e")
+    var setup = try HPKEX25519.setupBaseSender(
+      recipientPublicKey: recipientPrivate.publicKey,
+      info: info.span,
+      kdf: .sha256,
+      aead: .aes128GCM,
+      using: FixedEntropy(bytes: bytes(repeating: 0x72, count: 32))
+    )
+    var recipient = try HPKEX25519.setupBaseRecipient(
+      encapsulation: setup.encapsulation.span,
+      recipientKeyPair: recipientPrivate,
+      info: info.span,
+      kdf: .sha256,
+      aead: .aes128GCM
+    )
+    var sender = setup.takeContext()
+    var wrongSized = ContiguousArray<UInt8>(repeating: 0xA5, count: plaintext.count)
+    let wrongSizedOriginal = wrongSized
+    do {
+      var destination = wrongSized.mutableSpan
+      try sender.seal(
+        plaintext: plaintext.span,
+        authenticatedData: aad.span,
+        into: &destination
+      )
+      XCTFail("an undersized HPKE destination was accepted")
+    } catch {
+      XCTAssertEqual(
+        error,
+        .authenticatedCipher(
+          .outputTooSmall(
+            required: plaintext.count + HPKEAEAD.tagByteCount,
+            actual: plaintext.count
+          )
+        )
+      )
+    }
+    XCTAssertEqual(wrongSized, wrongSizedOriginal)
+    XCTAssertEqual(sender.sequenceNumber, 0)
+
+    let validCiphertext = try sender.seal(
+      plaintext: plaintext.span,
+      authenticatedData: aad.span
+    )
+    var corrupted = ContiguousArray(copy(validCiphertext.span))
+    corrupted[corrupted.count - 1] ^= 0x01
+    var opened = ContiguousArray<UInt8>(repeating: 0xA5, count: plaintext.count)
+    let openedOriginal = opened
+    do {
+      var destination = opened.mutableSpan
+      try recipient.open(
+        ciphertext: corrupted.span,
+        authenticatedData: aad.span,
+        into: &destination
+      )
+      XCTFail("an invalid HPKE tag was accepted")
+    } catch {
+      XCTAssertEqual(error, .authenticatedCipher(.authenticationFailed))
+    }
+    XCTAssertEqual(opened, openedOriginal)
+    XCTAssertEqual(recipient.sequenceNumber, 0)
+  }
+
+  func testSenderSetupPreservesEntropyFailureType() throws {
+    let recipient = X25519KeyPair(
+      privateKey: try X25519PrivateKey(
+        bytes: bytes(repeating: 0x81, count: 32).span
+      ))
+    do {
+      _ = try HPKEX25519.setupBaseSender(
+        recipientPublicKey: recipient.publicKey,
+        info: ContiguousArray<UInt8>().span,
+        kdf: .sha256,
+        aead: .aes128GCM,
+        using: FailingEntropy()
+      )
+      XCTFail("an entropy failure was accepted")
+    } catch {
+      XCTAssertEqual(
+        error,
+        .keyGeneration(.entropy(.unavailable))
+      )
+    }
+  }
+
   private struct FixedEntropy: EntropySource {
     let bytes: ContiguousArray<UInt8>
 
@@ -453,6 +617,12 @@ final class HPKETests: XCTestCase {
         destination[index] = bytes[index]
         index += 1
       }
+    }
+  }
+
+  private struct FailingEntropy: EntropySource {
+    func fill(_ destination: inout MutableSpan<UInt8>) throws(EntropyError) {
+      throw .unavailable
     }
   }
 
