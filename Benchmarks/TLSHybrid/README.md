@@ -70,7 +70,10 @@ from the allocation and bulk-copy evidence below.
 The memory runner is manual and is not a test target. It builds the Swift
 worker from a clean read-only Git archive, injects a benchmark-only allocator
 and bulk-copy interposer, validates the interposer with a separate C process,
-and measures 1, 10, and 100 operations in three fresh processes each.
+executes one exact-path operation outside the probe to initialize Swift runtime
+metadata, and then measures 1, 10, and 100 steady-state operations in three
+fresh processes each. Cold-start allocation is deliberately outside this
+artifact and is not represented by the per-operation budgets.
 
 ```bash
 TOOLCHAINS=org.swift.64202607231a \

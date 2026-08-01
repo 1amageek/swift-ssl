@@ -311,7 +311,9 @@ def main() -> int:
                 "X25519MLKEM768 client offer, server accept, complete round trip, "
                 "and caller-owned X25519 output loops; deterministic entropy"
             ),
+            "unmeasuredWarmupOperations": 1,
             "limitations": [
+                "One exact-path warmup operation initializes Swift runtime metadata before each steady-state measurement window; cold-start allocation is outside this artifact.",
                 "Dynamic memcpy/memmove interposition does not observe compiler-inlined scalar copies.",
                 "Requested allocation bytes are recorded; allocator size classes are not.",
                 "The artifact is Native-only and is not timing evidence.",

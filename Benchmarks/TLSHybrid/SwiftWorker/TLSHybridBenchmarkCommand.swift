@@ -203,6 +203,7 @@ enum TLSHybridBenchmarkCommand {
       switch operation {
       case .clientOffer:
         let entropy = RepeatingEntropySource(byte: 0x11)
+        _ = try memoryClientOffer(entropy: entropy, iterations: 1)
         probe.start()
         do {
           checksum = try memoryClientOffer(
@@ -220,6 +221,11 @@ enum TLSHybridBenchmarkCommand {
         )
         let clientShare = client.clientShare()
         let entropy = RepeatingEntropySource(byte: 0x33)
+        _ = try memoryServerAccept(
+          clientShare: clientShare,
+          entropy: entropy,
+          iterations: 1
+        )
         probe.start()
         do {
           checksum = try memoryServerAccept(
@@ -234,6 +240,11 @@ enum TLSHybridBenchmarkCommand {
       case .roundTrip:
         let clientEntropy = RepeatingEntropySource(byte: 0x11)
         let serverEntropy = RepeatingEntropySource(byte: 0x33)
+        _ = try memoryRoundTrip(
+          clientEntropy: clientEntropy,
+          serverEntropy: serverEntropy,
+          iterations: 1
+        )
         probe.start()
         do {
           checksum = try memoryRoundTrip(
@@ -252,6 +263,11 @@ enum TLSHybridBenchmarkCommand {
         var output = ContiguousArray<UInt8>(
           repeating: 0,
           count: X25519PublicKey.byteCount
+        )
+        _ = try memoryX25519Public(
+          privateKey: privateKey,
+          output: &output,
+          iterations: 1
         )
         probe.start()
         do {
@@ -275,6 +291,12 @@ enum TLSHybridBenchmarkCommand {
         var output = ContiguousArray<UInt8>(
           repeating: 0,
           count: X25519SharedSecret.byteCount
+        )
+        _ = try memoryX25519Shared(
+          privateKey: privateKey,
+          peerPublicKey: peerPublicKey,
+          output: &output,
+          iterations: 1
         )
         probe.start()
         do {
