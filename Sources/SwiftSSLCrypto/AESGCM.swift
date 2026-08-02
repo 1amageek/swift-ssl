@@ -438,6 +438,21 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher {
     offset: Int,
     count: Int
   ) -> (UInt64, UInt64) {
+    if count == 16 {
+      precondition(offset >= 0 && offset <= bytes.count - 16)
+      // Unsafe boundary invariants:
+      // - The precondition proves that both eight-byte loads are contained in
+      //   initialized storage owned by `bytes` for this synchronous borrow.
+      // - Unaligned loads do not bind or mutate the source allocation.
+      // - The pointer does not escape or cross a Sendable boundary.
+      return bytes.withUnsafeBytes { buffer in
+        let baseAddress = buffer.baseAddress.unsafelyUnwrapped.advanced(by: offset)
+        return (
+          baseAddress.loadUnaligned(as: UInt64.self).byteSwapped,
+          baseAddress.loadUnaligned(fromByteOffset: 8, as: UInt64.self).byteSwapped
+        )
+      }
+    }
     var high: UInt64 = 0
     var low: UInt64 = 0
     var index = 0

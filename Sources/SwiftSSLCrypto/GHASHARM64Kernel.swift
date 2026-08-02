@@ -104,81 +104,49 @@
       _ lhs: UInt64,
       _ rhs: UInt64
     ) -> (UInt64, UInt64) {
-      let a0 = UInt16(truncatingIfNeeded: lhs)
-      let a1 = UInt16(truncatingIfNeeded: lhs >> 16)
-      let a2 = UInt16(truncatingIfNeeded: lhs >> 32)
-      let a3 = UInt16(truncatingIfNeeded: lhs >> 48)
-      let b0 = UInt16(truncatingIfNeeded: rhs)
-      let b1 = UInt16(truncatingIfNeeded: rhs >> 16)
-      let b2 = UInt16(truncatingIfNeeded: rhs >> 32)
-      let b3 = UInt16(truncatingIfNeeded: rhs >> 48)
-
-      let a01 = a0 ^ a1
-      let a23 = a2 ^ a3
-      let b01 = b0 ^ b1
-      let b23 = b2 ^ b3
-      let a02 = a0 ^ a2
-      let a13 = a1 ^ a3
-      let b02 = b0 ^ b2
-      let b13 = b1 ^ b3
-
-      let lhs0 = SIMD8<UInt8>(
-        low(a0), high(a0), folded(a0),
-        low(a1), high(a1), folded(a1),
-        low(a01), high(a01)
+      let directIndices = SIMD16<UInt8>(
+        0, 2, 0, 4, 6, 4, 0, 2,
+        1, 3, 1, 5, 7, 5, 1, 3
       )
-      let rhs0 = SIMD8<UInt8>(
-        low(b0), high(b0), folded(b0),
-        low(b1), high(b1), folded(b1),
-        low(b01), high(b01)
+      let xorIndices = SIMD16<UInt8>(
+        0xff, 0xff, 2, 0xff, 0xff, 6, 4, 6,
+        0xff, 0xff, 3, 0xff, 0xff, 7, 5, 7
       )
-      let lhs1 = SIMD8<UInt8>(
-        folded(a01),
-        low(a2), high(a2), folded(a2),
-        low(a3), high(a3), folded(a3),
-        low(a23)
+      let lhsBytes = vreinterpretq_u8_u64(SIMD2<UInt64>(repeating: lhs))
+      let rhsBytes = vreinterpretq_u8_u64(SIMD2<UInt64>(repeating: rhs))
+      let lhsParts =
+        vqtbl1q_u8(lhsBytes, directIndices)
+        ^ vqtbl1q_u8(lhsBytes, xorIndices)
+      let rhsParts =
+        vqtbl1q_u8(rhsBytes, directIndices)
+        ^ vqtbl1q_u8(rhsBytes, xorIndices)
+      let lhsLow = vget_low_u8(lhsParts)
+      let lhsHigh = vget_high_u8(lhsParts)
+      let rhsLow = vget_low_u8(rhsParts)
+      let rhsHigh = vget_high_u8(rhsParts)
+      let lowProducts = vmull_p8(lhsLow, rhsLow)
+      let highProducts = vmull_p8(lhsHigh, rhsHigh)
+      let foldedProducts = vmull_p8(lhsLow ^ lhsHigh, rhsLow ^ rhsHigh)
+      let lhsMiddle = UInt16(
+        truncatingIfNeeded: lhs ^ (lhs >> 16) ^ (lhs >> 32) ^ (lhs >> 48)
       )
-      let rhs1 = SIMD8<UInt8>(
-        folded(b01),
-        low(b2), high(b2), folded(b2),
-        low(b3), high(b3), folded(b3),
-        low(b23)
+      let rhsMiddle = UInt16(
+        truncatingIfNeeded: rhs ^ (rhs >> 16) ^ (rhs >> 32) ^ (rhs >> 48)
       )
-      let lhs2 = SIMD8<UInt8>(
-        high(a23), folded(a23),
-        low(a02), high(a02), folded(a02),
-        low(a13), high(a13), folded(a13)
-      )
-      let rhs2 = SIMD8<UInt8>(
-        high(b23), folded(b23),
-        low(b02), high(b02), folded(b02),
-        low(b13), high(b13), folded(b13)
-      )
-      let aMiddle = a02 ^ a13
-      let bMiddle = b02 ^ b13
-      let lhs3 = SIMD8<UInt8>(
-        low(aMiddle), high(aMiddle), folded(aMiddle),
-        0, 0, 0, 0, 0
-      )
-      let rhs3 = SIMD8<UInt8>(
-        low(bMiddle), high(bMiddle), folded(bMiddle),
-        0, 0, 0, 0, 0
+      let middleProducts = vmull_p8(
+        SIMD8(low(lhsMiddle), high(lhsMiddle), folded(lhsMiddle), 0, 0, 0, 0, 0),
+        SIMD8(low(rhsMiddle), high(rhsMiddle), folded(rhsMiddle), 0, 0, 0, 0, 0)
       )
 
-      let products0 = vmull_p8(lhs0, rhs0)
-      let products1 = vmull_p8(lhs1, rhs1)
-      let products2 = vmull_p8(lhs2, rhs2)
-      let products3 = vmull_p8(lhs3, rhs3)
-
-      let product00 = combine(products0[0], products0[1], products0[2])
-      let product01 = combine(products0[3], products0[4], products0[5])
-      let product0M = combine(products0[6], products0[7], products1[0])
-      let product10 = combine(products1[1], products1[2], products1[3])
-      let product11 = combine(products1[4], products1[5], products1[6])
-      let product1M = combine(products1[7], products2[0], products2[1])
-      let productM0 = combine(products2[2], products2[3], products2[4])
-      let productM1 = combine(products2[5], products2[6], products2[7])
-      let productMM = combine(products3[0], products3[1], products3[2])
+      let product00 = combine(lowProducts[0], highProducts[0], foldedProducts[0])
+      let product01 = combine(lowProducts[1], highProducts[1], foldedProducts[1])
+      let product0M = combine(lowProducts[2], highProducts[2], foldedProducts[2])
+      let product10 = combine(lowProducts[3], highProducts[3], foldedProducts[3])
+      let product11 = combine(lowProducts[4], highProducts[4], foldedProducts[4])
+      let product1M = combine(lowProducts[5], highProducts[5], foldedProducts[5])
+      let productM0 = combine(lowProducts[6], highProducts[6], foldedProducts[6])
+      let productM1 = combine(lowProducts[7], highProducts[7], foldedProducts[7])
+      let productMM = combine(middleProducts[0], middleProducts[1], middleProducts[2])
 
       let lowProduct = combine32(product00, product01, product0M)
       let highProduct = combine32(product10, product11, product1M)
