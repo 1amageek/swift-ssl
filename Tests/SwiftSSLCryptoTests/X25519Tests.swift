@@ -26,6 +26,29 @@ final class X25519Tests: XCTestCase {
     XCTAssertEqual(copyBytes(publicKey.span), Array(expectedPublic))
   }
 
+  func testRFC7748ThousandIterationVector() throws {
+    var scalar = ContiguousArray<UInt8>(repeating: 0, count: 32)
+    var point = ContiguousArray<UInt8>(repeating: 0, count: 32)
+    scalar[0] = 9
+    point[0] = 9
+
+    for _ in 0..<1_000 {
+      let privateKey = try X25519PrivateKey(bytes: scalar.span)
+      let publicKey = try X25519PublicKey(bytes: point.span)
+      let sharedSecret = try X25519.sharedSecret(
+        privateKey: privateKey,
+        peerPublicKey: publicKey
+      )
+      point = scalar
+      scalar = sharedSecret.withBorrowedBytes { ContiguousArray(copyBytes($0)) }
+    }
+
+    XCTAssertEqual(
+      Array(scalar),
+      Array(bytes("684cf59ba83309552800ef566f2f4d3c1c3887c49360e3875f2eb94d99532c51"))
+    )
+  }
+
   func testSharedSecretMatchesIndependentImplementationVector() throws {
     let alicePrivate = bytes("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a")
     let bobPrivate = bytes("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")

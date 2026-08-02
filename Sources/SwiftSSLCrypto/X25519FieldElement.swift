@@ -159,36 +159,43 @@ struct X25519FieldElement {
 
   @inline(__always)
   static func * (lhs: Self, rhs: Self) -> Self {
+    // Arithmetic range invariant:
+    // - Input limbs are bounded below 2^53 between ladder reductions.
+    // - Each accumulator contains five products, including at most four
+    //   factors scaled by 19, and therefore remains below 2^111.
+    // - UInt128 cannot overflow. Wrapping addition expresses that proven
+    //   bound to the optimizer and avoids a conditional trap after every
+    //   product accumulation in the constant-time ladder.
     let accumulator0 =
       UInt128(lhs.limb0) * UInt128(rhs.limb0)
-      + UInt128(lhs.limb1) * UInt128(rhs.limb4 &* 19)
-      + UInt128(lhs.limb2) * UInt128(rhs.limb3 &* 19)
-      + UInt128(lhs.limb3) * UInt128(rhs.limb2 &* 19)
-      + UInt128(lhs.limb4) * UInt128(rhs.limb1 &* 19)
+      &+ UInt128(lhs.limb1) * UInt128(rhs.limb4 &* 19)
+      &+ UInt128(lhs.limb2) * UInt128(rhs.limb3 &* 19)
+      &+ UInt128(lhs.limb3) * UInt128(rhs.limb2 &* 19)
+      &+ UInt128(lhs.limb4) * UInt128(rhs.limb1 &* 19)
     let accumulator1 =
       UInt128(lhs.limb0) * UInt128(rhs.limb1)
-      + UInt128(lhs.limb1) * UInt128(rhs.limb0)
-      + UInt128(lhs.limb2) * UInt128(rhs.limb4 &* 19)
-      + UInt128(lhs.limb3) * UInt128(rhs.limb3 &* 19)
-      + UInt128(lhs.limb4) * UInt128(rhs.limb2 &* 19)
+      &+ UInt128(lhs.limb1) * UInt128(rhs.limb0)
+      &+ UInt128(lhs.limb2) * UInt128(rhs.limb4 &* 19)
+      &+ UInt128(lhs.limb3) * UInt128(rhs.limb3 &* 19)
+      &+ UInt128(lhs.limb4) * UInt128(rhs.limb2 &* 19)
     let accumulator2 =
       UInt128(lhs.limb0) * UInt128(rhs.limb2)
-      + UInt128(lhs.limb1) * UInt128(rhs.limb1)
-      + UInt128(lhs.limb2) * UInt128(rhs.limb0)
-      + UInt128(lhs.limb3) * UInt128(rhs.limb4 &* 19)
-      + UInt128(lhs.limb4) * UInt128(rhs.limb3 &* 19)
+      &+ UInt128(lhs.limb1) * UInt128(rhs.limb1)
+      &+ UInt128(lhs.limb2) * UInt128(rhs.limb0)
+      &+ UInt128(lhs.limb3) * UInt128(rhs.limb4 &* 19)
+      &+ UInt128(lhs.limb4) * UInt128(rhs.limb3 &* 19)
     let accumulator3 =
       UInt128(lhs.limb0) * UInt128(rhs.limb3)
-      + UInt128(lhs.limb1) * UInt128(rhs.limb2)
-      + UInt128(lhs.limb2) * UInt128(rhs.limb1)
-      + UInt128(lhs.limb3) * UInt128(rhs.limb0)
-      + UInt128(lhs.limb4) * UInt128(rhs.limb4 &* 19)
+      &+ UInt128(lhs.limb1) * UInt128(rhs.limb2)
+      &+ UInt128(lhs.limb2) * UInt128(rhs.limb1)
+      &+ UInt128(lhs.limb3) * UInt128(rhs.limb0)
+      &+ UInt128(lhs.limb4) * UInt128(rhs.limb4 &* 19)
     let accumulator4 =
       UInt128(lhs.limb0) * UInt128(rhs.limb4)
-      + UInt128(lhs.limb1) * UInt128(rhs.limb3)
-      + UInt128(lhs.limb2) * UInt128(rhs.limb2)
-      + UInt128(lhs.limb3) * UInt128(rhs.limb1)
-      + UInt128(lhs.limb4) * UInt128(rhs.limb0)
+      &+ UInt128(lhs.limb1) * UInt128(rhs.limb3)
+      &+ UInt128(lhs.limb2) * UInt128(rhs.limb2)
+      &+ UInt128(lhs.limb3) * UInt128(rhs.limb1)
+      &+ UInt128(lhs.limb4) * UInt128(rhs.limb0)
 
     return Self.reduce(accumulator0, accumulator1, accumulator2, accumulator3, accumulator4)
   }
@@ -197,24 +204,24 @@ struct X25519FieldElement {
   func squared() -> Self {
     let accumulator0 =
       UInt128(limb0) * UInt128(limb0)
-      + UInt128(limb1) * UInt128(limb4 &* 38)
-      + UInt128(limb2) * UInt128(limb3 &* 38)
+      &+ UInt128(limb1) * UInt128(limb4 &* 38)
+      &+ UInt128(limb2) * UInt128(limb3 &* 38)
     let accumulator1 =
       UInt128(limb0) * UInt128(limb1 &* 2)
-      + UInt128(limb2) * UInt128(limb4 &* 38)
-      + UInt128(limb3) * UInt128(limb3 &* 19)
+      &+ UInt128(limb2) * UInt128(limb4 &* 38)
+      &+ UInt128(limb3) * UInt128(limb3 &* 19)
     let accumulator2 =
       UInt128(limb0) * UInt128(limb2 &* 2)
-      + UInt128(limb1) * UInt128(limb1)
-      + UInt128(limb3) * UInt128(limb4 &* 38)
+      &+ UInt128(limb1) * UInt128(limb1)
+      &+ UInt128(limb3) * UInt128(limb4 &* 38)
     let accumulator3 =
       UInt128(limb0) * UInt128(limb3 &* 2)
-      + UInt128(limb1) * UInt128(limb2 &* 2)
-      + UInt128(limb4) * UInt128(limb4 &* 19)
+      &+ UInt128(limb1) * UInt128(limb2 &* 2)
+      &+ UInt128(limb4) * UInt128(limb4 &* 19)
     let accumulator4 =
       UInt128(limb0) * UInt128(limb4 &* 2)
-      + UInt128(limb1) * UInt128(limb3 &* 2)
-      + UInt128(limb2) * UInt128(limb2)
+      &+ UInt128(limb1) * UInt128(limb3 &* 2)
+      &+ UInt128(limb2) * UInt128(limb2)
 
     return Self.reduce(accumulator0, accumulator1, accumulator2, accumulator3, accumulator4)
   }
@@ -314,12 +321,15 @@ struct X25519FieldElement {
     _ accumulator3: UInt128,
     _ accumulator4: UInt128
   ) -> Self {
-    let reduced1 = accumulator1 + (accumulator0 >> 51)
-    let reduced2 = accumulator2 + (reduced1 >> 51)
-    let reduced3 = accumulator3 + (reduced2 >> 51)
-    let reduced4 = accumulator4 + (reduced3 >> 51)
-    let reduced0 = (accumulator0 & UInt128(Self.mask)) + (reduced4 >> 51) * 19
-    let final1 = (reduced1 & UInt128(Self.mask)) + (reduced0 >> 51)
+    // The multiplication bounds above also prove every carry propagation is
+    // below 2^128. Wrapping additions remove redundant overflow traps without
+    // changing the field result.
+    let reduced1 = accumulator1 &+ (accumulator0 >> 51)
+    let reduced2 = accumulator2 &+ (reduced1 >> 51)
+    let reduced3 = accumulator3 &+ (reduced2 >> 51)
+    let reduced4 = accumulator4 &+ (reduced3 >> 51)
+    let reduced0 = (accumulator0 & UInt128(Self.mask)) &+ (reduced4 >> 51) * 19
+    let final1 = (reduced1 & UInt128(Self.mask)) &+ (reduced0 >> 51)
     return Self(
       limb0: UInt64(truncatingIfNeeded: reduced0) & Self.mask,
       limb1: UInt64(truncatingIfNeeded: final1),

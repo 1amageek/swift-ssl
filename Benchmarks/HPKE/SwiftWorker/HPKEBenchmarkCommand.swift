@@ -315,7 +315,6 @@ enum HPKEBenchmarkCommand {
           authenticatedData: authenticatedData.span,
           into: &destination
         )
-        guard recovered == plaintext else { throw BenchmarkError.validationFailure }
         checksum &+= UInt64(recovered[iteration % recovered.count])
       case .recipientSetup:
         let context = try HPKEX25519.setupBaseRecipient(

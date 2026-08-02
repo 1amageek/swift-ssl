@@ -3,6 +3,26 @@
   import simd
 
   enum AESARM64Kernel {
+    /// Applies the AES S-box to all four bytes of a key-schedule word without
+    /// secret-dependent memory access.
+    @inline(__always)
+    static func subWord(_ word: UInt32) -> UInt32 {
+      // Unsafe bit-cast invariants:
+      // - SIMD4<UInt32> and SIMD16<UInt8> are both fixed 16-byte values.
+      // - Both source values are fully initialized value types. No pointer,
+      //   storage binding, aliasing, ownership transfer, or deallocation is
+      //   involved, and no borrow escapes this synchronous function.
+      // - The word is byte-swapped before duplication so each vector column
+      //   contains the key schedule's big-endian byte order.
+      // - Repeating the same word in all four columns makes AES ShiftRows a
+      //   no-op for the value of each column, leaving only SubBytes.
+      let columns = SIMD4<UInt32>(repeating: word.byteSwapped)
+      let bytes = unsafeBitCast(columns, to: SIMD16<UInt8>.self)
+      let substituted = vaeseq_u8(bytes, SIMD16<UInt8>(repeating: 0))
+      let result = unsafeBitCast(substituted, to: SIMD4<UInt32>.self)
+      return result[0].byteSwapped
+    }
+
     @inline(__always)
     static func encrypt(
       _ input: Span<UInt8>,

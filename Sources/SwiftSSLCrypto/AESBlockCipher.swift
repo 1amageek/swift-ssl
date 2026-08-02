@@ -28,10 +28,10 @@ struct AESBlockCipher: ~Copyable {
     while index < wordCount {
       let offset = index * 4
       words[index] =
-        (UInt32(key[offset]) << 24)
-        | (UInt32(key[offset + 1]) << 16)
-        | (UInt32(key[offset + 2]) << 8)
-        | UInt32(key[offset + 3])
+        (UInt32(key[unchecked: offset]) << 24)
+        | (UInt32(key[unchecked: offset + 1]) << 16)
+        | (UInt32(key[unchecked: offset + 2]) << 8)
+        | UInt32(key[unchecked: offset + 3])
       index += 1
     }
 
@@ -178,10 +178,14 @@ struct AESBlockCipher: ~Copyable {
   }
 
   private static func subWord(_ word: UInt32) -> UInt32 {
-    (UInt32(sBox[Int((word >> 24) & 0xff)]) << 24)
-      | (UInt32(sBox[Int((word >> 16) & 0xff)]) << 16)
-      | (UInt32(sBox[Int((word >> 8) & 0xff)]) << 8)
-      | UInt32(sBox[Int(word & 0xff)])
+    #if arch(arm64) && canImport(simd)
+      AESARM64Kernel.subWord(word)
+    #else
+      (UInt32(sBox[Int((word >> 24) & 0xff)]) << 24)
+        | (UInt32(sBox[Int((word >> 16) & 0xff)]) << 16)
+        | (UInt32(sBox[Int((word >> 8) & 0xff)]) << 8)
+        | UInt32(sBox[Int(word & 0xff)])
+    #endif
   }
 
   private static func xtime(_ value: UInt8) -> UInt8 {
