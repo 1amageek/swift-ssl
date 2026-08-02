@@ -296,6 +296,27 @@ from source commit `581e9666028457f4b39af75ec93a637615d1ffde`
 (SHA-256
 `b9f9f0cd93b6036c47fee6dbae7bb2dc8af2c0cad30b5ba6cac46a9a59fb42ab`).
 
+### HPKE X25519 formal timing benchmark
+
+| Benchmark | Swift median ns/op | BoringSSL median ns/op | Ratio | 95% bootstrap CI | Gate |
+|---|---:|---:|---:|---:|---:|
+| X25519 shared secret | 14,387.157 | 16,772.418 | `1.1660x` | `[1.1643, 1.1672]` | Pass |
+| Recipient setup | 16,144.922 | 18,653.506 | `1.1542x` | `[1.1536, 1.1558]` | Pass |
+| Recipient setup + first open, 256-byte payload | 17,486.929 | 18,750.276 | `1.0718x` | `[1.0704, 1.0731]` | Fail |
+| Recipient setup + first open, 1,536-byte payload | 19,409.884 | 18,895.543 | `0.9741x` | `[0.9728, 0.9747]` | Fail |
+
+The valid formal run used 30 balanced randomized pairs and 10,000 paired
+bootstrap resamples. Complete encapsulation, ciphertext, and recovered-
+plaintext equality passed. The overall performance gate failed because every
+workload must have a lower confidence bound of at least `1.10x`; the measured
+first-open paths remain below that requirement.
+
+The committed raw artifact is
+[`Benchmarks/HPKE/Results/20260802T034901Z-native-hpke.json`](Benchmarks/HPKE/Results/20260802T034901Z-native-hpke.json),
+from clean source commit `d3fa129cb298cd443d2edd19d09a7afa61fa0c9f`
+(SHA-256
+`9e7c6f511fa3fa68edec7791d6b4d5185e07a4ef946a9b9c278bb1ac03b98463`).
+
 See [docs/VERIFICATION.md](docs/VERIFICATION.md) for gates and measurement rules.
 
 ## Documentation
