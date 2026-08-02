@@ -206,27 +206,42 @@ private enum X25519Montgomery {
     scalar: Span<UInt8>,
     uCoordinate: Span<UInt8>
   ) -> X25519FieldElement {
+    precondition(scalar.count == X25519PrivateKey.byteCount)
+    // Unsafe boundary invariants:
+    // - The length precondition proves that four unaligned UInt64 loads stay
+    //   within initialized scalar storage retained for this synchronous borrow.
+    // - The raw pointer is neither rebound nor retained outside the closure.
+    // - Explicit little-endian conversion preserves RFC 7748 scalar semantics.
+    let scalarWords: (UInt64, UInt64, UInt64, UInt64) = scalar.withUnsafeBytes {
+      bytes in
+      let baseAddress = bytes.baseAddress.unsafelyUnwrapped
+      return (
+        UInt64(littleEndian: baseAddress.loadUnaligned(as: UInt64.self)),
+        UInt64(
+          littleEndian: baseAddress.loadUnaligned(fromByteOffset: 8, as: UInt64.self)
+        ),
+        UInt64(
+          littleEndian: baseAddress.loadUnaligned(fromByteOffset: 16, as: UInt64.self)
+        ),
+        UInt64(
+          littleEndian: baseAddress.loadUnaligned(fromByteOffset: 24, as: UInt64.self)
+        )
+      )
+    }
     let x1 = X25519FieldElement(bytes: uCoordinate)
     var x2 = X25519FieldElement(one: true)
     var z2 = X25519FieldElement()
     var x3 = x1
     var z3 = X25519FieldElement(one: true)
     var swap: UInt64 = 0
-    var bit = 254
-    while bit >= 0 {
-      // RFC 7748 clamping is applied while reading the scalar. The loop
-      // never materializes a second secret buffer: bits 0...2 are zero,
-      // bit 254 is one, and bit 255 is outside the ladder range.
-      let bitValue: UInt64
-      if bit == 254 {
-        bitValue = 1
-      } else if bit < 3 {
-        bitValue = 0
-      } else {
-        bitValue = UInt64(
-          (scalar[unchecked: bit >> 3] >> UInt8(bit & 7)) & 1
-        )
-      }
+    // Clamp in registers and consume each source word once. This avoids a
+    // byte load for every ladder bit without materializing a secret buffer.
+    var scalarWord = (scalarWords.3 & 0x7fff_ffff_ffff_ffff) | (UInt64(1) << 62)
+    var scalarBit = 62
+    var scalarWordIndex = 3
+    var remainingBits = 255
+    while remainingBits > 0 {
+      let bitValue = (scalarWord >> scalarBit) & 1
       swap ^= bitValue
       X25519FieldElement.conditionalSwap(&x2, &x3, swap)
       X25519FieldElement.conditionalSwap(&z2, &z3, swap)
@@ -253,7 +268,21 @@ private enum X25519Montgomery {
       difference2 = difference2 + difference3
       z3 = x1 * sum3
       z2 = sum2 * difference2
-      bit -= 1
+      remainingBits -= 1
+      if scalarBit == 0, remainingBits > 0 {
+        scalarWordIndex -= 1
+        switch scalarWordIndex {
+        case 2:
+          scalarWord = scalarWords.2
+        case 1:
+          scalarWord = scalarWords.1
+        default:
+          scalarWord = scalarWords.0 & ~UInt64(7)
+        }
+        scalarBit = 63
+      } else {
+        scalarBit -= 1
+      }
     }
     X25519FieldElement.conditionalSwap(&x2, &x3, swap)
     X25519FieldElement.conditionalSwap(&z2, &z3, swap)

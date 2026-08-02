@@ -17,6 +17,7 @@ enum TargetValidationCommand {
     case p256
     case nistECDSA
     case rsaPSS
+    case rsaPKCS1v15
     case hmacDRBG
     case sha384512
     case sha3
@@ -62,6 +63,7 @@ enum TargetValidationCommand {
     try validateECH()
     try validateP256()
     try validateRSAPSS()
+    try validateRSAPKCS1v15()
     try validateHMACDRBG()
     try validateSHA384AndSHA512()
     try validateSHA3()
@@ -557,6 +559,56 @@ enum TargetValidationCommand {
       )
     else {
       throw Failure.rsaPSS
+    }
+  }
+
+  private static func validateRSAPKCS1v15() throws {
+    let modulus = try hexadecimalBytes(
+      "F4F562EEF1868A943E858DB385112D5BF64E8E3EE9D671F1A6A2A5A131840EF1"
+        + "38EB10E35C2D7DD76AE7F8B18C3881386265A03900D1E438D4747D3044447172"
+        + "CAD6BC3C85D2F41AD63BAF84005857EB14658FBB93A4B3C9F633299E4DDEEEED"
+        + "715C7A2B20B8C6FF97C5830AAF5361E1FDB97D219F32033264388D641344FFD2"
+        + "28CEA97DA95C2CC8FD436532ACAB1BDEAB76DDFF5DD68D9CC473A0C84F3C4792"
+        + "70F3299022C8ED8CEFB11BD1EBEBB8A4F27C959448CD8F0C9D3946E56D1D552"
+        + "160BAC17DB2D7E1A2066A84CBAFBA5F07F707F24CBE11E536234E1A6BCD32CD1"
+        + "04C0688AA508D3782076F9B9FEBCE621A10791C967B07785369FC665460C3B5A9"
+    )
+    let digest = try hexadecimalBytes(
+      "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    )
+    let signature = try hexadecimalBytes(
+      "5A99A2DE514F685BE33137296CBBD9AB30A0D56D46F98E89441333C69F0604B1"
+        + "3658F0AA2F99E101897F8BE4E9A9B41150CCEAC7FE12CF1A8AE74F6C5D5AD322"
+        + "164D9AA0B5F3F98F345782B253F02015166E0A290C99670D1FE5BDEF2DF0E646"
+        + "43D4158DA48B3E504D1D309261CB9A3F70F5C4A357C553BFBA658596859A37658"
+        + "7AB73802E1C910EC0A7B7B6597B2087227304BD417ECB44E85DCB03A53E89CC8"
+        + "BAAADC88BD302274BA92877457856C3B16147A63D3EDA6A2627433088AAF1E22"
+        + "C3AE6BF9CAD7761AA7376EBC1EBC5E4F22132D0B6490626CC3E6997951B6C4E"
+        + "D301C47D6320147518B9F1B361FFB94A8204E80E9A9D98ACE21BB01834754A82"
+    )
+    let key = try RSAPublicKey(modulus: modulus.span, exponent: 65_537)
+    guard
+      try RSAPKCS1v15.verify(
+        signature: signature.span,
+        messageHash: digest.span,
+        publicKey: key,
+        hash: .sha256
+      )
+    else {
+      throw Failure.rsaPKCS1v15
+    }
+
+    var modifiedSignature = signature
+    modifiedSignature[modifiedSignature.count - 1] ^= 1
+    guard
+      try !RSAPKCS1v15.verify(
+        signature: modifiedSignature.span,
+        messageHash: digest.span,
+        publicKey: key,
+        hash: .sha256
+      )
+    else {
+      throw Failure.rsaPKCS1v15
     }
   }
 

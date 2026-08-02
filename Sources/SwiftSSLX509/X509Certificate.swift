@@ -316,6 +316,13 @@ public struct X509Certificate: Sendable, Hashable {
             return
         }
 
+        if let hash = Self.rsaPKCS1v15Hash(
+            for: signatureAlgorithm.objectIdentifier
+        ) {
+            try verifyRSAPKCS1v15(using: verificationKey, hash: hash)
+            return
+        }
+
         let digest: ContiguousArray<UInt8>
         let signatureComponentByteCount: Int
         switch Array(signatureAlgorithm.objectIdentifier) {
@@ -442,6 +449,62 @@ public struct X509Certificate: Sendable, Hashable {
             throw .signatureVerificationFailed
         }
         guard valid else { throw .signatureVerificationFailed }
+    }
+
+    private borrowing func verifyRSAPKCS1v15(
+        using verificationKey: borrowing SubjectPublicKeyInfo,
+        hash: RSAPKCS1v15Hash
+    ) throws(X509CertificateError) {
+        guard signatureAlgorithm.parameters == .null
+                  || signatureAlgorithm.parameters == .absent,
+              verificationKey.algorithm == .rsaEncryption,
+              verificationKey.algorithmIdentifier.parameters == .null
+                  || verificationKey.algorithmIdentifier.parameters == .absent else {
+            throw .unsupportedSignatureAlgorithm
+        }
+
+        let key: RSAPublicKey
+        do {
+            key = try verificationKey.withPublicKeyBytes { bytes in
+                try Self.parseRSAPublicKey(bytes, limits: Self.defaultParsingLimits)
+            }
+        } catch {
+            throw .signatureVerificationFailed
+        }
+
+        let digest: ContiguousArray<UInt8>
+        switch hash {
+        case .sha256: digest = try hashSHA256(tbs: self)
+        case .sha384: digest = try hashSHA384(tbs: self)
+        case .sha512: digest = try hashSHA512(tbs: self)
+        }
+        let digestOwner = OwnedBytes(consuming: digest)
+
+        let valid: Bool
+        do {
+            valid = try withSignatureBytes { signature in
+                try RSAPKCS1v15.verify(
+                    signature: signature,
+                    messageHash: digestOwner.span,
+                    publicKey: key,
+                    hash: hash
+                )
+            }
+        } catch {
+            throw .signatureVerificationFailed
+        }
+        guard valid else { throw .signatureVerificationFailed }
+    }
+
+    private static func rsaPKCS1v15Hash(
+        for objectIdentifier: ContiguousArray<UInt64>
+    ) -> RSAPKCS1v15Hash? {
+        switch Array(objectIdentifier) {
+        case [1, 2, 840, 113549, 1, 1, 11]: return .sha256
+        case [1, 2, 840, 113549, 1, 1, 12]: return .sha384
+        case [1, 2, 840, 113549, 1, 1, 13]: return .sha512
+        default: return nil
+        }
     }
 
     private static func requireSupportedECDSAKey(
