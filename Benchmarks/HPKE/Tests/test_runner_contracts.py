@@ -56,6 +56,11 @@ class RunnerContractTests(unittest.TestCase):
             ("HPKEX25519", "X25519FieldElement"),
         )
 
+    def test_codegen_gate_distinguishes_direct_and_emulated_pmull(self) -> None:
+        disassembly = "pmull.1q v0, v1, v2\npmull.8h v3, v4, v5\n"
+        self.assertEqual(len(runner.DIRECT_PMULL_PATTERN.findall(disassembly)), 1)
+        self.assertEqual(len(runner.BYTE_PMULL_PATTERN.findall(disassembly)), 1)
+
     def test_balanced_orders_are_equal_and_reproducible(self) -> None:
         first = runner.balanced_orders(30, random.Random(42))
         second = runner.balanced_orders(30, random.Random(42))

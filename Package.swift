@@ -12,6 +12,10 @@ let ownershipSettings: [SwiftSetting] = [
   .enableExperimentalFeature("Extern"),
 ]
 
+let cryptoSettings = ownershipSettings + [
+  .enableExperimentalFeature("BuiltinModule")
+]
+
 var nistValidationSettings = ownershipSettings
 switch ProcessInfo.processInfo.environment["SWIFT_SSL_NIST_VALIDATION_CASE"] {
 case nil, "all":
@@ -74,7 +78,7 @@ var targets: [Target] = [
   .target(
     name: "SwiftSSLCrypto",
     dependencies: ["SwiftSSLCore"],
-    swiftSettings: ownershipSettings
+    swiftSettings: cryptoSettings
   ),
   .target(
     name: "SwiftSSLASN1",

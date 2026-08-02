@@ -88,6 +88,8 @@ REQUIRED_SWIFT_SYMBOLS = (
     "HPKEX25519",
     "X25519FieldElement",
 )
+DIRECT_PMULL_PATTERN = re.compile(r"\bpmull\.1q\b")
+BYTE_PMULL_PATTERN = re.compile(r"\bpmull\.8h\b")
 
 
 def parse_positive_integer(value: str) -> int:
@@ -262,11 +264,14 @@ def inspect_worker_codegen(
     ).stdout
     multiply_high_count = len(re.findall(r"\bumulh\b", swift_disassembly))
     carry_count = len(re.findall(r"\badc\b", swift_disassembly))
-    polynomial_multiply_count = len(re.findall(r"\bpmull\.8h\b", swift_disassembly))
+    direct_polynomial_multiply_count = len(DIRECT_PMULL_PATTERN.findall(swift_disassembly))
+    byte_polynomial_multiply_count = len(BYTE_PMULL_PATTERN.findall(swift_disassembly))
     aes_round_count = len(re.findall(r"\baese\.16b\b", swift_disassembly))
     if multiply_high_count < 100 or carry_count < 100:
         raise BenchmarkError("Swift UInt128 field-arithmetic code generation is missing")
-    if polynomial_multiply_count == 0 or aes_round_count == 0:
+    if direct_polynomial_multiply_count == 0 or byte_polynomial_multiply_count != 0:
+        raise BenchmarkError("Swift direct ARM64 polynomial multiplication is missing")
+    if aes_round_count == 0:
         raise BenchmarkError("Swift ARM64 AES-GCM code generation is missing")
     undefined_swift = support.run_command(
         [toolchain["tools"]["nm"], "-u", str(swift_worker)],
@@ -306,7 +311,9 @@ def inspect_worker_codegen(
             "disassemblySHA256": hashlib.sha256(swift_disassembly.encode()).hexdigest(),
             "uint128MultiplyHighInstructionCount": multiply_high_count,
             "carryInstructionCount": carry_count,
-            "polynomialMultiplyInstructionCount": polynomial_multiply_count,
+            "polynomialMultiplyInstructionCount": direct_polynomial_multiply_count,
+            "directPolynomialMultiplyInstructionCount": direct_polynomial_multiply_count,
+            "bytePolynomialMultiplyInstructionCount": byte_polynomial_multiply_count,
             "aesRoundInstructionCount": aes_round_count,
             "externalCryptoImports": [],
             "passed": True,

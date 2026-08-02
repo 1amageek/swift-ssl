@@ -215,6 +215,28 @@ final class AESGCMTests: XCTestCase {
   }
 
   #if canImport(Darwin) && arch(arm64) && canImport(simd)
+    func testARM64GHASHMultiplyMatchesBitSerialReference() {
+      var state: UInt64 = 0x243f_6a88_85a3_08d3
+      func nextWord() -> UInt64 {
+        state = state &* 0xd134_2543_de82_ef95 &+ 0x1319_8a2e_0370_7344
+        return state
+      }
+
+      for _ in 0..<1_000 {
+        let x = (nextWord(), nextWord())
+        let hash = (nextWord(), nextWord())
+        let expected = bitSerialGHASHMultiply(x: x, hash: hash)
+        let actual = GHASHARM64Kernel.multiply(
+          xHigh: x.0,
+          xLow: x.1,
+          hashHigh: hash.0,
+          hashLow: hash.1
+        )
+        XCTAssertEqual(actual.0, expected.0)
+        XCTAssertEqual(actual.1, expected.1)
+      }
+    }
+
     func testARM64FourBlockGHASHMatchesSequentialEvaluation() {
       var state: UInt64 = 0x9e37_79b9_7f4a_7c15
       func nextWord() -> UInt64 {
@@ -280,6 +302,34 @@ final class AESGCMTests: XCTestCase {
         XCTAssertEqual(actual.0, expected.0)
         XCTAssertEqual(actual.1, expected.1)
       }
+    }
+
+    private func bitSerialGHASHMultiply(
+      x: (UInt64, UInt64),
+      hash: (UInt64, UInt64)
+    ) -> (UInt64, UInt64) {
+      var resultHigh: UInt64 = 0
+      var resultLow: UInt64 = 0
+      var valueHigh = hash.0
+      var valueLow = hash.1
+      var bitIndex = 0
+      while bitIndex < 128 {
+        let bit: UInt64
+        if bitIndex < 64 {
+          bit = (x.0 >> UInt64(63 - bitIndex)) & 1
+        } else {
+          bit = (x.1 >> UInt64(127 - bitIndex)) & 1
+        }
+        let selectionMask = UInt64(0) &- bit
+        resultHigh ^= valueHigh & selectionMask
+        resultLow ^= valueLow & selectionMask
+
+        let reductionMask = UInt64(0) &- (valueLow & 1)
+        valueLow = (valueLow >> 1) | (valueHigh << 63)
+        valueHigh = (valueHigh >> 1) ^ (0xe100_0000_0000_0000 & reductionMask)
+        bitIndex += 1
+      }
+      return (resultHigh, resultLow)
     }
   #endif
 

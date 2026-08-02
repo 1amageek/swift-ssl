@@ -1,13 +1,13 @@
 #if canImport(Darwin) && arch(arm64) && canImport(simd)
+  import Builtin
   import simd
 
   /// ARM64 carry-less multiplication for the GHASH field.
   ///
   /// Swift cannot import `vmull_p64` because Clang's `poly128_t` result is not
-  /// representable in Swift. This kernel batches the equivalent recursive
-  /// Karatsuba product into four importable `vmull_p8` operations. All values
-  /// remain fixed-width stack or register storage; no pointer or allocation is
-  /// involved.
+  /// representable in Swift. The pinned Swift 6.4 toolchain exposes the same
+  /// LLVM operation through `BuiltinModule`, keeping the polynomial product in
+  /// fixed-width Swift storage without a C, assembly, or allocation boundary.
   enum GHASHARM64Kernel {
     @inline(__always)
     static func multiply(
@@ -104,97 +104,16 @@
       _ lhs: UInt64,
       _ rhs: UInt64
     ) -> (UInt64, UInt64) {
-      let directIndices = SIMD16<UInt8>(
-        0, 2, 0, 4, 6, 4, 0, 2,
-        1, 3, 1, 5, 7, 5, 1, 3
-      )
-      let xorIndices = SIMD16<UInt8>(
-        0xff, 0xff, 2, 0xff, 0xff, 6, 4, 6,
-        0xff, 0xff, 3, 0xff, 0xff, 7, 5, 7
-      )
-      let lhsBytes = vreinterpretq_u8_u64(SIMD2<UInt64>(repeating: lhs))
-      let rhsBytes = vreinterpretq_u8_u64(SIMD2<UInt64>(repeating: rhs))
-      let lhsParts =
-        vqtbl1q_u8(lhsBytes, directIndices)
-        ^ vqtbl1q_u8(lhsBytes, xorIndices)
-      let rhsParts =
-        vqtbl1q_u8(rhsBytes, directIndices)
-        ^ vqtbl1q_u8(rhsBytes, xorIndices)
-      let lhsLow = vget_low_u8(lhsParts)
-      let lhsHigh = vget_high_u8(lhsParts)
-      let rhsLow = vget_low_u8(rhsParts)
-      let rhsHigh = vget_high_u8(rhsParts)
-      let lowProducts = vmull_p8(lhsLow, rhsLow)
-      let highProducts = vmull_p8(lhsHigh, rhsHigh)
-      let foldedProducts = vmull_p8(lhsLow ^ lhsHigh, rhsLow ^ rhsHigh)
-      let lhsMiddle = UInt16(
-        truncatingIfNeeded: lhs ^ (lhs >> 16) ^ (lhs >> 32) ^ (lhs >> 48)
-      )
-      let rhsMiddle = UInt16(
-        truncatingIfNeeded: rhs ^ (rhs >> 16) ^ (rhs >> 32) ^ (rhs >> 48)
-      )
-      let middleProducts = vmull_p8(
-        SIMD8(low(lhsMiddle), high(lhsMiddle), folded(lhsMiddle), 0, 0, 0, 0, 0),
-        SIMD8(low(rhsMiddle), high(rhsMiddle), folded(rhsMiddle), 0, 0, 0, 0, 0)
-      )
-
-      let product00 = combine(lowProducts[0], highProducts[0], foldedProducts[0])
-      let product01 = combine(lowProducts[1], highProducts[1], foldedProducts[1])
-      let product0M = combine(lowProducts[2], highProducts[2], foldedProducts[2])
-      let product10 = combine(lowProducts[3], highProducts[3], foldedProducts[3])
-      let product11 = combine(lowProducts[4], highProducts[4], foldedProducts[4])
-      let product1M = combine(lowProducts[5], highProducts[5], foldedProducts[5])
-      let productM0 = combine(lowProducts[6], highProducts[6], foldedProducts[6])
-      let productM1 = combine(lowProducts[7], highProducts[7], foldedProducts[7])
-      let productMM = combine(middleProducts[0], middleProducts[1], middleProducts[2])
-
-      let lowProduct = combine32(product00, product01, product0M)
-      let highProduct = combine32(product10, product11, product1M)
-      let middleProduct = combine32(productM0, productM1, productMM)
-      let cross = middleProduct ^ lowProduct ^ highProduct
-      return (
-        lowProduct ^ (cross << 32),
-        highProduct ^ (cross >> 32)
-      )
-    }
-
-    @inline(__always)
-    private static func low(_ value: UInt16) -> UInt8 {
-      UInt8(truncatingIfNeeded: value)
-    }
-
-    @inline(__always)
-    private static func high(_ value: UInt16) -> UInt8 {
-      UInt8(truncatingIfNeeded: value >> 8)
-    }
-
-    @inline(__always)
-    private static func folded(_ value: UInt16) -> UInt8 {
-      low(value) ^ high(value)
-    }
-
-    @inline(__always)
-    private static func combine(
-      _ lowProduct: UInt16,
-      _ highProduct: UInt16,
-      _ foldedProduct: UInt16
-    ) -> UInt32 {
-      let middle = lowProduct ^ highProduct ^ foldedProduct
-      return UInt32(lowProduct)
-        ^ (UInt32(middle) << 8)
-        ^ (UInt32(highProduct) << 16)
-    }
-
-    @inline(__always)
-    private static func combine32(
-      _ lowProduct: UInt32,
-      _ highProduct: UInt32,
-      _ foldedProduct: UInt32
-    ) -> UInt64 {
-      let middle = lowProduct ^ highProduct ^ foldedProduct
-      return UInt64(lowProduct)
-        ^ (UInt64(middle) << 16)
-        ^ (UInt64(highProduct) << 32)
+      // Builtin boundary invariants:
+      // - Both UInt64 operands are fully initialized scalar values.
+      // - The intrinsic returns all 128 initialized product bits in little-
+      //   endian low/high limb order, matching SIMD2<UInt64> on Apple ARM64.
+      // - No pointer, alias, borrow, or mutable storage escapes this function.
+      let product = Builtin.int_aarch64_neon_pmull64(lhs._value, rhs._value)
+      var bytes = SIMD16<UInt8>(repeating: 0)
+      bytes._storage._value = product
+      let words = vreinterpretq_u64_u8(bytes)
+      return (words[0], words[1])
     }
 
     @inline(__always)
