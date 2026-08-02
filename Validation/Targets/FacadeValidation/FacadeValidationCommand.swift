@@ -390,7 +390,7 @@ enum FacadeValidationCommand {
       0xF5, 0x3A, 0x67, 0xB2, 0x12, 0x57, 0xBD, 0xDF,
     ]
     var sealed = ContiguousArray<UInt8>(repeating: 0, count: expected.count)
-    var cipher = try AESGCM(key: key.span)
+    let cipher = try AESGCM(key: key.span)
     var sealedSpan = sealed.mutableSpan
     try cipher.seal(
       plaintext: plaintext.span,
@@ -424,7 +424,7 @@ enum FacadeValidationCommand {
       0x38, 0x2B, 0xB4, 0xD3, 0x6F, 0x5F, 0xFA, 0xD1,
     ]
     var sealed = ContiguousArray<UInt8>(repeating: 0, count: expected.count)
-    var cipher = try ChaCha20Poly1305(key: key.span)
+    let cipher = try ChaCha20Poly1305(key: key.span)
     var sealedSpan = sealed.mutableSpan
     try cipher.seal(
       plaintext: plaintext.span,

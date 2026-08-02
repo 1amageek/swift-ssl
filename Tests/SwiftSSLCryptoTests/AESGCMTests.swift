@@ -31,7 +31,7 @@ final class AESGCMTests: XCTestCase {
     let key = bytes("00000000000000000000000000000000")
     let nonce = bytes("000000000000000000000000")
     var output = ContiguousArray<UInt8>(repeating: 0, count: 16)
-    var cipher = try AESGCM(key: key.span)
+    let cipher = try AESGCM(key: key.span)
     let empty = UnsafeBufferPointer<UInt8>(start: nil, count: 0)
 
     try output.withUnsafeMutableBufferPointer { buffer in
@@ -53,7 +53,7 @@ final class AESGCMTests: XCTestCase {
     let plaintext = bytes("00000000000000000000000000000000")
     let expected = "0388dace60b6a392f328c2b971b2fe78ab6e47d42cec13bdf53a67b21257bddf"
     var sealed = ContiguousArray<UInt8>(repeating: 0, count: 32)
-    var cipher = try AESGCM(key: key.span)
+    let cipher = try AESGCM(key: key.span)
     let empty = UnsafeBufferPointer<UInt8>(start: nil, count: 0)
 
     try sealed.withUnsafeMutableBufferPointer { buffer in
@@ -98,7 +98,7 @@ final class AESGCMTests: XCTestCase {
       + "5bc94fbc3221a5db94fae95ae7121a47"
 
     var sealed = ContiguousArray<UInt8>(repeating: 0, count: plaintext.count + 16)
-    var cipher = try AESGCM(key: key.span)
+    let cipher = try AESGCM(key: key.span)
     try sealed.withUnsafeMutableBufferPointer { buffer in
       var output = MutableSpan(_unsafeElements: buffer)
       try cipher.seal(
@@ -118,7 +118,7 @@ final class AESGCMTests: XCTestCase {
     input[input.count - 1] ^= 1
     var output = ContiguousArray<UInt8>(repeating: 0xA5, count: 16)
     let original = output
-    var cipher = try AESGCM(key: key.span)
+    let cipher = try AESGCM(key: key.span)
     let empty = UnsafeBufferPointer<UInt8>(start: nil, count: 0)
 
     try output.withUnsafeMutableBufferPointer { buffer in
@@ -143,7 +143,7 @@ final class AESGCMTests: XCTestCase {
     let plaintext = bytes("00000000000000000000000000000000")
     var storage = ContiguousArray<UInt8>(repeating: 0, count: 32)
     storage.replaceSubrange(0..<plaintext.count, with: plaintext)
-    var cipher = try AESGCM(key: key.span)
+    let cipher = try AESGCM(key: key.span)
     let empty = UnsafeBufferPointer<UInt8>(start: nil, count: 0)
 
     try storage.withUnsafeMutableBufferPointer { buffer in
@@ -176,7 +176,7 @@ final class AESGCMTests: XCTestCase {
     var storage = ContiguousArray<UInt8>(repeating: 0x5A, count: 48)
     storage.replaceSubrange(0..<16, with: bytes("00000000000000000000000000000000"))
     let original = storage
-    var cipher = try AESGCM(key: key.span)
+    let cipher = try AESGCM(key: key.span)
     let empty = UnsafeBufferPointer<UInt8>(start: nil, count: 0)
 
     try storage.withUnsafeMutableBufferPointer { buffer in
@@ -246,24 +246,6 @@ final class AESGCMTests: XCTestCase {
 
       for _ in 0..<1_000 {
         let hash = (nextWord(), nextWord())
-        let squared = GHASHARM64Kernel.multiply(
-          xHigh: hash.0,
-          xLow: hash.1,
-          hashHigh: hash.0,
-          hashLow: hash.1
-        )
-        let cubed = GHASHARM64Kernel.multiply(
-          xHigh: squared.0,
-          xLow: squared.1,
-          hashHigh: hash.0,
-          hashLow: hash.1
-        )
-        let fourth = GHASHARM64Kernel.multiply(
-          xHigh: squared.0,
-          xLow: squared.1,
-          hashHigh: squared.0,
-          hashLow: squared.1
-        )
         let blocks = SIMD8<UInt64>(
           nextWord(), nextWord(),
           nextWord(), nextWord(),
@@ -292,12 +274,62 @@ final class AESGCMTests: XCTestCase {
           accumulatorHigh: accumulator.0,
           accumulatorLow: accumulator.1,
           blocks: blocks,
-          hashPowers: SIMD8(
-            hash.0, hash.1,
-            squared.0, squared.1,
-            cubed.0, cubed.1,
-            fourth.0, fourth.1
+          reversedHashPowers: GHASHARM64Kernel.makeReversedHashPowers(
+            hashHigh: hash.0,
+            hashLow: hash.1
           )
+        )
+        XCTAssertEqual(actual.0, expected.0)
+        XCTAssertEqual(actual.1, expected.1)
+      }
+    }
+
+    func testARM64EightBlockGHASHMatchesSequentialEvaluation() {
+      var state: UInt64 = 0x243f_6a88_85a3_08d3
+      func nextWord() -> UInt64 {
+        state = state &* 0x9e37_79b9_7f4a_7c15 &+ 0x1319_8a2e_0370_7344
+        return state
+      }
+
+      for _ in 0..<1_000 {
+        let hash = (nextWord(), nextWord())
+        let blocks = SIMD16<UInt64>(
+          nextWord(), nextWord(),
+          nextWord(), nextWord(),
+          nextWord(), nextWord(),
+          nextWord(), nextWord(),
+          nextWord(), nextWord(),
+          nextWord(), nextWord(),
+          nextWord(), nextWord(),
+          nextWord(), nextWord()
+        )
+        let accumulator = (nextWord(), nextWord())
+
+        var expected = GHASHARM64Kernel.multiply(
+          xHigh: accumulator.0 ^ blocks[0],
+          xLow: accumulator.1 ^ blocks[1],
+          hashHigh: hash.0,
+          hashLow: hash.1
+        )
+        var blockIndex = 1
+        while blockIndex < 8 {
+          expected = GHASHARM64Kernel.multiply(
+            xHigh: expected.0 ^ blocks[blockIndex * 2],
+            xLow: expected.1 ^ blocks[blockIndex * 2 + 1],
+            hashHigh: hash.0,
+            hashLow: hash.1
+          )
+          blockIndex += 1
+        }
+        let firstFour = GHASHARM64Kernel.makeReversedHashPowers(
+          hashHigh: hash.0,
+          hashLow: hash.1
+        )
+        let actual = GHASHARM64Kernel.multiplyEight(
+          accumulatorHigh: accumulator.0,
+          accumulatorLow: accumulator.1,
+          blocks: blocks,
+          reversedHashPowers: GHASHARM64Kernel.makeEightReversedHashPowers(firstFour)
         )
         XCTAssertEqual(actual.0, expected.0)
         XCTAssertEqual(actual.1, expected.1)

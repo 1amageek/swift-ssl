@@ -6,7 +6,7 @@ import SwiftSSLCore
 /// pointer escapes a scoped buffer closure. The reference implementation uses
 /// bounded 64-byte and 16-byte temporaries; the allocation/code-generation
 /// budget is tracked separately from the correctness contract.
-public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher {
+public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher, Sendable {
   public static let supportedKeyByteCounts = [32]
   public static let nonceByteCount = 12
   public static let tagByteCount = 16
@@ -38,7 +38,7 @@ public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher {
     }
   }
 
-  public mutating func seal(
+  public func seal(
     plaintext: Span<UInt8>,
     authenticatedData: Span<UInt8>,
     nonce: Span<UInt8>,
@@ -85,7 +85,7 @@ public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher {
     }
   }
 
-  public mutating func open(
+  public func open(
     ciphertextAndTag: Span<UInt8>,
     authenticatedData: Span<UInt8>,
     nonce: Span<UInt8>,

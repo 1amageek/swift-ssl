@@ -336,7 +336,7 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
         switch cipherSuite {
             case .aes128GCM_SHA256:
                 do {
-                    var cipher = try AESGCM(key: key)
+                    let cipher = try AESGCM(key: key)
                     try cipher.seal(plaintext: plaintext, authenticatedData: authenticatedData, nonce: nonce, into: &output)
                     return true
                 } catch {
@@ -344,7 +344,7 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
                 }
             case .aes256GCM_SHA384:
                 do {
-                    var cipher = try AESGCM(key: key)
+                    let cipher = try AESGCM(key: key)
                     try cipher.seal(plaintext: plaintext, authenticatedData: authenticatedData, nonce: nonce, into: &output)
                     return true
                 } catch {
@@ -352,7 +352,7 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
                 }
             case .chacha20Poly1305_SHA256:
                 do {
-                    var cipher = try ChaCha20Poly1305(key: key)
+                    let cipher = try ChaCha20Poly1305(key: key)
                     try cipher.seal(plaintext: plaintext, authenticatedData: authenticatedData, nonce: nonce, into: &output)
                     return true
                 } catch {
@@ -372,7 +372,7 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
         switch cipherSuite {
         case .aes128GCM_SHA256, .aes256GCM_SHA384:
             do {
-                var cipher = try AESGCM(key: key)
+                let cipher = try AESGCM(key: key)
                 try cipher.open(ciphertextAndTag: ciphertextAndTag, authenticatedData: authenticatedData, nonce: nonce, into: &output)
                 return true
             } catch {
@@ -380,7 +380,7 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
             }
         case .chacha20Poly1305_SHA256:
             do {
-                var cipher = try ChaCha20Poly1305(key: key)
+                let cipher = try ChaCha20Poly1305(key: key)
                 try cipher.open(ciphertextAndTag: ciphertextAndTag, authenticatedData: authenticatedData, nonce: nonce, into: &output)
                 return true
             } catch {

@@ -109,7 +109,7 @@ enum TargetValidationCommand {
       0xF5, 0x3A, 0x67, 0xB2, 0x12, 0x57, 0xBD, 0xDF,
     ]
     var sealed = ContiguousArray<UInt8>(repeating: 0, count: expected.count)
-    var cipher = try SwiftSSL.AESGCM(key: key.span)
+    let cipher = try SwiftSSL.AESGCM(key: key.span)
     var sealedSpan = sealed.mutableSpan
     try cipher.seal(
       plaintext: plaintext.span,
@@ -209,7 +209,7 @@ enum TargetValidationCommand {
       0x38, 0x2B, 0xB4, 0xD3, 0x6F, 0x5F, 0xFA, 0xD1,
     ]
     var sealed = ContiguousArray<UInt8>(repeating: 0, count: expected.count)
-    var cipher = try SwiftSSL.ChaCha20Poly1305(key: key.span)
+    let cipher = try SwiftSSL.ChaCha20Poly1305(key: key.span)
     var sealedSpan = sealed.mutableSpan
     try cipher.seal(
       plaintext: plaintext.span,
@@ -415,28 +415,6 @@ enum TargetValidationCommand {
       0x20, 0x47, 0x72, 0x65, 0x63, 0x69, 0x61, 0x6E,
       0x20, 0x55, 0x72, 0x6E,
     ])
-    let entropy = FixedEntropy(
-      bytes: ContiguousArray<UInt8>([
-        0xF4, 0xEC, 0x9B, 0x33, 0xB7, 0x92, 0xC3, 0x72,
-        0xC1, 0xD2, 0xC2, 0x06, 0x35, 0x07, 0xB6, 0x84,
-        0xEF, 0x92, 0x5B, 0x8C, 0x75, 0xA4, 0x2D, 0xBC,
-        0xBF, 0x57, 0xD6, 0x3C, 0xCD, 0x38, 0x16, 0x00,
-      ]))
-    var setup = try HPKEX25519.setupBaseSender(
-      recipientPublicKey: recipientPrivate.publicKey,
-      info: info.span,
-      kdf: .sha256,
-      aead: .chaCha20Poly1305,
-      using: entropy
-    )
-    var recipient = try HPKEX25519.setupBaseRecipient(
-      encapsulation: setup.encapsulation.span,
-      recipientKeyPair: recipientPrivate,
-      info: info.span,
-      kdf: .sha256,
-      aead: .chaCha20Poly1305
-    )
-    var sender = setup.takeContext()
     let plaintext = ContiguousArray<UInt8>([
       0x42, 0x65, 0x61, 0x75, 0x74, 0x79, 0x20, 0x69,
       0x73, 0x20, 0x74, 0x72, 0x75, 0x74, 0x68, 0x2C,
@@ -444,19 +422,56 @@ enum TargetValidationCommand {
       0x65, 0x61, 0x75, 0x74, 0x79,
     ])
     let aad = ContiguousArray<UInt8>([0x43, 0x6F, 0x75, 0x6E, 0x74, 0x2D, 0x30])
-    let ciphertext = try sender.seal(
-      plaintext: plaintext.span,
-      authenticatedData: aad.span
-    )
-    let opened = try recipient.open(
-      ciphertext: ciphertext.span,
-      authenticatedData: aad.span
-    )
-    guard copy(opened.span) == plaintext,
-      sender.sequenceNumber == 1,
-      recipient.sequenceNumber == 1
-    else {
-      throw Failure.hpke
+    let secondPlaintext = ContiguousArray<UInt8>([0x53, 0x65, 0x71, 0x75, 0x65, 0x6E, 0x63, 0x65])
+    let secondAAD = ContiguousArray<UInt8>([0x43, 0x6F, 0x75, 0x6E, 0x74, 0x2D, 0x31])
+    let aeads: [HPKEAEAD] = [.aes128GCM, .aes256GCM, .chaCha20Poly1305]
+
+    for aead in aeads {
+      let entropy = FixedEntropy(
+        bytes: ContiguousArray<UInt8>([
+          0xF4, 0xEC, 0x9B, 0x33, 0xB7, 0x92, 0xC3, 0x72,
+          0xC1, 0xD2, 0xC2, 0x06, 0x35, 0x07, 0xB6, 0x84,
+          0xEF, 0x92, 0x5B, 0x8C, 0x75, 0xA4, 0x2D, 0xBC,
+          0xBF, 0x57, 0xD6, 0x3C, 0xCD, 0x38, 0x16, 0x00,
+        ]))
+      var setup = try HPKEX25519.setupBaseSender(
+        recipientPublicKey: recipientPrivate.publicKey,
+        info: info.span,
+        kdf: .sha256,
+        aead: aead,
+        using: entropy
+      )
+      var recipient = try HPKEX25519.setupBaseRecipient(
+        encapsulation: setup.encapsulation.span,
+        recipientKeyPair: recipientPrivate,
+        info: info.span,
+        kdf: .sha256,
+        aead: aead
+      )
+      var sender = setup.takeContext()
+      let ciphertext = try sender.seal(
+        plaintext: plaintext.span,
+        authenticatedData: aad.span
+      )
+      let opened = try recipient.open(
+        ciphertext: ciphertext.span,
+        authenticatedData: aad.span
+      )
+      let secondCiphertext = try sender.seal(
+        plaintext: secondPlaintext.span,
+        authenticatedData: secondAAD.span
+      )
+      let secondOpened = try recipient.open(
+        ciphertext: secondCiphertext.span,
+        authenticatedData: secondAAD.span
+      )
+      guard copy(opened.span) == plaintext,
+        copy(secondOpened.span) == secondPlaintext,
+        sender.sequenceNumber == 2,
+        recipient.sequenceNumber == 2
+      else {
+        throw Failure.hpke
+      }
     }
   }
 

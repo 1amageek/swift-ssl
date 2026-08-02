@@ -1,13 +1,13 @@
 import SwiftSSLCrypto
 
 /// AES-GCM with caller-owned input and output spans.
-public struct AESGCM: ~Copyable, AuthenticatedCipher {
+public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
   public static let supportedKeyByteCounts =
     SwiftSSLCrypto.AESGCM.supportedKeyByteCounts
   public static let nonceByteCount = SwiftSSLCrypto.AESGCM.nonceByteCount
   public static let tagByteCount = SwiftSSLCrypto.AESGCM.tagByteCount
 
-  private var implementation: SwiftSSLCrypto.AESGCM
+  private let implementation: SwiftSSLCrypto.AESGCM
 
   public init(key: Span<UInt8>) throws(AEADError) {
     do {
@@ -17,7 +17,7 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher {
     }
   }
 
-  public mutating func seal(
+  public func seal(
     plaintext: Span<UInt8>,
     authenticatedData: Span<UInt8>,
     nonce: Span<UInt8>,
@@ -35,7 +35,7 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher {
     }
   }
 
-  public mutating func open(
+  public func open(
     ciphertextAndTag: Span<UInt8>,
     authenticatedData: Span<UInt8>,
     nonce: Span<UInt8>,

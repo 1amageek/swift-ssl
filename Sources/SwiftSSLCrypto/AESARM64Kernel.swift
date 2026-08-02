@@ -71,12 +71,16 @@
       precondition(offset <= output.count - 64)
 
       var state0 = counter
-      var state1 = counter
-      incrementCounter(&state1)
-      var state2 = state1
-      incrementCounter(&state2)
-      var state3 = state2
-      incrementCounter(&state3)
+      let reversedWords = vreinterpretq_u32_u8(vrev32q_u8(counter))
+      var state1 = vrev32q_u8(
+        vreinterpretq_u8_u32(reversedWords &+ SIMD4(0, 0, 0, 1))
+      )
+      var state2 = vrev32q_u8(
+        vreinterpretq_u8_u32(reversedWords &+ SIMD4(0, 0, 0, 2))
+      )
+      var state3 = vrev32q_u8(
+        vreinterpretq_u8_u32(reversedWords &+ SIMD4(0, 0, 0, 3))
+      )
 
       // Unsafe boundary invariants:
       // - The schedule owns 256 initialized bytes and is borrowed only for
@@ -121,15 +125,11 @@
     }
 
     @inline(__always)
-    private static func incrementCounter(_ counter: inout SIMD16<UInt8>) {
-      var index = 15
-      while index >= 12 {
-        counter[index] &+= 1
-        if counter[index] != 0 {
-          break
-        }
-        index -= 1
-      }
+    static func advanceCounterByFour(_ counter: inout SIMD16<UInt8>) {
+      let reversedWords = vreinterpretq_u32_u8(vrev32q_u8(counter))
+      counter = vrev32q_u8(
+        vreinterpretq_u8_u32(reversedWords &+ SIMD4(0, 0, 0, 4))
+      )
     }
 
     @inline(__always)

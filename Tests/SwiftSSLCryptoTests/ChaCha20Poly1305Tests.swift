@@ -20,7 +20,7 @@ final class ChaCha20Poly1305Tests: XCTestCase {
     )
 
     var sealed = ContiguousArray<UInt8>(repeating: 0, count: expected.count)
-    var cipher = try ChaCha20Poly1305(key: key.span)
+    let cipher = try ChaCha20Poly1305(key: key.span)
     try sealed.withUnsafeMutableBufferPointer { buffer in
       var output = MutableSpan(_unsafeElements: buffer)
       try cipher.seal(
@@ -51,7 +51,7 @@ final class ChaCha20Poly1305Tests: XCTestCase {
     let plaintext = bytes("00000000000000000000000000000000")
     let authenticatedData = bytes("01020304")
     var sealed = ContiguousArray<UInt8>(repeating: 0, count: plaintext.count + 16)
-    var cipher = try ChaCha20Poly1305(key: key.span)
+    let cipher = try ChaCha20Poly1305(key: key.span)
     try sealed.withUnsafeMutableBufferPointer { buffer in
       var output = MutableSpan(_unsafeElements: buffer)
       try cipher.seal(
@@ -87,7 +87,7 @@ final class ChaCha20Poly1305Tests: XCTestCase {
     let plaintext = ContiguousArray<UInt8>(repeating: 0x42, count: 64)
     var storage = ContiguousArray<UInt8>(repeating: 0, count: plaintext.count + 16)
     storage.replaceSubrange(0..<plaintext.count, with: plaintext)
-    var cipher = try ChaCha20Poly1305(key: key.span)
+    let cipher = try ChaCha20Poly1305(key: key.span)
     let empty = UnsafeBufferPointer<UInt8>(start: nil, count: 0)
 
     try storage.withUnsafeMutableBufferPointer { buffer in
@@ -119,7 +119,7 @@ final class ChaCha20Poly1305Tests: XCTestCase {
     let nonce = ContiguousArray<UInt8>(repeating: 0, count: 12)
     var storage = ContiguousArray<UInt8>(repeating: 0x5A, count: 96)
     let original = storage
-    var cipher = try ChaCha20Poly1305(key: key.span)
+    let cipher = try ChaCha20Poly1305(key: key.span)
     let empty = UnsafeBufferPointer<UInt8>(start: nil, count: 0)
 
     try storage.withUnsafeMutableBufferPointer { buffer in

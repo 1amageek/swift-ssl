@@ -1,13 +1,13 @@
 import SwiftSSLCrypto
 
 /// RFC 8439 ChaCha20-Poly1305 with caller-owned input and output spans.
-public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher {
+public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher, Sendable {
   public static let supportedKeyByteCounts =
     SwiftSSLCrypto.ChaCha20Poly1305.supportedKeyByteCounts
   public static let nonceByteCount = SwiftSSLCrypto.ChaCha20Poly1305.nonceByteCount
   public static let tagByteCount = SwiftSSLCrypto.ChaCha20Poly1305.tagByteCount
 
-  private var implementation: SwiftSSLCrypto.ChaCha20Poly1305
+  private let implementation: SwiftSSLCrypto.ChaCha20Poly1305
 
   public init(key: Span<UInt8>) throws(AEADError) {
     do {
@@ -17,7 +17,7 @@ public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher {
     }
   }
 
-  public mutating func seal(
+  public func seal(
     plaintext: Span<UInt8>,
     authenticatedData: Span<UInt8>,
     nonce: Span<UInt8>,
@@ -35,7 +35,7 @@ public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher {
     }
   }
 
-  public mutating func open(
+  public func open(
     ciphertextAndTag: Span<UInt8>,
     authenticatedData: Span<UInt8>,
     nonce: Span<UInt8>,

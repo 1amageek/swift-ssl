@@ -35,8 +35,10 @@ flowchart LR
 
 ## Consequences
 
-- The sender and recipient are distinct noncopyable owners; key material,
-  nonce material, and exporter secret are held in one wiped secret allocation.
+- The sender and recipient are distinct noncopyable owners. Each context owns
+  one prepared AEAD key schedule, while the base nonce and exporter secret are
+  held in one wiped secret allocation. The temporary derived key is wiped
+  immediately after the prepared cipher takes ownership of its schedule.
 - Exporter output is a separate noncopyable secret owner and is exposed only
   through a scoped borrow; empty output does not allocate secret storage.
 - Sequence overflow is a typed failure, and a failed open does not advance the

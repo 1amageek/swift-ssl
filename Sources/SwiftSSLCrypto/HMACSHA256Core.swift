@@ -6,7 +6,7 @@ enum HMACSHA256Core {
   private static let innerPad: UInt8 = 0x36
   private static let outerPad: UInt8 = 0x5C
 
-  static func withPreparedContexts<Result>(
+  static func withPreparedContexts<Result: ~Copyable>(
     authenticatingWith key: Span<UInt8>,
     _ body: (
       borrowing SHA256Context,

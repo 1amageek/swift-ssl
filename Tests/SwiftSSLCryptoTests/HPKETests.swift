@@ -283,13 +283,24 @@ final class HPKETests: XCTestCase {
           authenticatedData: aad.span
         )
         XCTAssertEqual(copy(opened.span), Array(plaintext))
+        let secondPlaintext = bytes("73657175656e63652d6f6e65")
+        let secondAAD = bytes("6161642d6f6e65")
+        let secondCiphertext = try sender.seal(
+          plaintext: secondPlaintext.span,
+          authenticatedData: secondAAD.span
+        )
+        let secondOpened = try recipient.open(
+          ciphertext: secondCiphertext.span,
+          authenticatedData: secondAAD.span
+        )
+        XCTAssertEqual(copy(secondOpened.span), Array(secondPlaintext))
         let senderExport = try sender.export(bytes("01").span, length: 32)
         let recipientExport = try recipient.export(bytes("01").span, length: 32)
         let senderExportBytes = senderExport.withBorrowedBytes { copy($0) }
         let recipientExportBytes = recipientExport.withBorrowedBytes { copy($0) }
         XCTAssertEqual(senderExportBytes, recipientExportBytes)
-        XCTAssertEqual(sender.sequenceNumber, 1)
-        XCTAssertEqual(recipient.sequenceNumber, 1)
+        XCTAssertEqual(sender.sequenceNumber, 2)
+        XCTAssertEqual(recipient.sequenceNumber, 2)
       }
     }
   }

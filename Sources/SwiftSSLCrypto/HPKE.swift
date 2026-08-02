@@ -118,6 +118,7 @@ public struct HPKEExportedSecret: ~Copyable, Sendable {
 /// failure rather than a silent nonce reuse.
 public struct HPKESenderContext: ~Copyable, Sendable {
   private let secretState: SecretBytes
+  private let cipher: HPKEAEADContext
   private let kdf: HPKEKDF
   private let aead: HPKEAEAD
   private var sequence: UInt64
@@ -125,6 +126,7 @@ public struct HPKESenderContext: ~Copyable, Sendable {
   fileprivate init(material: consuming HPKEContextMaterial) {
     kdf = material.kdf
     aead = material.aead
+    cipher = consume material.cipher
     secretState = consume material.secretState
     sequence = 0
   }
@@ -169,13 +171,11 @@ public struct HPKESenderContext: ~Copyable, Sendable {
         .outputTooSmall(required: required, actual: output.count)
       )
     }
-    try withKeyAndNonce { keyBytes, nonce throws(HPKEError) in
-      try HPKEPrimitives.seal(
+    try withNonce { nonce throws(HPKEError) in
+      try cipher.seal(
         plaintext: plaintext,
         authenticatedData: authenticatedData,
         nonce: nonce,
-        key: keyBytes,
-        aead: aead,
         into: &output
       )
     }
@@ -188,7 +188,7 @@ public struct HPKESenderContext: ~Copyable, Sendable {
   ) throws(HPKEError) -> HPKEExportedSecret {
     guard length >= 0 else { throw .exporterLengthOutOfRange(length) }
     return try secretState.withBorrowedBytes { state throws(HPKEError) in
-      let offset = aead.keyByteCount + HPKEAEAD.nonceByteCount
+      let offset = HPKEAEAD.nonceByteCount
       let secret = state.extracting(offset..<state.count)
       let value = try HPKEPrimitives.export(
         secret: secret,
@@ -201,8 +201,8 @@ public struct HPKESenderContext: ~Copyable, Sendable {
     }
   }
 
-  private borrowing func withKeyAndNonce<Result: ~Copyable, Failure: Error>(
-    _ body: (Span<UInt8>, Span<UInt8>) throws(Failure) -> Result
+  private borrowing func withNonce<Result: ~Copyable, Failure: Error>(
+    _ body: (Span<UInt8>) throws(Failure) -> Result
   ) throws(Failure) -> Result {
     try secretState.withBorrowedBytes { state throws(Failure) in
       // Unsafe boundary invariants:
@@ -215,9 +215,7 @@ public struct HPKESenderContext: ~Copyable, Sendable {
         of: UInt8.self,
         capacity: HPKEAEAD.nonceByteCount
       ) { nonceBuffer throws(Failure) -> Result in
-        let baseNonce = state.extracting(
-          aead.keyByteCount..<(aead.keyByteCount + HPKEAEAD.nonceByteCount)
-        )
+        let baseNonce = state.extracting(0..<HPKEAEAD.nonceByteCount)
         var index = 0
         while index < HPKEAEAD.nonceByteCount {
           nonceBuffer[index] = baseNonce[index]
@@ -235,7 +233,7 @@ public struct HPKESenderContext: ~Copyable, Sendable {
             count: HPKEAEAD.nonceByteCount
           )
         )
-        return try body(state.extracting(0..<aead.keyByteCount), nonce)
+        return try body(nonce)
       }
     }
   }
@@ -244,6 +242,7 @@ public struct HPKESenderContext: ~Copyable, Sendable {
 /// The recipient side of one X25519/HKDF/AEAD HPKE context.
 public struct HPKERecipientContext: ~Copyable, Sendable {
   private let secretState: SecretBytes
+  private let cipher: HPKEAEADContext
   private let kdf: HPKEKDF
   private let aead: HPKEAEAD
   private var sequence: UInt64
@@ -251,6 +250,7 @@ public struct HPKERecipientContext: ~Copyable, Sendable {
   fileprivate init(material: consuming HPKEContextMaterial) {
     kdf = material.kdf
     aead = material.aead
+    cipher = consume material.cipher
     secretState = consume material.secretState
     sequence = 0
   }
@@ -306,13 +306,11 @@ public struct HPKERecipientContext: ~Copyable, Sendable {
         .outputTooSmall(required: required, actual: output.count)
       )
     }
-    try withKeyAndNonce { keyBytes, nonce throws(HPKEError) in
-      try HPKEPrimitives.open(
+    try withNonce { nonce throws(HPKEError) in
+      try cipher.open(
         ciphertext: ciphertext,
         authenticatedData: authenticatedData,
         nonce: nonce,
-        key: keyBytes,
-        aead: aead,
         into: &output
       )
     }
@@ -325,7 +323,7 @@ public struct HPKERecipientContext: ~Copyable, Sendable {
   ) throws(HPKEError) -> HPKEExportedSecret {
     guard length >= 0 else { throw .exporterLengthOutOfRange(length) }
     return try secretState.withBorrowedBytes { state throws(HPKEError) in
-      let offset = aead.keyByteCount + HPKEAEAD.nonceByteCount
+      let offset = HPKEAEAD.nonceByteCount
       let secret = state.extracting(offset..<state.count)
       let value = try HPKEPrimitives.export(
         secret: secret,
@@ -338,8 +336,8 @@ public struct HPKERecipientContext: ~Copyable, Sendable {
     }
   }
 
-  private borrowing func withKeyAndNonce<Result: ~Copyable, Failure: Error>(
-    _ body: (Span<UInt8>, Span<UInt8>) throws(Failure) -> Result
+  private borrowing func withNonce<Result: ~Copyable, Failure: Error>(
+    _ body: (Span<UInt8>) throws(Failure) -> Result
   ) throws(Failure) -> Result {
     try secretState.withBorrowedBytes { state throws(Failure) in
       // Unsafe boundary invariants:
@@ -352,9 +350,7 @@ public struct HPKERecipientContext: ~Copyable, Sendable {
         of: UInt8.self,
         capacity: HPKEAEAD.nonceByteCount
       ) { nonceBuffer throws(Failure) -> Result in
-        let baseNonce = state.extracting(
-          aead.keyByteCount..<(aead.keyByteCount + HPKEAEAD.nonceByteCount)
-        )
+        let baseNonce = state.extracting(0..<HPKEAEAD.nonceByteCount)
         var index = 0
         while index < HPKEAEAD.nonceByteCount {
           nonceBuffer[index] = baseNonce[index]
@@ -372,7 +368,7 @@ public struct HPKERecipientContext: ~Copyable, Sendable {
             count: HPKEAEAD.nonceByteCount
           )
         )
-        return try body(state.extracting(0..<aead.keyByteCount), nonce)
+        return try body(nonce)
       }
     }
   }
@@ -596,23 +592,24 @@ public enum HPKEX25519 {
       throw .keyGeneration(error)
     }
     let encapsulation = ephemeral.publicKey()
-    let dh = try sharedSecretBytes(
+    let enc = OwnedBytes(copying: encapsulation.span)
+    let material = try withSharedSecret(
       privateKey: ephemeral,
       peerPublicKey: recipientPublicKey
-    )
-    let enc = OwnedBytes(copying: encapsulation.span)
-    let material = try finishSender(
-      mode: mode,
-      dh: consume dh,
-      encapsulation: encapsulation.span,
-      recipientPublicKey: recipientPublicKey.span,
-      senderPublicKey: nil,
-      info: info,
-      psk: psk,
-      pskID: pskID,
-      kdf: kdf,
-      aead: aead
-    )
+    ) { dh throws(HPKEError) -> HPKEContextMaterial in
+      try finishSender(
+        mode: mode,
+        dh: dh,
+        encapsulation: encapsulation.span,
+        recipientPublicKey: recipientPublicKey.span,
+        senderPublicKey: nil,
+        info: info,
+        psk: psk,
+        pskID: pskID,
+        kdf: kdf,
+        aead: aead
+      )
+    }
     let context = HPKESenderContext(material: consume material)
     return HPKESenderSetup(
       encapsulation: consume enc,
@@ -642,30 +639,27 @@ public enum HPKEX25519 {
       throw .keyGeneration(error)
     }
     let encapsulation = ephemeral.publicKey()
-    var dh = try sharedSecretBytes(
-      privateKey: ephemeral,
-      peerPublicKey: recipientPublicKey
-    )
-    var authenticated = try sharedSecretBytes(
-      privateKey: senderKeyPair.privateKey,
-      peerPublicKey: recipientPublicKey
-    )
-    dh.append(contentsOf: authenticated)
-    wipe(&authenticated)
     let enc = OwnedBytes(copying: encapsulation.span)
     let senderPublic = copy(senderKeyPair.publicKey.span)
-    let material = try finishSender(
-      mode: mode,
-      dh: consume dh,
-      encapsulation: encapsulation.span,
-      recipientPublicKey: recipientPublicKey.span,
-      senderPublicKey: senderPublic,
-      info: info,
-      psk: psk,
-      pskID: pskID,
-      kdf: kdf,
-      aead: aead
-    )
+    let material = try withAuthenticatedSharedSecrets(
+      firstPrivateKey: ephemeral,
+      firstPeerPublicKeyBytes: recipientPublicKey.span,
+      secondPrivateKey: senderKeyPair.privateKey,
+      secondPeerPublicKeyBytes: recipientPublicKey.span
+    ) { dh throws(HPKEError) -> HPKEContextMaterial in
+      try finishSender(
+        mode: mode,
+        dh: dh,
+        encapsulation: encapsulation.span,
+        recipientPublicKey: recipientPublicKey.span,
+        senderPublicKey: senderPublic,
+        info: info,
+        psk: psk,
+        pskID: pskID,
+        kdf: kdf,
+        aead: aead
+      )
+    }
     let context = HPKESenderContext(material: consume material)
     return HPKESenderSetup(
       encapsulation: consume enc,
@@ -691,40 +685,55 @@ public enum HPKEX25519 {
     guard (mode == .base || mode == .psk) || senderPublicKey != nil else {
       throw .invalidConfiguration
     }
-    var dh = try sharedSecretBytes(
-      privateKey: recipientKeyPair.privateKey,
-      peerPublicKeyBytes: encapsulation
-    )
     if let senderPublicKey {
       let sender: X25519PublicKey
       do { sender = try X25519PublicKey(bytes: senderPublicKey.span) } catch {
         throw .invalidConfiguration
       }
-      var authenticated = try sharedSecretBytes(
-        privateKey: recipientKeyPair.privateKey,
-        peerPublicKey: sender
-      )
-      dh.append(contentsOf: authenticated)
-      wipe(&authenticated)
+      return try withAuthenticatedSharedSecrets(
+        firstPrivateKey: recipientKeyPair.privateKey,
+        firstPeerPublicKeyBytes: encapsulation,
+        secondPrivateKey: recipientKeyPair.privateKey,
+        secondPeerPublicKeyBytes: sender.span
+      ) { dh throws(HPKEError) -> HPKERecipientContext in
+        let material = try finishSender(
+          mode: mode,
+          dh: dh,
+          encapsulation: encapsulation,
+          recipientPublicKey: recipientKeyPair.publicKey.span,
+          senderPublicKey: senderPublicKey,
+          info: info,
+          psk: psk,
+          pskID: pskID,
+          kdf: kdf,
+          aead: aead
+        )
+        return HPKERecipientContext(material: consume material)
+      }
     }
-    let material = try finishSender(
-      mode: mode,
-      dh: consume dh,
-      encapsulation: encapsulation,
-      recipientPublicKey: recipientKeyPair.publicKey.span,
-      senderPublicKey: senderPublicKey,
-      info: info,
-      psk: psk,
-      pskID: pskID,
-      kdf: kdf,
-      aead: aead
-    )
-    return HPKERecipientContext(material: consume material)
+    return try withSharedSecret(
+      privateKey: recipientKeyPair.privateKey,
+      peerPublicKeyBytes: encapsulation
+    ) { dh throws(HPKEError) -> HPKERecipientContext in
+      let material = try finishSender(
+        mode: mode,
+        dh: dh,
+        encapsulation: encapsulation,
+        recipientPublicKey: recipientKeyPair.publicKey.span,
+        senderPublicKey: nil,
+        info: info,
+        psk: psk,
+        pskID: pskID,
+        kdf: kdf,
+        aead: aead
+      )
+      return HPKERecipientContext(material: consume material)
+    }
   }
 
   private static func finishSender(
     mode: HPKEMode,
-    dh: consuming ContiguousArray<UInt8>,
+    dh: Span<UInt8>,
     encapsulation: Span<UInt8>,
     recipientPublicKey: Span<UInt8>,
     senderPublicKey: ContiguousArray<UInt8>?,
@@ -734,16 +743,19 @@ public enum HPKEX25519 {
     kdf: HPKEKDF,
     aead: HPKEAEAD
   ) throws(HPKEError) -> HPKEContextMaterial {
-    var dh = dh
-    defer { wipe(&dh) }
     return try HPKEPrimitives.withKEMSharedSecret(
-      dh: dh.span,
+      dh: dh,
       encapsulation: encapsulation,
       recipientPublicKey: recipientPublicKey,
       senderPublicKey: senderPublicKey
-    ) { sharedSecret throws(HPKEError) -> HPKEContextMaterial in
+    ) {
+      sharedSecret,
+      preparedEmptyInnerContext,
+      preparedEmptyOuterContext throws(HPKEError) -> HPKEContextMaterial in
       try HPKEPrimitives.deriveContext(
         sharedSecret: sharedSecret,
+        preparedEmptyInnerContext: preparedEmptyInnerContext,
+        preparedEmptyOuterContext: preparedEmptyOuterContext,
         mode: mode,
         info: info,
         psk: psk,
@@ -767,35 +779,115 @@ public enum HPKEX25519 {
     return result
   }
 
-  private static func sharedSecretBytes(
+  private static func withSharedSecret<Result: ~Copyable>(
     privateKey: borrowing X25519PrivateKey,
-    peerPublicKey: borrowing X25519PublicKey
-  ) throws(HPKEError) -> ContiguousArray<UInt8> {
-    try sharedSecretBytes(
+    peerPublicKey: borrowing X25519PublicKey,
+    _ body: (Span<UInt8>) throws(HPKEError) -> Result
+  ) throws(HPKEError) -> Result {
+    try withSharedSecret(
       privateKey: privateKey,
-      peerPublicKeyBytes: peerPublicKey.span
+      peerPublicKeyBytes: peerPublicKey.span,
+      body
     )
   }
 
-  private static func sharedSecretBytes(
+  private static func withSharedSecret<Result: ~Copyable>(
     privateKey: borrowing X25519PrivateKey,
-    peerPublicKeyBytes: Span<UInt8>
-  ) throws(HPKEError) -> ContiguousArray<UInt8> {
-    var shared = ContiguousArray<UInt8>(
-      repeating: 0,
-      count: X25519.sharedSecretByteCount
-    )
+    peerPublicKeyBytes: Span<UInt8>,
+    _ body: (Span<UInt8>) throws(HPKEError) -> Result
+  ) throws(HPKEError) -> Result {
+    // Unsafe boundary invariants:
+    // - The SIMD value owns exactly 32 initialized inline bytes; it has no
+    //   separately allocated storage and its complete contents are wiped once
+    //   before this scope exits.
+    // - Every pointer and Span remains inside its withUnsafeBytes closure and
+    //   cannot outlive the SIMD owner or cross a Sendable boundary.
+    // - X25519.sharedSecretByteCount is exactly 32, so every offset and count
+    //   is in bounds without integer overflow. UInt8 has stride/alignment one.
+    // - Raw storage is explicitly bound to UInt8. The mutable borrow is
+    //   exclusive, and the later immutable borrow starts only after it ends.
+    var shared = SIMD32<UInt8>(repeating: 0)
+    defer {
+      withUnsafeMutableBytes(of: &shared) { bytes in
+        SecureWipe.erase(bytes.baseAddress!, byteCount: bytes.count)
+      }
+    }
     do {
-      var destination = shared.mutableSpan
-      try X25519.sharedSecret(
-        privateKey: privateKey,
-        peerPublicKeyBytes: peerPublicKeyBytes,
-        into: &destination
-      )
+      try withUnsafeMutableBytes(of: &shared) {
+        rawBytes throws(CryptoInputError) in
+        let bytes = rawBytes.bindMemory(to: UInt8.self)
+        var destination = MutableSpan(
+          _unsafeStart: bytes.baseAddress.unsafelyUnwrapped,
+          count: X25519.sharedSecretByteCount
+        )
+        try X25519.sharedSecret(
+          privateKey: privateKey,
+          peerPublicKeyBytes: peerPublicKeyBytes,
+          into: &destination
+        )
+      }
     } catch let error {
       throw .primitive(error)
     }
-    return shared
+    return try withUnsafeBytes(of: &shared) {
+      rawBytes throws(HPKEError) -> Result in
+      try body(Span(_unsafeElements: rawBytes.bindMemory(to: UInt8.self)))
+    }
+  }
+
+  private static func withAuthenticatedSharedSecrets<Result: ~Copyable>(
+    firstPrivateKey: borrowing X25519PrivateKey,
+    firstPeerPublicKeyBytes: Span<UInt8>,
+    secondPrivateKey: borrowing X25519PrivateKey,
+    secondPeerPublicKeyBytes: Span<UInt8>,
+    _ body: (Span<UInt8>) throws(HPKEError) -> Result
+  ) throws(HPKEError) -> Result {
+    // Unsafe boundary invariants:
+    // - The SIMD value owns exactly 64 initialized inline bytes containing two
+    //   adjacent 32-byte X25519 results and is wiped once before scope exit.
+    // - Both MutableSpan values remain in the exclusive raw-memory closure;
+    //   the combined immutable Span is borrowed only by the synchronous body.
+    // - The second offset is the fixed first 32-byte extent, the combined
+    //   count is exactly 64, and UInt8 has stride/alignment one.
+    // - Storage is explicitly bound to UInt8 with no rebind or overlapping
+    //   mutable alias. No pointer or borrow crosses a Sendable boundary.
+    var shared = SIMD64<UInt8>(repeating: 0)
+    defer {
+      withUnsafeMutableBytes(of: &shared) { bytes in
+        SecureWipe.erase(bytes.baseAddress!, byteCount: bytes.count)
+      }
+    }
+    do {
+      try withUnsafeMutableBytes(of: &shared) {
+        rawBytes throws(CryptoInputError) in
+        let bytes = rawBytes.bindMemory(to: UInt8.self)
+        let pointer = bytes.baseAddress.unsafelyUnwrapped
+        var firstDestination = MutableSpan(
+          _unsafeStart: pointer,
+          count: X25519.sharedSecretByteCount
+        )
+        try X25519.sharedSecret(
+          privateKey: firstPrivateKey,
+          peerPublicKeyBytes: firstPeerPublicKeyBytes,
+          into: &firstDestination
+        )
+        var secondDestination = MutableSpan(
+          _unsafeStart: pointer.advanced(by: X25519.sharedSecretByteCount),
+          count: X25519.sharedSecretByteCount
+        )
+        try X25519.sharedSecret(
+          privateKey: secondPrivateKey,
+          peerPublicKeyBytes: secondPeerPublicKeyBytes,
+          into: &secondDestination
+        )
+      }
+    } catch let error {
+      throw .primitive(error)
+    }
+    return try withUnsafeBytes(of: &shared) {
+      rawBytes throws(HPKEError) -> Result in
+      try body(Span(_unsafeElements: rawBytes.bindMemory(to: UInt8.self)))
+    }
   }
 
   private static func append(
@@ -819,6 +911,7 @@ public enum HPKEX25519 {
 
 private struct HPKEContextMaterial: ~Copyable, Sendable {
   let secretState: SecretBytes
+  let cipher: HPKEAEADContext
   let kdf: HPKEKDF
   let aead: HPKEAEAD
 }
@@ -845,15 +938,28 @@ private enum HPKEPrimitives {
     encapsulation: Span<UInt8>,
     recipientPublicKey: Span<UInt8>,
     senderPublicKey: ContiguousArray<UInt8>?,
-    _ body: (Span<UInt8>) throws(HPKEError) -> Result
+    _ body: (
+      Span<UInt8>,
+      borrowing SHA256Context,
+      borrowing SHA256Context
+    ) throws(HPKEError) -> Result
   ) throws(HPKEError) -> Result {
     var eaePRK = SIMD32<UInt8>(repeating: 0)
     var sharedSecret = SIMD32<UInt8>(repeating: 0)
+    var preparedEmptyInnerContext = SHA256Context()
+    var preparedEmptyOuterContext = SHA256Context()
     defer {
       wipe(&eaePRK)
       wipe(&sharedSecret)
+      preparedEmptyInnerContext.eraseSensitiveState()
+      preparedEmptyOuterContext.eraseSensitiveState()
     }
     do {
+      try HMACSHA256Core.initializeFreshContexts(
+        authenticatingWith: emptyBytes.span,
+        innerContext: &preparedEmptyInnerContext,
+        outerContext: &preparedEmptyOuterContext
+      )
       try withUnsafeMutableBytes(of: &eaePRK) {
         bytes throws(CryptoInputError) in
         let pointer = bytes.baseAddress.unsafelyUnwrapped
@@ -863,7 +969,8 @@ private enum HPKEPrimitives {
           count: SHA256.digestByteCount
         )
         try HPKESHA256LabeledKDF.extract(
-          salt: emptyBytes.span,
+          preparedInnerContext: preparedEmptyInnerContext,
+          preparedOuterContext: preparedEmptyOuterContext,
           suiteID: kemSuiteID.span,
           label: "eae_prk",
           input: dh,
@@ -917,12 +1024,18 @@ private enum HPKEPrimitives {
           count: SHA256.digestByteCount
         )
       )
-      return try body(shared)
+      return try body(
+        shared,
+        preparedEmptyInnerContext,
+        preparedEmptyOuterContext
+      )
     }
   }
 
   static func deriveContext(
     sharedSecret: Span<UInt8>,
+    preparedEmptyInnerContext: borrowing SHA256Context,
+    preparedEmptyOuterContext: borrowing SHA256Context,
     mode: HPKEMode,
     info: Span<UInt8>,
     psk: Span<UInt8>,
@@ -933,6 +1046,8 @@ private enum HPKEPrimitives {
     if kdf == .sha256 {
       return try deriveSHA256Context(
         sharedSecret: sharedSecret,
+        preparedEmptyInnerContext: preparedEmptyInnerContext,
+        preparedEmptyOuterContext: preparedEmptyOuterContext,
         mode: mode,
         info: info,
         psk: psk,
@@ -997,24 +1112,25 @@ private enum HPKEPrimitives {
       kdf: kdf
     )
     defer { wipe(&exporterSecret) }
-    let totalByteCount = key.count + baseNonce.count + exporterSecret.count
+    let totalByteCount = baseNonce.count + exporterSecret.count
     let byteCount: SecretByteCount
     do {
       byteCount = try SecretByteCount(totalByteCount)
     } catch let error {
       throw .secretMemory(error)
     }
+    let cipher = try HPKEAEADContext(key: key.span, algorithm: aead)
     let secretState = SecretBytes(byteCount: byteCount) { destination in
-      copy(key.span, into: &destination, at: 0)
-      copy(baseNonce.span, into: &destination, at: key.count)
+      copy(baseNonce.span, into: &destination, at: 0)
       copy(
         exporterSecret.span,
         into: &destination,
-        at: key.count + baseNonce.count
+        at: baseNonce.count
       )
     }
     return HPKEContextMaterial(
       secretState: consume secretState,
+      cipher: consume cipher,
       kdf: kdf,
       aead: aead
     )
@@ -1022,6 +1138,8 @@ private enum HPKEPrimitives {
 
   private static func deriveSHA256Context(
     sharedSecret: Span<UInt8>,
+    preparedEmptyInnerContext: borrowing SHA256Context,
+    preparedEmptyOuterContext: borrowing SHA256Context,
     mode: HPKEMode,
     info: Span<UInt8>,
     psk: Span<UInt8>,
@@ -1029,11 +1147,21 @@ private enum HPKEPrimitives {
     aead: HPKEAEAD
   ) throws(HPKEError) -> HPKEContextMaterial {
     let suiteID = hpkeSuiteID(kdf: .sha256, aead: aead)
+    // Unsafe boundary invariants:
+    // - These inline SIMD owners contain 64, 32, and 32 initialized bytes;
+    //   every byte is wiped once before this function returns or throws.
+    // - Raw storage is bound only to UInt8, whose stride/alignment is one.
+    // - The key output count is selected from 16 or 32 and cannot exceed its
+    //   32-byte owner; all context and digest extents are fixed and in bounds.
+    // - Mutable borrows are exclusive and end before immutable borrows begin.
+    //   No pointer or Span escapes a closure or crosses a Sendable boundary.
     var contextHashes = SIMD64<UInt8>(repeating: 0)
     var secret = SIMD32<UInt8>(repeating: 0)
+    var key = SIMD32<UInt8>(repeating: 0)
     defer {
       wipe(&contextHashes)
       wipe(&secret)
+      wipe(&key)
     }
 
     do {
@@ -1046,7 +1174,8 @@ private enum HPKEPrimitives {
           count: SHA256.digestByteCount
         )
         try HPKESHA256LabeledKDF.extract(
-          salt: emptyBytes.span,
+          preparedInnerContext: preparedEmptyInnerContext,
+          preparedOuterContext: preparedEmptyOuterContext,
           suiteID: suiteID.span,
           label: "psk_id_hash",
           input: pskID,
@@ -1057,7 +1186,8 @@ private enum HPKEPrimitives {
           count: SHA256.digestByteCount
         )
         try HPKESHA256LabeledKDF.extract(
-          salt: emptyBytes.span,
+          preparedInnerContext: preparedEmptyInnerContext,
+          preparedOuterContext: preparedEmptyOuterContext,
           suiteID: suiteID.span,
           label: "info_hash",
           input: info,
@@ -1084,10 +1214,7 @@ private enum HPKEPrimitives {
       throw .primitive(error)
     }
 
-    let stateByteCount =
-      aead.keyByteCount
-      + HPKEAEAD.nonceByteCount
-      + SHA256.digestByteCount
+    let stateByteCount = HPKEAEAD.nonceByteCount + SHA256.digestByteCount
     let validatedByteCount: SecretByteCount
     do {
       validatedByteCount = try SecretByteCount(stateByteCount)
@@ -1098,77 +1225,79 @@ private enum HPKEPrimitives {
     let secretState: SecretBytes
     do {
       secretState = try withUnsafeBytes(of: &secret) {
-        secretBytes throws(CryptoInputError) -> SecretBytes in
-        let secretPointer = secretBytes.baseAddress.unsafelyUnwrapped
-          .assumingMemoryBound(to: UInt8.self)
+        rawSecretBytes throws(CryptoInputError) -> SecretBytes in
         let secretSpan = Span(
-          _unsafeElements: UnsafeBufferPointer(
-            start: secretPointer,
-            count: SHA256.digestByteCount
-          )
+          _unsafeElements: rawSecretBytes.bindMemory(to: UInt8.self)
         )
-        return try withUnsafeBytes(of: &contextHashes) {
-          contextBytes throws(CryptoInputError) -> SecretBytes in
-          let contextPointer = contextBytes.baseAddress.unsafelyUnwrapped
-            .assumingMemoryBound(to: UInt8.self)
-          let contextSpan = Span(
-            _unsafeElements: UnsafeBufferPointer(
-              start: contextPointer,
-              count: contextBytes.count
+        return try HMACSHA256Core.withPreparedContexts(
+          authenticatingWith: secretSpan
+        ) { preparedInner, preparedOuter throws(CryptoInputError) -> SecretBytes in
+          try withUnsafeBytes(of: &contextHashes) {
+            rawContextBytes throws(CryptoInputError) -> SecretBytes in
+            let contextSpan = Span(
+              _unsafeElements: rawContextBytes.bindMemory(to: UInt8.self)
             )
-          )
-          return try SecretBytes(byteCount: validatedByteCount) {
-            destination throws(CryptoInputError) in
-            var modeByte = mode.encoded
-            try withUnsafeBytes(of: &modeByte) {
-              modeBytes throws(CryptoInputError) in
-              let modeSpan = Span(
-                _unsafeElements: modeBytes.bindMemory(to: UInt8.self)
-              )
-              var key = destination._mutatingExtracting(
-                0..<aead.keyByteCount
-              )
-              try HPKESHA256LabeledKDF.expand(
-                pseudorandomKey: secretSpan,
-                suiteID: suiteID.span,
-                label: "key",
-                outputByteCount: key.count,
-                updateInfo: { context throws(CryptoInputError) in
-                  try context.update(modeSpan)
-                  try context.update(contextSpan)
-                },
-                into: &key
-              )
-              let nonceOffset = aead.keyByteCount
-              var nonce = destination._mutatingExtracting(
-                nonceOffset..<(nonceOffset + HPKEAEAD.nonceByteCount)
-              )
-              try HPKESHA256LabeledKDF.expand(
-                pseudorandomKey: secretSpan,
-                suiteID: suiteID.span,
-                label: "base_nonce",
-                outputByteCount: nonce.count,
-                updateInfo: { context throws(CryptoInputError) in
-                  try context.update(modeSpan)
-                  try context.update(contextSpan)
-                },
-                into: &nonce
-              )
-              let exporterOffset = nonceOffset + HPKEAEAD.nonceByteCount
-              var exporter = destination._mutatingExtracting(
-                exporterOffset..<stateByteCount
-              )
-              try HPKESHA256LabeledKDF.expand(
-                pseudorandomKey: secretSpan,
-                suiteID: suiteID.span,
-                label: "exp",
-                outputByteCount: exporter.count,
-                updateInfo: { context throws(CryptoInputError) in
-                  try context.update(modeSpan)
-                  try context.update(contextSpan)
-                },
-                into: &exporter
-              )
+            return try SecretBytes(byteCount: validatedByteCount) {
+              destination throws(CryptoInputError) in
+              var modeByte = mode.encoded
+              try withUnsafeBytes(of: &modeByte) {
+                modeBytes throws(CryptoInputError) in
+                let modeSpan = Span(
+                  _unsafeElements: modeBytes.bindMemory(to: UInt8.self)
+                )
+                try withUnsafeMutableBytes(of: &key) {
+                  rawKeyBytes throws(CryptoInputError) in
+                  let keyBytes = rawKeyBytes.bindMemory(to: UInt8.self)
+                  var keyOutput = MutableSpan(
+                    _unsafeStart: keyBytes.baseAddress.unsafelyUnwrapped,
+                    count: aead.keyByteCount
+                  )
+                  try HPKESHA256LabeledKDF.expand(
+                    preparedInnerContext: preparedInner,
+                    preparedOuterContext: preparedOuter,
+                    suiteID: suiteID.span,
+                    label: "key",
+                    outputByteCount: keyOutput.count,
+                    updateInfo: { context throws(CryptoInputError) in
+                      try context.update(modeSpan)
+                      try context.update(contextSpan)
+                    },
+                    into: &keyOutput
+                  )
+                }
+                let nonceOffset = 0
+                var nonce = destination._mutatingExtracting(
+                  nonceOffset..<(nonceOffset + HPKEAEAD.nonceByteCount)
+                )
+                try HPKESHA256LabeledKDF.expand(
+                  preparedInnerContext: preparedInner,
+                  preparedOuterContext: preparedOuter,
+                  suiteID: suiteID.span,
+                  label: "base_nonce",
+                  outputByteCount: nonce.count,
+                  updateInfo: { context throws(CryptoInputError) in
+                    try context.update(modeSpan)
+                    try context.update(contextSpan)
+                  },
+                  into: &nonce
+                )
+                let exporterOffset = nonceOffset + HPKEAEAD.nonceByteCount
+                var exporter = destination._mutatingExtracting(
+                  exporterOffset..<stateByteCount
+                )
+                try HPKESHA256LabeledKDF.expand(
+                  preparedInnerContext: preparedInner,
+                  preparedOuterContext: preparedOuter,
+                  suiteID: suiteID.span,
+                  label: "exp",
+                  outputByteCount: exporter.count,
+                  updateInfo: { context throws(CryptoInputError) in
+                    try context.update(modeSpan)
+                    try context.update(contextSpan)
+                  },
+                  into: &exporter
+                )
+              }
             }
           }
         }
@@ -1176,8 +1305,20 @@ private enum HPKEPrimitives {
     } catch {
       throw .primitive(error)
     }
+    let cipher = try withUnsafeBytes(of: &key) {
+      rawKeyBytes throws(HPKEError) -> HPKEAEADContext in
+      let keyBytes = rawKeyBytes.bindMemory(to: UInt8.self)
+      let keySpan = Span(
+        _unsafeElements: UnsafeBufferPointer(
+          start: keyBytes.baseAddress.unsafelyUnwrapped,
+          count: aead.keyByteCount
+        )
+      )
+      return try HPKEAEADContext(key: keySpan, algorithm: aead)
+    }
     return HPKEContextMaterial(
       secretState: consume secretState,
+      cipher: consume cipher,
       kdf: .sha256,
       aead: aead
     )
@@ -1201,66 +1342,6 @@ private enum HPKEPrimitives {
       kdf: kdf
     )
     return value
-  }
-
-  static func seal(
-    plaintext: Span<UInt8>,
-    authenticatedData: Span<UInt8>,
-    nonce: Span<UInt8>,
-    key: Span<UInt8>,
-    aead: HPKEAEAD,
-    into output: inout MutableSpan<UInt8>
-  ) throws(HPKEError) {
-    do {
-      switch aead {
-      case .aes128GCM, .aes256GCM:
-        var cipher = try AESGCM(key: key)
-        try cipher.seal(
-          plaintext: plaintext,
-          authenticatedData: authenticatedData,
-          nonce: nonce,
-          into: &output
-        )
-      case .chaCha20Poly1305:
-        var cipher = try ChaCha20Poly1305(key: key)
-        try cipher.seal(
-          plaintext: plaintext,
-          authenticatedData: authenticatedData,
-          nonce: nonce,
-          into: &output
-        )
-      }
-    } catch let error { throw .authenticatedCipher(error) }
-  }
-
-  static func open(
-    ciphertext: Span<UInt8>,
-    authenticatedData: Span<UInt8>,
-    nonce: Span<UInt8>,
-    key: Span<UInt8>,
-    aead: HPKEAEAD,
-    into output: inout MutableSpan<UInt8>
-  ) throws(HPKEError) {
-    do {
-      switch aead {
-      case .aes128GCM, .aes256GCM:
-        var cipher = try AESGCM(key: key)
-        try cipher.open(
-          ciphertextAndTag: ciphertext,
-          authenticatedData: authenticatedData,
-          nonce: nonce,
-          into: &output
-        )
-      case .chaCha20Poly1305:
-        var cipher = try ChaCha20Poly1305(key: key)
-        try cipher.open(
-          ciphertextAndTag: ciphertext,
-          authenticatedData: authenticatedData,
-          nonce: nonce,
-          into: &output
-        )
-      }
-    } catch let error { throw .authenticatedCipher(error) }
   }
 
   private static func labeledExtract(
@@ -1335,7 +1416,44 @@ private enum HPKEPrimitives {
     return output
   }
 
+  private static let sha256AES128SuiteID = makeHPKESuiteID(kdf: .sha256, aead: .aes128GCM)
+  private static let sha256AES256SuiteID = makeHPKESuiteID(kdf: .sha256, aead: .aes256GCM)
+  private static let sha256ChaChaSuiteID = makeHPKESuiteID(
+    kdf: .sha256,
+    aead: .chaCha20Poly1305
+  )
+  private static let sha384AES128SuiteID = makeHPKESuiteID(kdf: .sha384, aead: .aes128GCM)
+  private static let sha384AES256SuiteID = makeHPKESuiteID(kdf: .sha384, aead: .aes256GCM)
+  private static let sha384ChaChaSuiteID = makeHPKESuiteID(
+    kdf: .sha384,
+    aead: .chaCha20Poly1305
+  )
+  private static let sha512AES128SuiteID = makeHPKESuiteID(kdf: .sha512, aead: .aes128GCM)
+  private static let sha512AES256SuiteID = makeHPKESuiteID(kdf: .sha512, aead: .aes256GCM)
+  private static let sha512ChaChaSuiteID = makeHPKESuiteID(
+    kdf: .sha512,
+    aead: .chaCha20Poly1305
+  )
+
+  @inline(__always)
   private static func hpkeSuiteID(
+    kdf: HPKEKDF,
+    aead: HPKEAEAD
+  ) -> ContiguousArray<UInt8> {
+    switch (kdf, aead) {
+    case (.sha256, .aes128GCM): sha256AES128SuiteID
+    case (.sha256, .aes256GCM): sha256AES256SuiteID
+    case (.sha256, .chaCha20Poly1305): sha256ChaChaSuiteID
+    case (.sha384, .aes128GCM): sha384AES128SuiteID
+    case (.sha384, .aes256GCM): sha384AES256SuiteID
+    case (.sha384, .chaCha20Poly1305): sha384ChaChaSuiteID
+    case (.sha512, .aes128GCM): sha512AES128SuiteID
+    case (.sha512, .aes256GCM): sha512AES256SuiteID
+    case (.sha512, .chaCha20Poly1305): sha512ChaChaSuiteID
+    }
+  }
+
+  private static func makeHPKESuiteID(
     kdf: HPKEKDF,
     aead: HPKEAEAD
   ) -> ContiguousArray<UInt8> {

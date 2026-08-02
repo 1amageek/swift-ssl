@@ -31,13 +31,14 @@ byte of the encapsulation, ciphertext, and recovered plaintext for both payload
 sizes. Every timed pair must also produce the same checksum.
 
 The Swift path borrows input through `Span`, writes ciphertext and plaintext
-into caller-owned `MutableSpan` storage, derives HPKE key material directly into
-one packed `SecretBytes` owner, and performs recipient X25519 directly from the
-borrowed encapsulation. AES key schedules and GHASH powers are fixed-width
-inline storage. The Apple ARM64 backend uses scoped NEON AES operations,
-four-block direct CTR writes, and four-block aggregated carry-less GHASH. All
-unsafe pointers remain inside synchronous closures and never cross a Sendable
-boundary.
+into caller-owned `MutableSpan` storage, expands the AEAD key once into the
+context-owned prepared cipher, and stores only the base nonce plus exporter
+secret in `SecretBytes`. Recipient X25519 writes into wiped inline fixed-width
+storage directly from the borrowed encapsulation. The Apple ARM64 backend uses
+scoped NEON AES operations, four-block direct CTR writes, reversed precomputed
+GHASH powers, four-block aggregation, and eight-block aggregation for messages
+of at least 1,024 bytes. All unsafe pointers remain inside synchronous closures
+and never cross a Sendable boundary.
 
 ## Formal comparison
 

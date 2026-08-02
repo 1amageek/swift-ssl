@@ -1,6 +1,6 @@
 import SwiftSSLCore
 
-public struct AESGCM: ~Copyable, AuthenticatedCipher {
+public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
   public static let supportedKeyByteCounts = [16, 24, 32]
   public static let nonceByteCount = 12
   public static let tagByteCount = 16
@@ -40,7 +40,7 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher {
     hashBasis = Self.makeHashBasis(high: hashPair.0, low: hashPair.1)
   }
 
-  public mutating func seal(
+  public func seal(
     plaintext: Span<UInt8>,
     authenticatedData: Span<UInt8>,
     nonce: Span<UInt8>,
@@ -82,7 +82,7 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher {
     }
   }
 
-  public mutating func open(
+  public func open(
     ciphertextAndTag: Span<UInt8>,
     authenticatedData: Span<UInt8>,
     nonce: Span<UInt8>,
@@ -146,10 +146,7 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher {
           into: &output
         )
         offset += 64
-        Self.incrementCounter(&counter)
-        Self.incrementCounter(&counter)
-        Self.incrementCounter(&counter)
-        Self.incrementCounter(&counter)
+        AESARM64Kernel.advanceCounterByFour(&counter)
       }
     #endif
     var encryptedCounter = SIMD16<UInt8>(repeating: 0)
@@ -224,21 +221,50 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher {
     var result = accumulator
     var offset = 0
     #if canImport(Darwin) && arch(arm64) && canImport(simd) && !SWIFT_SSL_PORTABLE_GHASH
+      if bytes.count >= 1_024 {
+        let eightPowers = GHASHARM64Kernel.makeEightReversedHashPowers(hashBasis)
+        while offset + 128 <= bytes.count {
+          let first = Self.readPartialPair(bytes, offset: offset, count: 16)
+          let second = Self.readPartialPair(bytes, offset: offset + 16, count: 16)
+          let third = Self.readPartialPair(bytes, offset: offset + 32, count: 16)
+          let fourth = Self.readPartialPair(bytes, offset: offset + 48, count: 16)
+          let fifth = Self.readPartialPair(bytes, offset: offset + 64, count: 16)
+          let sixth = Self.readPartialPair(bytes, offset: offset + 80, count: 16)
+          let seventh = Self.readPartialPair(bytes, offset: offset + 96, count: 16)
+          let eighth = Self.readPartialPair(bytes, offset: offset + 112, count: 16)
+          result = GHASHARM64Kernel.multiplyEight(
+            accumulatorHigh: result.0,
+            accumulatorLow: result.1,
+            blocks: SIMD16(
+              first.0, first.1,
+              second.0, second.1,
+              third.0, third.1,
+              fourth.0, fourth.1,
+              fifth.0, fifth.1,
+              sixth.0, sixth.1,
+              seventh.0, seventh.1,
+              eighth.0, eighth.1
+            ),
+            reversedHashPowers: eightPowers
+          )
+          offset += 128
+        }
+      }
       while offset + 64 <= bytes.count {
-        let block1 = Self.readPartialPair(bytes, offset: offset, count: 16)
-        let block2 = Self.readPartialPair(bytes, offset: offset + 16, count: 16)
-        let block3 = Self.readPartialPair(bytes, offset: offset + 32, count: 16)
-        let block4 = Self.readPartialPair(bytes, offset: offset + 48, count: 16)
+        let first = Self.readPartialPair(bytes, offset: offset, count: 16)
+        let second = Self.readPartialPair(bytes, offset: offset + 16, count: 16)
+        let third = Self.readPartialPair(bytes, offset: offset + 32, count: 16)
+        let fourth = Self.readPartialPair(bytes, offset: offset + 48, count: 16)
         result = GHASHARM64Kernel.multiplyFour(
           accumulatorHigh: result.0,
           accumulatorLow: result.1,
           blocks: SIMD8(
-            block1.0, block1.1,
-            block2.0, block2.1,
-            block3.0, block3.1,
-            block4.0, block4.1
+            first.0, first.1,
+            second.0, second.1,
+            third.0, third.1,
+            fourth.0, fourth.1
           ),
-          hashPowers: hashBasis
+          reversedHashPowers: hashBasis
         )
         offset += 64
       }
@@ -254,11 +280,11 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher {
 
   private func multiply(_ xHi: UInt64, _ xLo: UInt64) -> (UInt64, UInt64) {
     #if canImport(Darwin) && arch(arm64) && canImport(simd) && !SWIFT_SSL_PORTABLE_GHASH
-      return GHASHARM64Kernel.multiply(
+      return GHASHARM64Kernel.multiplyWithReversedHash(
         xHigh: xHi,
         xLow: xLo,
-        hashHigh: hashBasis[0],
-        hashLow: hashBasis[1]
+        reversedHash0: hashBasis[0],
+        reversedHash1: hashBasis[1]
       )
     #else
       let basis = hashBasis
@@ -297,25 +323,10 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher {
     low: UInt64
   ) -> SIMD8<UInt64> {
     #if canImport(Darwin) && arch(arm64) && canImport(simd) && !SWIFT_SSL_PORTABLE_GHASH
-      let squared = GHASHARM64Kernel.multiply(
-        xHigh: high,
-        xLow: low,
+      return GHASHARM64Kernel.makeReversedHashPowers(
         hashHigh: high,
         hashLow: low
       )
-      let cubed = GHASHARM64Kernel.multiply(
-        xHigh: squared.0,
-        xLow: squared.1,
-        hashHigh: high,
-        hashLow: low
-      )
-      let fourth = GHASHARM64Kernel.multiply(
-        xHigh: squared.0,
-        xLow: squared.1,
-        hashHigh: squared.0,
-        hashLow: squared.1
-      )
-      return SIMD8(high, low, squared.0, squared.1, cubed.0, cubed.1, fourth.0, fourth.1)
     #else
       let one = multiplyByX(high: high, low: low)
       let two = multiplyByX(high: one.0, low: one.1)

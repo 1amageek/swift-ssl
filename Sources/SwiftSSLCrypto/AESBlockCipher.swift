@@ -4,7 +4,7 @@ import SwiftSSLCore
 ///
 /// The type owns its expanded key schedule. Callers must validate that both
 /// spans contain exactly one AES block before entering this internal boundary.
-struct AESBlockCipher: ~Copyable {
+struct AESBlockCipher: ~Copyable, Sendable {
   #if arch(arm64) && canImport(simd)
     private var hardwareRoundKeys: SIMD64<UInt32>
   #else

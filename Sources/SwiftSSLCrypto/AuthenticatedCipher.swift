@@ -1,6 +1,6 @@
 import SwiftSSLCore
 
-public protocol AuthenticatedCipher: ~Copyable {
+public protocol AuthenticatedCipher: ~Copyable, Sendable {
   static var supportedKeyByteCounts: [Int] { get }
   static var nonceByteCount: Int { get }
   static var tagByteCount: Int { get }
@@ -9,14 +9,14 @@ public protocol AuthenticatedCipher: ~Copyable {
   /// Authenticated data must not overlap output. Partial overlaps are typed
   /// failures and are rejected before output mutation.
 
-  mutating func seal(
+  func seal(
     plaintext: Span<UInt8>,
     authenticatedData: Span<UInt8>,
     nonce: Span<UInt8>,
     into output: inout MutableSpan<UInt8>
   ) throws(AEADError)
 
-  mutating func open(
+  func open(
     ciphertextAndTag: Span<UInt8>,
     authenticatedData: Span<UInt8>,
     nonce: Span<UInt8>,

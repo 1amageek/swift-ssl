@@ -14,23 +14,41 @@ enum HPKESHA256LabeledKDF {
     try HMACSHA256Core.withPreparedContexts(
       authenticatingWith: salt
     ) { preparedInner, preparedOuter throws(CryptoInputError) in
-      try HMACSHA256Core.withWorkingContexts(
-        innerContext: preparedInner,
-        outerContext: preparedOuter
-      ) { inner, outer throws(CryptoInputError) in
-        try updateLabeledPrefix(
-          &inner,
-          encodedLength: nil,
-          suiteID: suiteID,
-          label: label
-        )
-        try inner.update(input)
-        try HMACSHA256Core.finalizeAuthenticationCode(
-          innerContext: &inner,
-          outerContext: &outer,
-          into: &output
-        )
-      }
+      try extract(
+        preparedInnerContext: preparedInner,
+        preparedOuterContext: preparedOuter,
+        suiteID: suiteID,
+        label: label,
+        input: input,
+        into: &output
+      )
+    }
+  }
+
+  static func extract(
+    preparedInnerContext: borrowing SHA256Context,
+    preparedOuterContext: borrowing SHA256Context,
+    suiteID: Span<UInt8>,
+    label: StaticString,
+    input: Span<UInt8>,
+    into output: inout MutableSpan<UInt8>
+  ) throws(CryptoInputError) {
+    try HMACSHA256Core.withWorkingContexts(
+      innerContext: preparedInnerContext,
+      outerContext: preparedOuterContext
+    ) { inner, outer throws(CryptoInputError) in
+      try updateLabeledPrefix(
+        &inner,
+        encodedLength: nil,
+        suiteID: suiteID,
+        label: label
+      )
+      try inner.update(input)
+      try HMACSHA256Core.finalizeAuthenticationCode(
+        innerContext: &inner,
+        outerContext: &outer,
+        into: &output
+      )
     }
   }
 
@@ -48,56 +66,86 @@ enum HPKESHA256LabeledKDF {
     try HMACSHA256Core.withPreparedContexts(
       authenticatingWith: pseudorandomKey
     ) { preparedInner, preparedOuter throws(CryptoInputError) in
-      try HMACSHA256Core.withWorkingContexts(
-        innerContext: preparedInner,
-        outerContext: preparedOuter
-      ) { inner, outer throws(CryptoInputError) in
-        try updateLabeledPrefix(
-          &inner,
-          encodedLength: UInt16(outputByteCount),
-          suiteID: suiteID,
-          label: label
+      try expand(
+        preparedInnerContext: preparedInner,
+        preparedOuterContext: preparedOuter,
+        suiteID: suiteID,
+        label: label,
+        outputByteCount: outputByteCount,
+        updateInfo: updateInfo,
+        into: &output
+      )
+    }
+  }
+
+  static func expand(
+    preparedInnerContext: borrowing SHA256Context,
+    preparedOuterContext: borrowing SHA256Context,
+    suiteID: Span<UInt8>,
+    label: StaticString,
+    outputByteCount: Int,
+    updateInfo: (inout SHA256Context) throws(CryptoInputError) -> Void,
+    into output: inout MutableSpan<UInt8>
+  ) throws(CryptoInputError) {
+    precondition(outputByteCount == output.count)
+    precondition(outputByteCount > 0 && outputByteCount <= digestByteCount)
+
+    try HMACSHA256Core.withWorkingContexts(
+      innerContext: preparedInnerContext,
+      outerContext: preparedOuterContext
+    ) { inner, outer throws(CryptoInputError) in
+      try updateLabeledPrefix(
+        &inner,
+        encodedLength: UInt16(outputByteCount),
+        suiteID: suiteID,
+        label: label
+      )
+      try updateInfo(&inner)
+      var counter: UInt8 = 1
+      try withUnsafeBytes(of: &counter) {
+        bytes throws(CryptoInputError) in
+        try inner.update(
+          Span(_unsafeElements: bytes.bindMemory(to: UInt8.self))
         )
-        try updateInfo(&inner)
-        var counter: UInt8 = 1
-        try withUnsafeBytes(of: &counter) {
-          bytes throws(CryptoInputError) in
-          try inner.update(
-            Span(_unsafeElements: bytes.bindMemory(to: UInt8.self))
-          )
-        }
+      }
 
-        if outputByteCount == digestByteCount {
-          try HMACSHA256Core.finalizeAuthenticationCode(
-            innerContext: &inner,
-            outerContext: &outer,
-            into: &output
-          )
-          return
-        }
+      if outputByteCount == digestByteCount {
+        try HMACSHA256Core.finalizeAuthenticationCode(
+          innerContext: &inner,
+          outerContext: &outer,
+          into: &output
+        )
+        return
+      }
 
-        var fullOutput = SIMD32<UInt8>(repeating: 0)
-        try withUnsafeMutableBytes(of: &fullOutput) {
-          bytes throws(CryptoInputError) in
-          let pointer = bytes.baseAddress.unsafelyUnwrapped
-            .assumingMemoryBound(to: UInt8.self)
-          defer {
-            SecureWipe.erase(pointer, byteCount: bytes.count)
-          }
-          var fullOutputSpan = MutableSpan(
-            _unsafeStart: pointer,
-            count: digestByteCount
-          )
-          try HMACSHA256Core.finalizeAuthenticationCode(
-            innerContext: &inner,
-            outerContext: &outer,
-            into: &fullOutputSpan
-          )
-          var index = 0
-          while index < outputByteCount {
-            output[index] = pointer[index]
-            index += 1
-          }
+      // Unsafe boundary invariants:
+      // - fullOutput owns exactly 32 initialized inline bytes and is wiped
+      //   before its exclusive mutable borrow ends.
+      // - SHA-256 writes exactly digestByteCount bytes; outputByteCount was
+      //   checked above and is a nonempty prefix of that initialized result.
+      // - Storage is bound only to UInt8. No pointer escapes this closure,
+      //   overlaps caller output, or crosses a Sendable boundary.
+      var fullOutput = SIMD32<UInt8>(repeating: 0)
+      try withUnsafeMutableBytes(of: &fullOutput) {
+        rawBytes throws(CryptoInputError) in
+        let bytes = rawBytes.bindMemory(to: UInt8.self)
+        let pointer = bytes.baseAddress.unsafelyUnwrapped
+        defer {
+          SecureWipe.erase(pointer, byteCount: bytes.count)
+        }
+        var fullOutputSpan = MutableSpan(
+          _unsafeStart: pointer,
+          count: digestByteCount
+        )
+        try HMACSHA256Core.finalizeAuthenticationCode(
+          innerContext: &inner,
+          outerContext: &outer,
+          into: &fullOutputSpan
+        )
+        var index = 0
+        while index < outputByteCount {
+          output[index] = pointer[index]
+          index += 1
         }
       }
     }
