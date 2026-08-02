@@ -87,7 +87,7 @@ Correctness tests live under `Tests/`. Long-running differential, interoperabili
 | SHA-256 | Incremental/one-shot tests, boundary tests, million-byte vector, scalar/ARM64 differential test, production ARM64 multi-block codegen gate, Native/WASI/Embedded WASI execution | Independent committed differential corpus and release benchmark |
 | HMAC-SHA-256 | RFC 4231 cases 1, 2, 3, 4, 6, and 7; incremental equivalence; typed output failure; constant-time verification; three-target execution; ASan/TSan/UBSan; optimized wipe inspection | Independent committed differential corpus, measured allocation/copy counts, and release benchmark |
 | HKDF-SHA-256 | RFC 5869 SHA-256 cases 1, 2, and 3, additional fixed fixtures, maximum-length and overlap boundaries, Native/WASI/Embedded WASI execution, ASan/TSan/UBSan, and `-O`/`-Osize` code-generation inspection; caller-provided output, one-time prepared HMAC schedule, zero-heap optimized path, direct full-block writes, and façade route | Independent committed differential corpus, measured allocation/copy counts, and release benchmark |
-| HPKE X25519 | RFC 9180 X25519 DHKEM Base/PSK/Auth/AuthPSK, HKDF-SHA256/384/512, AES-128/256-GCM, ChaCha20-Poly1305, precomputed X25519 key pairs, sequence-bound nonces, wiped exporter-secret owner, exact in-place seal/open, authentication-failure no-write behavior, RFC 9180 A.2 vectors for all four modes, 11 Native tests, Native/WASI/Embedded runtime execution, and focused ASan | Independent full RFC 9180 corpus, P-256 DHKEM, generic differential interoperability, automated code-generation review, formal allocation/copy counts, the `1.10x` release benchmark, and security review |
+| HPKE X25519 | RFC 9180 X25519 DHKEM Base/PSK/Auth/AuthPSK, HKDF-SHA256/384/512, AES-128/256-GCM, ChaCha20-Poly1305, precomputed X25519 key pairs, sequence-bound nonces, wiped exporter-secret owner, exact in-place seal/open, authentication-failure no-write behavior, RFC 9180 A.2 vectors for all four modes, 11 Native tests including the 1,000-iteration RFC 7748 X25519 vector, Native/WASI/Embedded runtime execution, focused ASan, and a formal allocation/dynamic-copy artifact proving zero-allocation X25519 output and payload-independent first-open copy slopes | Independent full RFC 9180 corpus, P-256 DHKEM, generic differential interoperability, automated constant-time code-generation review, the `1.10x` release benchmark, and security review |
 | ECH RFC 9849 | Strict ECHConfigList parsing and X25519 suite selection; immutable client/server configuration owners; borrowed encapsulation and payload ranges; direct sealing into the final ClientHelloOuter owner; accept/reject and retry configuration integration in Stream and QUIC TLS | 15 Native config/ClientHello tests, accepted/rejected Core and PSK-resumption tests, Native/WASI/Embedded runtime execution, focused ASan, and bidirectional interoperability with pinned BoringSSL | HelloRetryRequest continuation and second-ClientHello confirmation, rotation-snapshot concurrency tests, broader malformed corpus, fuzzing, formal allocation/copy and timing evidence, a second independent peer, and security review |
 | QUIC CRYPTO/TLS stream | Per-encryption-level sliding ring, exact retransmission handling, transactional conflicting-overlap rejection, bounded offsets/window, exact TLS handshake boundaries, zero-copy message `Span` delivery including ring wrap, and record-independent client/server TLS state transitions with ordered directional secret effects | Native reassembly/framing/core/adapter tests, full and resumed handshakes, tampered-Finished rejection, out-of-order CRYPTO delivery, directional-secret comparison, three guarded adapter repetitions, focused AddressSanitizer execution, and dedicated Native/WASI/Embedded WASI full-handshake runtime validation | QUIC transport parameters, ALPN, allocation measurement, fuzzing, external interoperability, and release benchmark |
 
@@ -270,6 +270,30 @@ The committed raw artifact is
 [`Benchmarks/TLSHybrid/Results/20260801T150811Z-native-tls-hybrid-memory.json`](Benchmarks/TLSHybrid/Results/20260801T150811Z-native-tls-hybrid-memory.json)
 (source commit `6c77e4807fbf23e444e1a61608a6108ee0107a00`, SHA-256
 `c50b8a82b8d411ed4e71e24a9dfbf1c458f57c80270bfc4ff12212592d41c7c0`).
+
+### HPKE X25519 allocation and zero-copy evidence
+
+| Path | Allocation/free calls per operation | Requested bytes | Dynamic bulk-copy bytes |
+|---|---:|---:|---:|
+| X25519 shared secret into caller output | 0 / 0 | 0 | 0 |
+| HPKE recipient setup | 3 / 3 | 166 | 840 |
+| HPKE first open, 256-byte payload | 3 / 3 | 166 | 2,696 |
+| HPKE first open, 1,536-byte payload | 3 / 3 | 166 | 2,696 |
+
+The formal steady-state memory run derives exact slopes from 1, 10, and 100
+operations in three fresh processes each after one exact-path warmup. The two
+first-open workloads have identical allocation and dynamic bulk-copy slopes
+despite a 1,280-byte payload difference. Caller-owned ciphertext and plaintext
+therefore remain on a payload-zero-copy path, while fixed-size key/context
+state retains the measured internal copy budgets above. Dynamic
+`memcpy`/`memmove` interposition does not observe compiler-inlined scalar
+copies, and this artifact is not timing evidence.
+
+The formal artifact is retained at
+`.test-artifacts/benchmark/20260802T-formal-hpke-memory-v1.json` (ignored by
+Git), from source commit `b3d94bf35b3a712bb27fa418e1f7e9cae00c50df`
+(SHA-256
+`328c44cb72bb7706a1c36be05162de27cf88d6c76918cde8230515bd1efd6003`).
 
 See [docs/VERIFICATION.md](docs/VERIFICATION.md) for gates and measurement rules.
 

@@ -89,6 +89,40 @@ All four workloads must pass. A valid measurement which misses the performance
 target is retained and reported as a failed gate; it is never converted into a
 successful result.
 
+## Formal allocation and dynamic-copy audit
+
+The memory runner is separate from the normal test suite and timing benchmark.
+It builds a clean Release snapshot, validates the allocation probe against an
+independent C contract executable, and derives exact per-operation slopes from
+three repetitions at 1, 10, and 100 iterations.
+
+```bash
+TOOLCHAINS=org.swift.64202607231a \
+python3 Benchmarks/HPKE/run_memory.py \
+  --formal \
+  --output .test-artifacts/benchmark/20260802T-formal-hpke-memory-v1.json
+```
+
+The formal 2026-08-02 artifact passed at source commit
+`b3d94bf35b3a712bb27fa418e1f7e9cae00c50df`. Its SHA-256 is
+`328c44cb72bb7706a1c36be05162de27cf88d6c76918cde8230515bd1efd6003`.
+
+| Workload | Allocations/op | Requested bytes/op | Dynamic bulk-copy bytes/op | Gate |
+|---|---:|---:|---:|---:|
+| `x25519-shared` | 0 | 0 | 0 | Pass |
+| `recipient-setup` | 3 | 166 | 840 | Pass |
+| `first-open-256` | 3 | 166 | 2,696 | Pass |
+| `first-open-1536` | 3 | 166 | 2,696 | Pass |
+
+The two first-open workloads have identical allocation and dynamic bulk-copy
+slopes despite a 1,280-byte payload difference. This establishes that the
+caller-owned plaintext/ciphertext path does not rematerialize or dynamically
+bulk-copy the payload. It does not claim that every internal fixed-size crypto
+state copy is zero: recipient setup and first-open retain the measured fixed
+copy budgets above. Dynamic `memcpy`/`memmove` interposition cannot observe
+compiler-inlined scalar copies, and the artifact is allocation/copy evidence,
+not timing evidence.
+
 ## Current exploratory observation
 
 An interleaved development measurement on 2026-08-02, before the formal clean
