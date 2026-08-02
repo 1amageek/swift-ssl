@@ -885,7 +885,8 @@ def main() -> int:
         "zeroCopyContract": {
             "HPKEInputs": "borrowed Span",
             "ciphertextAndPlaintext": "caller-owned MutableSpan",
-            "contextSecrets": "single packed SecretBytes owner",
+            "contextSecrets": "base nonce and exporter in one SecretBytes owner",
+            "preparedAEAD": "context-owned prepared cipher; raw AEAD key not retained",
             "allocationCountMeasured": False,
         },
         "quiescence": {"postBuild": post_build_quiescence, "final": final_quiescence},
