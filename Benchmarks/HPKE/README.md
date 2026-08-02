@@ -32,8 +32,9 @@ sizes. Every timed pair must also produce the same checksum.
 
 The Swift path borrows input through `Span`, writes ciphertext and plaintext
 into caller-owned `MutableSpan` storage, expands the AEAD key once into the
-context-owned prepared cipher, and stores only the base nonce plus exporter
-secret in `SecretBytes`. Recipient X25519 writes into wiped inline fixed-width
+context-owned prepared cipher, keeps the large AES schedule behind a private
+stable immutable owner, and stores only the base nonce plus exporter secret in
+`SecretBytes`. Recipient X25519 writes into wiped inline fixed-width
 storage directly from the borrowed encapsulation. The Apple ARM64 backend uses
 scoped NEON AES operations, four-block direct CTR writes, reversed precomputed
 GHASH powers, four-block aggregation, and eight-block aggregation for messages

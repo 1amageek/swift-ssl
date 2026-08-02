@@ -6,14 +6,14 @@ import SwiftSSLCore
 /// operations borrow the immutable key schedule while the outer HPKE context
 /// exclusively owns nonce sequence progression.
 enum HPKEAEADContext: ~Copyable, Sendable {
-  case aesGCM(AESGCM)
+  case aesGCM(HPKEAESGCMOwner)
   case chaCha20Poly1305(ChaCha20Poly1305)
 
   init(key: Span<UInt8>, algorithm: HPKEAEAD) throws(HPKEError) {
     do {
       switch algorithm {
       case .aes128GCM, .aes256GCM:
-        self = .aesGCM(try AESGCM(key: key))
+        self = .aesGCM(try HPKEAESGCMOwner(key: key))
       case .chaCha20Poly1305:
         self = .chaCha20Poly1305(try ChaCha20Poly1305(key: key))
       }
@@ -30,8 +30,8 @@ enum HPKEAEADContext: ~Copyable, Sendable {
   ) throws(HPKEError) {
     do {
       switch self {
-      case .aesGCM(let cipher):
-        try cipher.seal(
+      case .aesGCM(let owner):
+        try owner.seal(
           plaintext: plaintext,
           authenticatedData: authenticatedData,
           nonce: nonce,
@@ -58,9 +58,9 @@ enum HPKEAEADContext: ~Copyable, Sendable {
   ) throws(HPKEError) {
     do {
       switch self {
-      case .aesGCM(let cipher):
-        try cipher.open(
-          ciphertextAndTag: ciphertext,
+      case .aesGCM(let owner):
+        try owner.open(
+          ciphertext: ciphertext,
           authenticatedData: authenticatedData,
           nonce: nonce,
           into: &output

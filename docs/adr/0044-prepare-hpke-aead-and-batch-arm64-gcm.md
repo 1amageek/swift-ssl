@@ -41,6 +41,10 @@ following comparison was completed before accepting the change.
 - Each `HPKESenderContext` and `HPKERecipientContext` owns one
   `HPKEAEADContext`. AEAD key expansion occurs once during HPKE setup. Raw AEAD
   key bytes are not retained in `SecretBytes`.
+- AES-GCM's large inline prepared schedule is placed in a private immutable
+  final-class owner. The outer noncopyable context moves only that reference;
+  ChaCha20-Poly1305 retains its small value containing an existing key buffer.
+  Neither concrete owner is exposed by a public API.
 - The remaining HPKE secret allocation contains only the 12-byte base nonce
   followed by the exporter secret. Sequence progression remains a `UInt64`
   property of the unique outer context.
@@ -86,7 +90,7 @@ materializes a plaintext, ciphertext, key, or nonce array.
 
 | Logical state | Storage on Native / WASI / Embedded | Isolation | Read entry | Mutation entry | Release |
 |---|---|---|---|---|---|
-| Prepared AEAD schedule | Same noncopyable cipher owner | Immutable scoped borrow | `seal` / `open` | None | Cipher `deinit` wipes key state |
+| Prepared AEAD schedule | Same private stable AES owner or noncopyable ChaCha value | Immutable scoped borrow | `seal` / `open` | None | Final owner release invokes cipher `deinit` and wipes key state |
 | Base nonce and exporter | Same `SecretBytes` unique owner | Immutable scoped borrow | nonce/export helpers | None | `SecretBytes.deinit` wipes and deallocates |
 | Sequence number | Same inline `UInt64` | Exclusive access to noncopyable HPKE context | `sequenceNumber` | successful `seal` / `open` only | Value destruction |
 
