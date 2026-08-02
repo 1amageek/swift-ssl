@@ -1,0 +1,1319 @@
+{
+  "binaries": {
+    "allocationProbe": {
+      "machO": {
+        "architectures": [
+          "arm64"
+        ],
+        "minimumOS": "15.0",
+        "passed": true,
+        "platform": "MACOS",
+        "sdk": "27.0",
+        "vtoolOutput": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke-memory/run-7j3_f_90/libSwiftSSLHPKEAllocationProbe.dylib:\nLoad command 10\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform MACOS\n    minos 15.0\n      sdk 27.0\n   ntools 1\n     tool LD\n  version 27031.0\n"
+      },
+      "path": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke-memory/run-7j3_f_90/libSwiftSSLHPKEAllocationProbe.dylib",
+      "resolvedPath": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke-memory/run-7j3_f_90/libSwiftSSLHPKEAllocationProbe.dylib",
+      "sha256": "fd3a690f0a4758753883a2489dba148f036a594e994e5f0824f4ce5873ada717",
+      "sizeBytes": 34648
+    },
+    "contractProbe": {
+      "machO": {
+        "architectures": [
+          "arm64"
+        ],
+        "minimumOS": "15.0",
+        "passed": true,
+        "platform": "MACOS",
+        "sdk": "27.0",
+        "vtoolOutput": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke-memory/run-7j3_f_90/allocation-probe-contract:\nLoad command 11\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform MACOS\n    minos 15.0\n      sdk 27.0\n   ntools 1\n     tool LD\n  version 27031.0\n"
+      },
+      "path": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke-memory/run-7j3_f_90/allocation-probe-contract",
+      "resolvedPath": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke-memory/run-7j3_f_90/allocation-probe-contract",
+      "sha256": "7563aad3119a34ed27bb396f42d254c15724732be05fc85572faaf44066653ff",
+      "sizeBytes": 50600
+    },
+    "worker": {
+      "machO": {
+        "architectures": [
+          "arm64"
+        ],
+        "minimumOS": "15.0",
+        "passed": true,
+        "platform": "MACOS",
+        "sdk": "27.0",
+        "vtoolOutput": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke-memory/run-7j3_f_90/swift-build/arm64-apple-macosx/release/swift-ssl-hpke-benchmark:\nLoad command 11\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform MACOS\n    minos 15.0\n      sdk 27.0\n   ntools 1\n     tool LD\n  version 27031.0\n"
+      },
+      "path": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke-memory/run-7j3_f_90/swift-build/arm64-apple-macosx/release/swift-ssl-hpke-benchmark",
+      "resolvedPath": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke-memory/run-7j3_f_90/swift-build/arm64-apple-macosx/release/swift-ssl-hpke-benchmark",
+      "sha256": "24bc75cea46a076a3d3f42b3d0a168bbfd5d7e6b9c72ea77e4515549609b6e38",
+      "sizeBytes": 1223160
+    }
+  },
+  "build": {
+    "command": [
+      "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/swift",
+      "build",
+      "--build-system",
+      "native",
+      "--disable-dependency-cache",
+      "--disable-build-manifest-caching",
+      "--scratch-path",
+      "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke-memory/run-7j3_f_90/swift-build",
+      "--configuration",
+      "release",
+      "--triple",
+      "arm64-apple-macosx15.0",
+      "--sdk",
+      "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk",
+      "--jobs",
+      "2",
+      "--product",
+      "swift-ssl-hpke-benchmark"
+    ],
+    "stderrSHA256": "8d13865527b64b7506e0c65bc7df4ac68841c6d2c6329546be9de001355584bb",
+    "stdoutSHA256": "b2841b8524d1c53e0e106dfa9d03b0cc8ceebe24eb9c0fdf888cb813ef37a857"
+  },
+  "classification": "formal",
+  "completedAt": "2026-08-02T06:06:06.137211+00:00",
+  "crossWorkloadChecks": {
+    "firstOpenPayloadIndependentAllocationAndDynamicBulkCopy": {
+      "failures": [],
+      "passed": true
+    }
+  },
+  "finalEvidence": {
+    "binaries": {
+      "allocationProbe": {
+        "path": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke-memory/run-7j3_f_90/libSwiftSSLHPKEAllocationProbe.dylib",
+        "resolvedPath": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke-memory/run-7j3_f_90/libSwiftSSLHPKEAllocationProbe.dylib",
+        "sha256": "fd3a690f0a4758753883a2489dba148f036a594e994e5f0824f4ce5873ada717",
+        "sizeBytes": 34648
+      },
+      "contractProbe": {
+        "path": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke-memory/run-7j3_f_90/allocation-probe-contract",
+        "resolvedPath": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke-memory/run-7j3_f_90/allocation-probe-contract",
+        "sha256": "7563aad3119a34ed27bb396f42d254c15724732be05fc85572faaf44066653ff",
+        "sizeBytes": 50600
+      },
+      "worker": {
+        "path": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke-memory/run-7j3_f_90/swift-build/arm64-apple-macosx/release/swift-ssl-hpke-benchmark",
+        "resolvedPath": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke-memory/run-7j3_f_90/swift-build/arm64-apple-macosx/release/swift-ssl-hpke-benchmark",
+        "sha256": "24bc75cea46a076a3d3f42b3d0a168bbfd5d7e6b9c72ea77e4515549609b6e38",
+        "sizeBytes": 1223160
+      }
+    },
+    "snapshotTreeSHA256": "0f5aa011f3bf74892ee9141f3bfd5d959874a25a7b422a7720bb84314fd109be",
+    "sourceClean": true,
+    "sourceCommit": "a30e5fb788a13f4f717e4050cd460cc13445c895"
+  },
+  "iterationCounts": [
+    1,
+    10,
+    100
+  ],
+  "limitations": [
+    "One exact-path warmup operation initializes Swift runtime metadata before each steady-state measurement window; cold-start allocation is outside this artifact.",
+    "Dynamic memcpy/memmove interposition does not observe compiler-inlined scalar copies.",
+    "Requested allocation bytes are recorded; allocator size classes are not.",
+    "The artifact is Native-only and is not timing evidence."
+  ],
+  "measurement": "allocation and dynamic bulk-copy interposition",
+  "passed": true,
+  "probeContract": {
+    "expected": {
+      "alignedBytes": 128,
+      "alignedCalls": 1,
+      "callocBytes": 38,
+      "callocCalls": 1,
+      "freeCalls": 4,
+      "mallocBytes": 17,
+      "mallocCalls": 1,
+      "memcpyBytes": 0,
+      "memcpyCalls": 0,
+      "memmoveBytes": 20,
+      "memmoveCalls": 2,
+      "reallocBytes": 41,
+      "reallocCalls": 1
+    },
+    "observed": {
+      "alignedBytes": 128,
+      "alignedCalls": 1,
+      "callocBytes": 38,
+      "callocCalls": 1,
+      "freeCalls": 4,
+      "mallocBytes": 17,
+      "mallocCalls": 1,
+      "memcpyBytes": 0,
+      "memcpyCalls": 0,
+      "memmoveBytes": 20,
+      "memmoveCalls": 2,
+      "reallocBytes": 41,
+      "reallocCalls": 1
+    },
+    "passed": true,
+    "stdoutSHA256": "b7d73e1657428f3f2f1d0380156417221c98e1ae255751bb474a4eef704cc89a"
+  },
+  "repetitions": 3,
+  "results": {
+    "first-open-1536": {
+      "authenticatedDataBytes": 377,
+      "budget": {
+        "alignedCalls": 1,
+        "allocationBytes": 412,
+        "allocationCalls": 2,
+        "bulkCopyBytes": 2331,
+        "mallocCalls": 1
+      },
+      "derived": {
+        "canonicalObservations": {
+          "1": {
+            "alignedBytes": 152,
+            "alignedCalls": 4,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 16,
+            "mallocBytes": 6294,
+            "mallocCalls": 12,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 4662,
+            "memmoveCalls": 86,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "10": {
+            "alignedBytes": 548,
+            "alignedCalls": 13,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 34,
+            "mallocBytes": 9606,
+            "mallocCalls": 21,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 25641,
+            "memmoveCalls": 455,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "100": {
+            "alignedBytes": 4508,
+            "alignedCalls": 103,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 214,
+            "mallocBytes": 42726,
+            "mallocCalls": 111,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 235431,
+            "memmoveCalls": 4145,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          }
+        },
+        "fixedProcessOverhead": {
+          "alignedBytes": 108,
+          "alignedCalls": 3,
+          "callocBytes": 0,
+          "callocCalls": 0,
+          "freeCalls": 14,
+          "mallocBytes": 5926,
+          "mallocCalls": 11,
+          "memcpyBytes": 0,
+          "memcpyCalls": 0,
+          "memmoveBytes": 2331,
+          "memmoveCalls": 45,
+          "reallocBytes": 0,
+          "reallocCalls": 0
+        },
+        "perOperation": {
+          "alignedBytes": 44,
+          "alignedCalls": 1,
+          "allocationBytes": 412,
+          "allocationCalls": 2,
+          "bulkCopyBytes": 2331,
+          "bulkCopyCalls": 41,
+          "callocBytes": 0,
+          "callocCalls": 0,
+          "freeCalls": 2,
+          "mallocBytes": 368,
+          "mallocCalls": 1,
+          "memcpyBytes": 0,
+          "memcpyCalls": 0,
+          "memmoveBytes": 2331,
+          "memmoveCalls": 41,
+          "reallocBytes": 0,
+          "reallocCalls": 0
+        }
+      },
+      "failures": [],
+      "observations": [
+        {
+          "checksum": 48,
+          "counters": {
+            "alignedBytes": 152,
+            "alignedCalls": 4,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 16,
+            "mallocBytes": 6294,
+            "mallocCalls": 12,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 4662,
+            "memmoveCalls": 86,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 1,
+          "repetition": 0
+        },
+        {
+          "checksum": 48,
+          "counters": {
+            "alignedBytes": 152,
+            "alignedCalls": 4,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 16,
+            "mallocBytes": 6294,
+            "mallocCalls": 12,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 4662,
+            "memmoveCalls": 86,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 1,
+          "repetition": 1
+        },
+        {
+          "checksum": 48,
+          "counters": {
+            "alignedBytes": 152,
+            "alignedCalls": 4,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 16,
+            "mallocBytes": 6294,
+            "mallocCalls": 12,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 4662,
+            "memmoveCalls": 86,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 1,
+          "repetition": 2
+        },
+        {
+          "checksum": 1273,
+          "counters": {
+            "alignedBytes": 548,
+            "alignedCalls": 13,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 34,
+            "mallocBytes": 9606,
+            "mallocCalls": 21,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 25641,
+            "memmoveCalls": 455,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 10,
+          "repetition": 0
+        },
+        {
+          "checksum": 1273,
+          "counters": {
+            "alignedBytes": 548,
+            "alignedCalls": 13,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 34,
+            "mallocBytes": 9606,
+            "mallocCalls": 21,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 25641,
+            "memmoveCalls": 455,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 10,
+          "repetition": 1
+        },
+        {
+          "checksum": 1273,
+          "counters": {
+            "alignedBytes": 548,
+            "alignedCalls": 13,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 34,
+            "mallocBytes": 9606,
+            "mallocCalls": 21,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 25641,
+            "memmoveCalls": 455,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 10,
+          "repetition": 2
+        },
+        {
+          "checksum": 12414,
+          "counters": {
+            "alignedBytes": 4508,
+            "alignedCalls": 103,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 214,
+            "mallocBytes": 42726,
+            "mallocCalls": 111,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 235431,
+            "memmoveCalls": 4145,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 100,
+          "repetition": 0
+        },
+        {
+          "checksum": 12414,
+          "counters": {
+            "alignedBytes": 4508,
+            "alignedCalls": 103,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 214,
+            "mallocBytes": 42726,
+            "mallocCalls": 111,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 235431,
+            "memmoveCalls": 4145,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 100,
+          "repetition": 1
+        },
+        {
+          "checksum": 12414,
+          "counters": {
+            "alignedBytes": 4508,
+            "alignedCalls": 103,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 214,
+            "mallocBytes": 42726,
+            "mallocCalls": 111,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 235431,
+            "memmoveCalls": 4145,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 100,
+          "repetition": 2
+        }
+      ],
+      "operation": "first-open",
+      "passed": true,
+      "payloadBytes": 1536
+    },
+    "first-open-256": {
+      "authenticatedDataBytes": 32,
+      "budget": {
+        "alignedCalls": 1,
+        "allocationBytes": 412,
+        "allocationCalls": 2,
+        "bulkCopyBytes": 2331,
+        "mallocCalls": 1
+      },
+      "derived": {
+        "canonicalObservations": {
+          "1": {
+            "alignedBytes": 152,
+            "alignedCalls": 4,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 16,
+            "mallocBytes": 2109,
+            "mallocCalls": 12,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 4662,
+            "memmoveCalls": 86,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "10": {
+            "alignedBytes": 548,
+            "alignedCalls": 13,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 34,
+            "mallocBytes": 5421,
+            "mallocCalls": 21,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 25641,
+            "memmoveCalls": 455,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "100": {
+            "alignedBytes": 4508,
+            "alignedCalls": 103,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 214,
+            "mallocBytes": 38541,
+            "mallocCalls": 111,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 235431,
+            "memmoveCalls": 4145,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          }
+        },
+        "fixedProcessOverhead": {
+          "alignedBytes": 108,
+          "alignedCalls": 3,
+          "callocBytes": 0,
+          "callocCalls": 0,
+          "freeCalls": 14,
+          "mallocBytes": 1741,
+          "mallocCalls": 11,
+          "memcpyBytes": 0,
+          "memcpyCalls": 0,
+          "memmoveBytes": 2331,
+          "memmoveCalls": 45,
+          "reallocBytes": 0,
+          "reallocCalls": 0
+        },
+        "perOperation": {
+          "alignedBytes": 44,
+          "alignedCalls": 1,
+          "allocationBytes": 412,
+          "allocationCalls": 2,
+          "bulkCopyBytes": 2331,
+          "bulkCopyCalls": 41,
+          "callocBytes": 0,
+          "callocCalls": 0,
+          "freeCalls": 2,
+          "mallocBytes": 368,
+          "mallocCalls": 1,
+          "memcpyBytes": 0,
+          "memcpyCalls": 0,
+          "memmoveBytes": 2331,
+          "memmoveCalls": 41,
+          "reallocBytes": 0,
+          "reallocCalls": 0
+        }
+      },
+      "failures": [],
+      "observations": [
+        {
+          "checksum": 48,
+          "counters": {
+            "alignedBytes": 152,
+            "alignedCalls": 4,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 16,
+            "mallocBytes": 2109,
+            "mallocCalls": 12,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 4662,
+            "memmoveCalls": 86,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 1,
+          "repetition": 0
+        },
+        {
+          "checksum": 48,
+          "counters": {
+            "alignedBytes": 152,
+            "alignedCalls": 4,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 16,
+            "mallocBytes": 2109,
+            "mallocCalls": 12,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 4662,
+            "memmoveCalls": 86,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 1,
+          "repetition": 1
+        },
+        {
+          "checksum": 48,
+          "counters": {
+            "alignedBytes": 152,
+            "alignedCalls": 4,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 16,
+            "mallocBytes": 2109,
+            "mallocCalls": 12,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 4662,
+            "memmoveCalls": 86,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 1,
+          "repetition": 2
+        },
+        {
+          "checksum": 1273,
+          "counters": {
+            "alignedBytes": 548,
+            "alignedCalls": 13,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 34,
+            "mallocBytes": 5421,
+            "mallocCalls": 21,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 25641,
+            "memmoveCalls": 455,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 10,
+          "repetition": 0
+        },
+        {
+          "checksum": 1273,
+          "counters": {
+            "alignedBytes": 548,
+            "alignedCalls": 13,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 34,
+            "mallocBytes": 5421,
+            "mallocCalls": 21,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 25641,
+            "memmoveCalls": 455,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 10,
+          "repetition": 1
+        },
+        {
+          "checksum": 1273,
+          "counters": {
+            "alignedBytes": 548,
+            "alignedCalls": 13,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 34,
+            "mallocBytes": 5421,
+            "mallocCalls": 21,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 25641,
+            "memmoveCalls": 455,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 10,
+          "repetition": 2
+        },
+        {
+          "checksum": 12414,
+          "counters": {
+            "alignedBytes": 4508,
+            "alignedCalls": 103,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 214,
+            "mallocBytes": 38541,
+            "mallocCalls": 111,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 235431,
+            "memmoveCalls": 4145,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 100,
+          "repetition": 0
+        },
+        {
+          "checksum": 12414,
+          "counters": {
+            "alignedBytes": 4508,
+            "alignedCalls": 103,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 214,
+            "mallocBytes": 38541,
+            "mallocCalls": 111,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 235431,
+            "memmoveCalls": 4145,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 100,
+          "repetition": 1
+        },
+        {
+          "checksum": 12414,
+          "counters": {
+            "alignedBytes": 4508,
+            "alignedCalls": 103,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 214,
+            "mallocBytes": 38541,
+            "mallocCalls": 111,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 235431,
+            "memmoveCalls": 4145,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 100,
+          "repetition": 2
+        }
+      ],
+      "operation": "first-open",
+      "passed": true,
+      "payloadBytes": 256
+    },
+    "recipient-setup": {
+      "authenticatedDataBytes": 32,
+      "budget": {
+        "alignedCalls": 1,
+        "allocationBytes": 412,
+        "allocationCalls": 2,
+        "bulkCopyBytes": 1715,
+        "mallocCalls": 1
+      },
+      "derived": {
+        "canonicalObservations": {
+          "1": {
+            "alignedBytes": 152,
+            "alignedCalls": 4,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 16,
+            "mallocBytes": 2109,
+            "mallocCalls": 12,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 4046,
+            "memmoveCalls": 84,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "10": {
+            "alignedBytes": 548,
+            "alignedCalls": 13,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 34,
+            "mallocBytes": 5421,
+            "mallocCalls": 21,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 19481,
+            "memmoveCalls": 435,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "100": {
+            "alignedBytes": 4508,
+            "alignedCalls": 103,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 214,
+            "mallocBytes": 38541,
+            "mallocCalls": 111,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 173831,
+            "memmoveCalls": 3945,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          }
+        },
+        "fixedProcessOverhead": {
+          "alignedBytes": 108,
+          "alignedCalls": 3,
+          "callocBytes": 0,
+          "callocCalls": 0,
+          "freeCalls": 14,
+          "mallocBytes": 1741,
+          "mallocCalls": 11,
+          "memcpyBytes": 0,
+          "memcpyCalls": 0,
+          "memmoveBytes": 2331,
+          "memmoveCalls": 45,
+          "reallocBytes": 0,
+          "reallocCalls": 0
+        },
+        "perOperation": {
+          "alignedBytes": 44,
+          "alignedCalls": 1,
+          "allocationBytes": 412,
+          "allocationCalls": 2,
+          "bulkCopyBytes": 1715,
+          "bulkCopyCalls": 39,
+          "callocBytes": 0,
+          "callocCalls": 0,
+          "freeCalls": 2,
+          "mallocBytes": 368,
+          "mallocCalls": 1,
+          "memcpyBytes": 0,
+          "memcpyCalls": 0,
+          "memmoveBytes": 1715,
+          "memmoveCalls": 39,
+          "reallocBytes": 0,
+          "reallocCalls": 0
+        }
+      },
+      "failures": [],
+      "observations": [
+        {
+          "checksum": 1,
+          "counters": {
+            "alignedBytes": 152,
+            "alignedCalls": 4,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 16,
+            "mallocBytes": 2109,
+            "mallocCalls": 12,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 4046,
+            "memmoveCalls": 84,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 1,
+          "repetition": 0
+        },
+        {
+          "checksum": 1,
+          "counters": {
+            "alignedBytes": 152,
+            "alignedCalls": 4,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 16,
+            "mallocBytes": 2109,
+            "mallocCalls": 12,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 4046,
+            "memmoveCalls": 84,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 1,
+          "repetition": 1
+        },
+        {
+          "checksum": 1,
+          "counters": {
+            "alignedBytes": 152,
+            "alignedCalls": 4,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 16,
+            "mallocBytes": 2109,
+            "mallocCalls": 12,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 4046,
+            "memmoveCalls": 84,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 1,
+          "repetition": 2
+        },
+        {
+          "checksum": 10,
+          "counters": {
+            "alignedBytes": 548,
+            "alignedCalls": 13,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 34,
+            "mallocBytes": 5421,
+            "mallocCalls": 21,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 19481,
+            "memmoveCalls": 435,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 10,
+          "repetition": 0
+        },
+        {
+          "checksum": 10,
+          "counters": {
+            "alignedBytes": 548,
+            "alignedCalls": 13,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 34,
+            "mallocBytes": 5421,
+            "mallocCalls": 21,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 19481,
+            "memmoveCalls": 435,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 10,
+          "repetition": 1
+        },
+        {
+          "checksum": 10,
+          "counters": {
+            "alignedBytes": 548,
+            "alignedCalls": 13,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 34,
+            "mallocBytes": 5421,
+            "mallocCalls": 21,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 19481,
+            "memmoveCalls": 435,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 10,
+          "repetition": 2
+        },
+        {
+          "checksum": 100,
+          "counters": {
+            "alignedBytes": 4508,
+            "alignedCalls": 103,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 214,
+            "mallocBytes": 38541,
+            "mallocCalls": 111,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 173831,
+            "memmoveCalls": 3945,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 100,
+          "repetition": 0
+        },
+        {
+          "checksum": 100,
+          "counters": {
+            "alignedBytes": 4508,
+            "alignedCalls": 103,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 214,
+            "mallocBytes": 38541,
+            "mallocCalls": 111,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 173831,
+            "memmoveCalls": 3945,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 100,
+          "repetition": 1
+        },
+        {
+          "checksum": 100,
+          "counters": {
+            "alignedBytes": 4508,
+            "alignedCalls": 103,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 214,
+            "mallocBytes": 38541,
+            "mallocCalls": 111,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 173831,
+            "memmoveCalls": 3945,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 100,
+          "repetition": 2
+        }
+      ],
+      "operation": "recipient-setup",
+      "passed": true,
+      "payloadBytes": 256
+    },
+    "x25519-shared": {
+      "authenticatedDataBytes": 0,
+      "budget": {
+        "alignedCalls": 0,
+        "allocationBytes": 0,
+        "allocationCalls": 0,
+        "bulkCopyBytes": 0,
+        "mallocCalls": 0
+      },
+      "derived": {
+        "canonicalObservations": {
+          "1": {
+            "alignedBytes": 64,
+            "alignedCalls": 2,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 6,
+            "mallocBytes": 256,
+            "mallocCalls": 4,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 0,
+            "memmoveCalls": 0,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "10": {
+            "alignedBytes": 64,
+            "alignedCalls": 2,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 6,
+            "mallocBytes": 256,
+            "mallocCalls": 4,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 0,
+            "memmoveCalls": 0,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "100": {
+            "alignedBytes": 64,
+            "alignedCalls": 2,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 6,
+            "mallocBytes": 256,
+            "mallocCalls": 4,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 0,
+            "memmoveCalls": 0,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          }
+        },
+        "fixedProcessOverhead": {
+          "alignedBytes": 64,
+          "alignedCalls": 2,
+          "callocBytes": 0,
+          "callocCalls": 0,
+          "freeCalls": 6,
+          "mallocBytes": 256,
+          "mallocCalls": 4,
+          "memcpyBytes": 0,
+          "memcpyCalls": 0,
+          "memmoveBytes": 0,
+          "memmoveCalls": 0,
+          "reallocBytes": 0,
+          "reallocCalls": 0
+        },
+        "perOperation": {
+          "alignedBytes": 0,
+          "alignedCalls": 0,
+          "allocationBytes": 0,
+          "allocationCalls": 0,
+          "bulkCopyBytes": 0,
+          "bulkCopyCalls": 0,
+          "callocBytes": 0,
+          "callocCalls": 0,
+          "freeCalls": 0,
+          "mallocBytes": 0,
+          "mallocCalls": 0,
+          "memcpyBytes": 0,
+          "memcpyCalls": 0,
+          "memmoveBytes": 0,
+          "memmoveCalls": 0,
+          "reallocBytes": 0,
+          "reallocCalls": 0
+        }
+      },
+      "failures": [],
+      "observations": [
+        {
+          "checksum": 135,
+          "counters": {
+            "alignedBytes": 64,
+            "alignedCalls": 2,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 6,
+            "mallocBytes": 256,
+            "mallocCalls": 4,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 0,
+            "memmoveCalls": 0,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 1,
+          "repetition": 0
+        },
+        {
+          "checksum": 135,
+          "counters": {
+            "alignedBytes": 64,
+            "alignedCalls": 2,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 6,
+            "mallocBytes": 256,
+            "mallocCalls": 4,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 0,
+            "memmoveCalls": 0,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 1,
+          "repetition": 1
+        },
+        {
+          "checksum": 135,
+          "counters": {
+            "alignedBytes": 64,
+            "alignedCalls": 2,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 6,
+            "mallocBytes": 256,
+            "mallocCalls": 4,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 0,
+            "memmoveCalls": 0,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 1,
+          "repetition": 2
+        },
+        {
+          "checksum": 845,
+          "counters": {
+            "alignedBytes": 64,
+            "alignedCalls": 2,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 6,
+            "mallocBytes": 256,
+            "mallocCalls": 4,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 0,
+            "memmoveCalls": 0,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 10,
+          "repetition": 0
+        },
+        {
+          "checksum": 845,
+          "counters": {
+            "alignedBytes": 64,
+            "alignedCalls": 2,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 6,
+            "mallocBytes": 256,
+            "mallocCalls": 4,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 0,
+            "memmoveCalls": 0,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 10,
+          "repetition": 1
+        },
+        {
+          "checksum": 845,
+          "counters": {
+            "alignedBytes": 64,
+            "alignedCalls": 2,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 6,
+            "mallocBytes": 256,
+            "mallocCalls": 4,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 0,
+            "memmoveCalls": 0,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 10,
+          "repetition": 2
+        },
+        {
+          "checksum": 9215,
+          "counters": {
+            "alignedBytes": 64,
+            "alignedCalls": 2,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 6,
+            "mallocBytes": 256,
+            "mallocCalls": 4,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 0,
+            "memmoveCalls": 0,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 100,
+          "repetition": 0
+        },
+        {
+          "checksum": 9215,
+          "counters": {
+            "alignedBytes": 64,
+            "alignedCalls": 2,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 6,
+            "mallocBytes": 256,
+            "mallocCalls": 4,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 0,
+            "memmoveCalls": 0,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 100,
+          "repetition": 1
+        },
+        {
+          "checksum": 9215,
+          "counters": {
+            "alignedBytes": 64,
+            "alignedCalls": 2,
+            "callocBytes": 0,
+            "callocCalls": 0,
+            "freeCalls": 6,
+            "mallocBytes": 256,
+            "mallocCalls": 4,
+            "memcpyBytes": 0,
+            "memcpyCalls": 0,
+            "memmoveBytes": 0,
+            "memmoveCalls": 0,
+            "reallocBytes": 0,
+            "reallocCalls": 0
+          },
+          "iterations": 100,
+          "repetition": 2
+        }
+      ],
+      "operation": "x25519-shared",
+      "passed": true,
+      "payloadBytes": 32
+    }
+  },
+  "schemaVersion": 1,
+  "scope": "RFC 9180 X25519 recipient setup and first authenticated open using caller-owned input and output buffers",
+  "source": {
+    "archiveSHA256": "5e5ef67f70956b45f052e26a1a6cbecb7dd5a841a9d668810bd51f0aec59a1cf",
+    "commit": "a30e5fb788a13f4f717e4050cd460cc13445c895",
+    "treeSHA256": "0f5aa011f3bf74892ee9141f3bfd5d959874a25a7b422a7720bb84314fd109be"
+  },
+  "toolchain": {
+    "identifier": "org.swift.64202607231a",
+    "minimumOS": "15.0",
+    "sdkPath": "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk",
+    "sdkVersion": "27.0",
+    "swiftCompilerCommit": "ef761e567dc94ee",
+    "swiftVersion": "Apple Swift version 6.4-dev (LLVM 264fd65923c28d9, Swift ef761e567dc94ee)\nTarget: arm64-apple-macosx27.0.0\nBuild config: +assertions",
+    "target": "arm64-apple-macosx15.0"
+  },
+  "tools": {
+    "clang": {
+      "path": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang",
+      "resolvedPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang-21",
+      "sha256": "8f9b4056eb50edaa6faf1de4bb9854ad0af3654920a27865f3bd8cba1c5a0928",
+      "sizeBytes": 513411120
+    },
+    "lipo": {
+      "path": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/lipo",
+      "resolvedPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/lipo",
+      "sha256": "9a1145057c87054760698e27cae64d1f99bb9162ef2027f2a26d63f163154912",
+      "sizeBytes": 220656
+    },
+    "swift": {
+      "path": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/swift",
+      "resolvedPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/swift-driver",
+      "sha256": "aa6afc8b8fb9ba6d9c5456bcd520f8a6c675d6a123f10b9df3ca9e327a261c82",
+      "sizeBytes": 230720
+    },
+    "vtool": {
+      "path": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/vtool",
+      "resolvedPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/vtool",
+      "sha256": "b3ed16f98f44d38d540ef27345a4deb83cbc218ef93621bcb22751aeabbaba25",
+      "sizeBytes": 109952
+    }
+  },
+  "unmeasuredWarmupOperations": 1,
+  "valid": true
+}

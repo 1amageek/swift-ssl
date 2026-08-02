@@ -88,7 +88,7 @@ Correctness tests live under `Tests/`. Long-running differential, interoperabili
 | SHA-256 | Incremental/one-shot tests, boundary tests, million-byte vector, scalar/ARM64 differential test, production ARM64 multi-block codegen gate, Native/WASI/Embedded WASI execution | Independent committed differential corpus and release benchmark |
 | HMAC-SHA-256 | RFC 4231 cases 1, 2, 3, 4, 6, and 7; incremental equivalence; typed output failure; constant-time verification; three-target execution; ASan/TSan/UBSan; optimized wipe inspection | Independent committed differential corpus, measured allocation/copy counts, and release benchmark |
 | HKDF-SHA-256 | RFC 5869 SHA-256 cases 1, 2, and 3, additional fixed fixtures, maximum-length and overlap boundaries, Native/WASI/Embedded WASI execution, ASan/TSan/UBSan, and `-O`/`-Osize` code-generation inspection; caller-provided output, one-time prepared HMAC schedule, zero-heap optimized path, direct full-block writes, and façade route | Independent committed differential corpus, measured allocation/copy counts, and release benchmark |
-| HPKE X25519 | RFC 9180 X25519 DHKEM Base/PSK/Auth/AuthPSK, HKDF-SHA256/384/512, AES-128/256-GCM, ChaCha20-Poly1305, precomputed X25519 key pairs, stack-scoped DH output, one prepared AEAD schedule per noncopyable context, reused SHA-256 HMAC schedules, sequence-bound nonces, wiped nonce/exporter owner, exact in-place seal/open, and authentication-failure no-write behavior | RFC 9180 A.2 vectors for all four modes; 11 Native tests including all 3 KDF × 3 AEAD combinations through two messages and the 1,000-iteration RFC 7748 X25519 vector; expanded Native/WASI/Embedded runtime execution of all three AEADs through sequence two; 165-test ASan/UBSan passes; and a committed pre-optimization formal allocation/dynamic-copy artifact | Refresh the formal memory artifact for the prepared-context layout, pass the `1.10x` formal timing gate, add an independent full RFC 9180 corpus, P-256 DHKEM, generic differential interoperability, automated constant-time code-generation review, and security review |
+| HPKE X25519 | RFC 9180 X25519 DHKEM Base/PSK/Auth/AuthPSK, HKDF-SHA256/384/512, AES-128/256-GCM, ChaCha20-Poly1305, precomputed X25519 key pairs, stack-scoped DH output, one prepared AEAD schedule per noncopyable context, reused SHA-256 HMAC schedules, sequence-bound nonces, wiped nonce/exporter owner, exact in-place seal/open, and authentication-failure no-write behavior | RFC 9180 A.2 vectors for all four modes; 11 Native tests including all 3 KDF × 3 AEAD combinations through two messages and the 1,000-iteration RFC 7748 X25519 vector; expanded Native/WASI/Embedded runtime execution of all three AEADs through sequence two; 165-test ASan/UBSan passes; a committed formal allocation/dynamic-copy artifact with zero payload slope; and a committed formal timing artifact whose four workloads pass the `1.10x` lower-confidence-bound gate | Add an independent full RFC 9180 corpus, P-256 DHKEM, generic differential interoperability, automated constant-time code-generation review, TSan on a working pinned toolchain, and security review |
 | ECH RFC 9849 | Strict ECHConfigList parsing and X25519 suite selection; immutable client/server configuration owners; borrowed encapsulation and payload ranges; direct sealing into the final ClientHelloOuter owner; accept/reject and retry configuration integration in Stream and QUIC TLS | 15 Native config/ClientHello tests, accepted/rejected Core and PSK-resumption tests, Native/WASI/Embedded runtime execution, focused ASan, and bidirectional interoperability with pinned BoringSSL | HelloRetryRequest continuation and second-ClientHello confirmation, rotation-snapshot concurrency tests, broader malformed corpus, fuzzing, formal allocation/copy and timing evidence, a second independent peer, and security review |
 | QUIC CRYPTO/TLS stream | Per-encryption-level sliding ring, exact retransmission handling, transactional conflicting-overlap rejection, bounded offsets/window, exact TLS handshake boundaries, zero-copy message `Span` delivery including ring wrap, and record-independent client/server TLS state transitions with ordered directional secret effects | Native reassembly/framing/core/adapter tests, full and resumed handshakes, tampered-Finished rejection, out-of-order CRYPTO delivery, directional-secret comparison, three guarded adapter repetitions, focused AddressSanitizer execution, and dedicated Native/WASI/Embedded WASI full-handshake runtime validation | QUIC transport parameters, ALPN, allocation measurement, fuzzing, external interoperability, and release benchmark |
 
@@ -277,45 +277,47 @@ The committed raw artifact is
 | Path | Allocation/free calls per operation | Requested bytes | Dynamic bulk-copy bytes |
 |---|---:|---:|---:|
 | X25519 shared secret into caller output | 0 / 0 | 0 | 0 |
-| HPKE recipient setup | 3 / 3 | 166 | 840 |
-| HPKE first open, 256-byte payload | 3 / 3 | 166 | 2,696 |
-| HPKE first open, 1,536-byte payload | 3 / 3 | 166 | 2,696 |
+| HPKE recipient setup | 2 / 2 | 412 | 1,715 |
+| HPKE first open, 256-byte payload | 2 / 2 | 412 | 2,331 |
+| HPKE first open, 1,536-byte payload | 2 / 2 | 412 | 2,331 |
 
 The formal steady-state memory run derives exact slopes from 1, 10, and 100
 operations in three fresh processes each after one exact-path warmup. The two
 first-open workloads have identical allocation and dynamic bulk-copy slopes
 despite a 1,280-byte payload difference. Caller-owned ciphertext and plaintext
-therefore remain on a payload-zero-copy path, while fixed-size key/context
-state retains the measured internal copy budgets above. Dynamic
+therefore remain on a payload-zero-copy path. The stable prepared AES owner and
+44-byte nonce/exporter owner account for the two fixed allocations; setup pays
+a fixed schedule-placement copy while first-open uses 365 fewer dynamic-copy
+bytes than the prior committed layout. Dynamic
 `memcpy`/`memmove` interposition does not observe compiler-inlined scalar
 copies, and this artifact is not timing evidence.
 
 The committed raw artifact is
-[`Benchmarks/HPKE/Results/20260802T-native-hpke-memory.json`](Benchmarks/HPKE/Results/20260802T-native-hpke-memory.json),
-from source commit `581e9666028457f4b39af75ec93a637615d1ffde`
+[`Benchmarks/HPKE/Results/20260802T060606Z-native-hpke-memory.json`](Benchmarks/HPKE/Results/20260802T060606Z-native-hpke-memory.json),
+from source commit `a30e5fb788a13f4f717e4050cd460cc13445c895`
 (SHA-256
-`b9f9f0cd93b6036c47fee6dbae7bb2dc8af2c0cad30b5ba6cac46a9a59fb42ab`).
+`d36f0df01e80e9e1a671f6d75ee7c54b610bc6a1e2130fa0b09bfb29902d5e6d`).
 
 ### HPKE X25519 formal timing benchmark
 
 | Benchmark | Swift median ns/op | BoringSSL median ns/op | Ratio | 95% bootstrap CI | Gate |
 |---|---:|---:|---:|---:|---:|
-| X25519 shared secret | 14,349.444 | 16,690.293 | `1.1629x` | `[1.1618, 1.1652]` | Pass |
-| Recipient setup | 16,060.367 | 18,454.052 | `1.1475x` | `[1.1468, 1.1492]` | Pass |
-| Recipient setup + first open, 256-byte payload | 16,989.266 | 18,493.174 | `1.0874x` | `[1.0863, 1.0914]` | Fail |
-| Recipient setup + first open, 1,536-byte payload | 17,374.070 | 18,547.069 | `1.0673x` | `[1.0649, 1.0697]` | Fail |
+| X25519 shared secret | 14,376.509 | 16,740.212 | `1.1644x` | `[1.1630, 1.1666]` | Pass |
+| Recipient setup | 16,570.616 | 18,588.603 | `1.1219x` | `[1.1207, 1.1244]` | Pass |
+| Recipient setup + first open, 256-byte payload | 16,700.675 | 18,670.401 | `1.1178x` | `[1.1166, 1.1194]` | Pass |
+| Recipient setup + first open, 1,536-byte payload | 16,875.905 | 18,665.522 | `1.1064x` | `[1.1057, 1.1091]` | Pass |
 
 The valid formal run used 30 balanced randomized pairs and 10,000 paired
 bootstrap resamples. Complete encapsulation, ciphertext, and recovered-
-plaintext equality passed. The overall performance gate failed because every
-workload must have a lower confidence bound of at least `1.10x`; the measured
-first-open paths remain below that requirement.
+plaintext equality passed. Every workload exceeded the required `1.10x` lower
+confidence bound; the narrowest margin was the 1,536-byte first-open path at a
+`1.1057x` lower bound.
 
 The committed raw artifact is
-[`Benchmarks/HPKE/Results/20260802T042128Z-native-hpke.json`](Benchmarks/HPKE/Results/20260802T042128Z-native-hpke.json),
-from clean source commit `ff9a7a01d0bb79f295ea40d37bc95754cf4989d0`
+[`Benchmarks/HPKE/Results/20260802T060532Z-native-hpke.json`](Benchmarks/HPKE/Results/20260802T060532Z-native-hpke.json),
+from clean source commit `a30e5fb788a13f4f717e4050cd460cc13445c895`
 (SHA-256
-`b3f639da44962d4169de1c05ba4f40eec80a56859e32263926ecd6998d1e455a`).
+`c54dcbc132cbbfa04a26a581207d223d1abc49bda9b1d0f8e0ce9ee520d7918c`).
 
 See [docs/VERIFICATION.md](docs/VERIFICATION.md) for gates and measurement rules.
 

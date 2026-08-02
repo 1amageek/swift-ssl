@@ -105,45 +105,47 @@ python3 Benchmarks/HPKE/run_memory.py \
   --output .test-artifacts/benchmark/20260802T-formal-hpke-memory-v1.json
 ```
 
-The formal 2026-08-02 artifact passed at source commit
-`581e9666028457f4b39af75ec93a637615d1ffde`. Its SHA-256 is
-`b9f9f0cd93b6036c47fee6dbae7bb2dc8af2c0cad30b5ba6cac46a9a59fb42ab`.
+The current formal 2026-08-02 artifact passed at source commit
+`a30e5fb788a13f4f717e4050cd460cc13445c895`. Its SHA-256 is
+`d36f0df01e80e9e1a671f6d75ee7c54b610bc6a1e2130fa0b09bfb29902d5e6d`.
 
 | Workload | Allocations/op | Requested bytes/op | Dynamic bulk-copy bytes/op | Gate |
 |---|---:|---:|---:|---:|
 | `x25519-shared` | 0 | 0 | 0 | Pass |
-| `recipient-setup` | 3 | 166 | 840 | Pass |
-| `first-open-256` | 3 | 166 | 2,696 | Pass |
-| `first-open-1536` | 3 | 166 | 2,696 | Pass |
+| `recipient-setup` | 2 | 412 | 1,715 | Pass |
+| `first-open-256` | 2 | 412 | 2,331 | Pass |
+| `first-open-1536` | 2 | 412 | 2,331 | Pass |
 
 The two first-open workloads have identical allocation and dynamic bulk-copy
 slopes despite a 1,280-byte payload difference. This establishes that the
 caller-owned plaintext/ciphertext path does not rematerialize or dynamically
-bulk-copy the payload. It does not claim that every internal fixed-size crypto
-state copy is zero: recipient setup and first-open retain the measured fixed
-copy budgets above. Dynamic `memcpy`/`memmove` interposition cannot observe
+bulk-copy the payload. The stable prepared AES owner and 44-byte secret owner
+are fixed allocations. Setup retains a fixed schedule-placement copy, while
+first-open uses 365 fewer dynamic-copy bytes than the previous committed
+layout. Dynamic `memcpy`/`memmove` interposition cannot observe
 compiler-inlined scalar copies, and the artifact is allocation/copy evidence,
 not timing evidence.
 
 The committed raw artifact is
-[`Benchmarks/HPKE/Results/20260802T-native-hpke-memory.json`](Results/20260802T-native-hpke-memory.json).
+[`Benchmarks/HPKE/Results/20260802T060606Z-native-hpke-memory.json`](Results/20260802T060606Z-native-hpke-memory.json).
 
 ## Current formal timing result
 
 The valid formal run completed on 2026-08-02 from clean SwiftSSL commit
-`ff9a7a01d0bb79f295ea40d37bc95754cf4989d0` and the pinned BoringSSL commit.
-Complete output equality passed, but the aggregate gate failed because both
-first-open workloads missed the required `1.10x` lower confidence bound.
+`a30e5fb788a13f4f717e4050cd460cc13445c895` and the pinned BoringSSL commit.
+Complete output equality passed, and all four lower confidence bounds exceed
+the required `1.10x` target.
 
 | Workload | Swift median ns/op | BoringSSL median ns/op | Speedup | 95% paired bootstrap CI | Gate |
 |---|---:|---:|---:|---:|---:|
-| `x25519-shared` | 14,349.444 | 16,690.293 | `1.1629x` | `[1.1618, 1.1652]` | Pass |
-| `recipient-setup` | 16,060.367 | 18,454.052 | `1.1475x` | `[1.1468, 1.1492]` | Pass |
-| `first-open-256` | 16,989.266 | 18,493.174 | `1.0874x` | `[1.0863, 1.0914]` | Fail |
-| `first-open-1536` | 17,374.070 | 18,547.069 | `1.0673x` | `[1.0649, 1.0697]` | Fail |
+| `x25519-shared` | 14,376.509 | 16,740.212 | `1.1644x` | `[1.1630, 1.1666]` | Pass |
+| `recipient-setup` | 16,570.616 | 18,588.603 | `1.1219x` | `[1.1207, 1.1244]` | Pass |
+| `first-open-256` | 16,700.675 | 18,670.401 | `1.1178x` | `[1.1166, 1.1194]` | Pass |
+| `first-open-1536` | 16,875.905 | 18,665.522 | `1.1064x` | `[1.1057, 1.1091]` | Pass |
 
-This failed gate is retained as timing evidence rather than relabeled as a
-successful result. The committed raw artifact is
-[`Benchmarks/HPKE/Results/20260802T042128Z-native-hpke.json`](Results/20260802T042128Z-native-hpke.json)
+The narrowest passing lower bound is `1.1057x` for `first-open-1536`. The prior
+failed result remains committed as historical evidence and is not used as the
+current release result. The current raw artifact is
+[`Benchmarks/HPKE/Results/20260802T060532Z-native-hpke.json`](Results/20260802T060532Z-native-hpke.json)
 (SHA-256
-`b3f639da44962d4169de1c05ba4f40eec80a56859e32263926ecd6998d1e455a`).
+`c54dcbc132cbbfa04a26a581207d223d1abc49bda9b1d0f8e0ce9ee520d7918c`).

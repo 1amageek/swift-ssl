@@ -113,5 +113,8 @@ aliased.
 - ThreadSanitizer cannot compile this package with the pinned toolchain because
   the Swift frontend asserts in `emitTsanInoutAccess`; the same failure is
   reproduced from pristine `HEAD`, before this decision's changes.
-- Formal clean-commit memory and timing artifacts remain the acceptance gates
-  for allocation/copy budgets and the 1.10x lower-confidence-bound target.
+- Formal clean-commit memory and timing artifacts from commit
+  `a30e5fb788a13f4f717e4050cd460cc13445c895` pass. X25519 remains allocation
+  and dynamic-copy free; the two first-open payload sizes have identical fixed
+  slopes. All four timing workloads exceed the `1.10x` lower-confidence-bound
+  target, with `first-open-1536` the narrowest at `1.1057x`.

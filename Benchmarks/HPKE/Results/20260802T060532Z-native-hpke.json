@@ -1,0 +1,4160 @@
+{
+  "bootstrapResamples": 10000,
+  "build": {
+    "boringSSLBuild": {
+      "command": [
+        "/opt/homebrew/bin/cmake",
+        "--build",
+        "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/boringssl-build",
+        "--target",
+        "boringssl-hpke-benchmark",
+        "--",
+        "-v"
+      ],
+      "stderr": "",
+      "stdoutSHA256": "c8eca9afb2d5a1a23f8b47bfe8840ef56101b9260057517f7109cf292b3f6804"
+    },
+    "boringSSLCompileDatabase": {
+      "assemblyEnabled": true,
+      "entryCount": 474,
+      "passed": true,
+      "path": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/boringssl-build/compile_commands.json",
+      "requiredSources": [
+        "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/sources/boringssl/crypto/fipsmodule/bcm.cc",
+        "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/sources/boringssl/crypto/hpke/hpke.cc",
+        "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/sources/swift-ssl/Benchmarks/HPKE/BoringSSLDriver/HPKEBenchmark.cpp"
+      ],
+      "sha256": "0319855db384e1fd289ba4a0d82adbf2b74394a4d62081cf880153d59cf1ba0e"
+    },
+    "boringSSLConfigure": {
+      "command": [
+        "/opt/homebrew/bin/cmake",
+        "-S",
+        "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/sources/swift-ssl/Benchmarks/HPKE/BoringSSLDriver",
+        "-B",
+        "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/boringssl-build",
+        "-G",
+        "Ninja",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DCMAKE_OSX_ARCHITECTURES=arm64",
+        "-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0",
+        "-DCMAKE_OSX_SYSROOT=/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk",
+        "-DCMAKE_C_COMPILER=/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang",
+        "-DCMAKE_CXX_COMPILER=/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang++",
+        "-DCMAKE_CXX_COMPILER_ARG1=--driver-mode=g++",
+        "-DCMAKE_ASM_COMPILER=/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+        "-DCMAKE_MAKE_PROGRAM=/opt/homebrew/bin/ninja",
+        "-DBORINGSSL_SOURCE=/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/sources/boringssl",
+        "-DBORINGSSL_COMMIT=ae49d2681a56ca7b8609f6039a770fda2a8eb550"
+      ],
+      "stderr": "",
+      "stdout": "-- The C compiler identification is Clang 21.0.0\n-- The CXX compiler identification is Clang 21.0.0\n-- The ASM compiler identification is AppleClang\n-- Found assembler: /Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang\n-- Detecting C compiler ABI info\n-- Detecting C compiler ABI info - done\n-- Check for working C compiler: /Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang - skipped\n-- Detecting C compile features\n-- Detecting C compile features - done\n-- Detecting CXX compiler ABI info\n-- Detecting CXX compiler ABI info - done\n-- Check for working CXX compiler: /Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang++ - skipped\n-- Detecting CXX compile features\n-- Detecting CXX compile features - done\n-- Performing Test CMAKE_HAVE_LIBC_PTHREAD\n-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success\n-- Found Threads: TRUE\n-- Configuring done (0.5s)\n-- Generating done (0.0s)\n-- Build files have been written to: /Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/boringssl-build\n"
+    },
+    "codeGeneration": {
+      "boringSSL": {
+        "passed": true,
+        "requiredSymbols": [
+          "_EVP_HPKE_CTX_setup_sender_with_seed_for_testing",
+          "_EVP_HPKE_CTX_setup_recipient",
+          "_EVP_HPKE_CTX_open",
+          "_X25519"
+        ],
+        "symbolTableSHA256": "f46cd812f82ef35f04ea8eb9b82cdd674c7d11d177bd9180e82a2cacd640d627"
+      },
+      "swift": {
+        "aesRoundInstructionCount": 12,
+        "bytePolynomialMultiplyInstructionCount": 0,
+        "carryInstructionCount": 1607,
+        "directPolynomialMultiplyInstructionCount": 56,
+        "disassemblySHA256": "491e26ee827f25785815b24fe358938b64ebf369e7aa8988c1a3329ec04b5e5b",
+        "externalCryptoImports": [],
+        "passed": true,
+        "polynomialMultiplyInstructionCount": 56,
+        "symbolTableSHA256": "ae0bb13ad818214cc3dd6a3db82955cbd8460b89b059aad2bc22a864a9ce157b",
+        "uint128MultiplyHighInstructionCount": 1747
+      }
+    },
+    "swift": {
+      "command": [
+        "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/swift",
+        "build",
+        "--build-system",
+        "native",
+        "--disable-dependency-cache",
+        "--disable-build-manifest-caching",
+        "--cache-path",
+        "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/swift-cache",
+        "--scratch-path",
+        "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/swift-build",
+        "--configuration",
+        "release",
+        "--triple",
+        "arm64-apple-macosx15.0",
+        "--sdk",
+        "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk",
+        "--jobs",
+        "2",
+        "--product",
+        "swift-ssl-hpke-benchmark",
+        "-v"
+      ],
+      "passed": true,
+      "stderr": "warning: 'swift-ssl': /Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/swift-frontend -frontend -c -primary-file /Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/sources/swift-ssl/Package.swift -target arm64-apple-macosx14.0 -Xllvm -aarch64-use-tbi -enable-objc-interop -sdk /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -I /Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/lib/swift/macosx/testing -I /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -I /Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/lib/swift/pm/ManifestAPI -F /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -vfsoverlay /var/folders/c4/bcbjzcj556d3xj45z64rzjmw0000gn/T/TemporaryDirectory.7C6GKz/vfs.yaml -no-color-diagnostics -Xcc -fno-color-diagnostics -swift-version 6 -package-description-version 6.2.0 -empty-abi-descriptor -plugin-path /Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/lib/swift/host/plugins/testing -no-auto-bridging-header-chaining -module-name main -in-process-plugin-server-path /Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/lib/swift/host/libSwiftInProcPluginServer.dylib -plugin-path /Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/lib/swift/host/plugins -plugin-path /Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/local/lib/swift/host/plugins -target-sdk-version 27.0 -target-sdk-name macosx27.0 -external-plugin-path '/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins#/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server' -external-plugin-path '/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/local/lib/swift/host/plugins#/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server' -o /var/folders/c4/bcbjzcj556d3xj45z64rzjmw0000gn/T/TemporaryDirectory.cRMkKe/Package-1.o\n/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang /var/folders/c4/bcbjzcj556d3xj45z64rzjmw0000gn/T/TemporaryDirectory.cRMkKe/Package-1.o -F /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks --sysroot /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk --target=arm64-apple-macosx14.0 -L /Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/lib/swift/macosx -L /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk/usr/lib/swift -rpath /usr/lib/swift -L /Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/lib/swift/pm/ManifestAPI -L /Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/lib/swift/macosx/testing -L /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -lPackageDescription -Xlinker -rpath -Xlinker /Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/lib/swift/pm/ManifestAPI -o /var/folders/c4/bcbjzcj556d3xj45z64rzjmw0000gn/T/TemporaryDirectory.nTMB6E/swift-ssl-manifest\nApple Swift version 6.4-dev (LLVM 264fd65923c28d9, Swift ef761e567dc94ee)\nTarget: arm64-apple-macosx14.0\nwarning: '--build-system native' has been deprecated and will be removed in a future release; please report an issue at https://github.com/swiftlang/swift-package-manager/issues if you are unable to adopt the default build system.\n",
+      "stdoutSHA256": "47a910035de28aa75d91e1cca966c426e8a2c36288a78ff9a7abf4945a6cb158",
+      "validatedModules": [
+        "SwiftSSLCore",
+        "SwiftSSLCrypto",
+        "SwiftSSLHPKEBenchmark"
+      ]
+    },
+    "workers": {
+      "boringSSL": {
+        "machO": {
+          "architectures": [
+            "arm64"
+          ],
+          "linkedSDKVersion": "27.0",
+          "minimumOSVersion": "15.0",
+          "platform": "MACOS",
+          "vtoolOutput": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/boringssl-build/boringssl-hpke-benchmark:\nLoad command 11\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform MACOS\n    minos 15.0\n      sdk 27.0\n   ntools 1\n     tool LD\n  version 27031.0\n"
+        },
+        "path": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/boringssl-build/boringssl-hpke-benchmark",
+        "sha256": "2fa5b8cc7a27565daf3b876e437ec0d5f08ec2179de523cdbea6bb47ddcacdd1",
+        "sizeBytes": 1730904
+      },
+      "swift": {
+        "machO": {
+          "architectures": [
+            "arm64"
+          ],
+          "linkedSDKVersion": "27.0",
+          "minimumOSVersion": "15.0",
+          "platform": "MACOS",
+          "vtoolOutput": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/swift-build/arm64-apple-macosx/release/swift-ssl-hpke-benchmark:\nLoad command 11\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform MACOS\n    minos 15.0\n      sdk 27.0\n   ntools 1\n     tool LD\n  version 27031.0\n"
+        },
+        "path": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/swift-build/arm64-apple-macosx/release/swift-ssl-hpke-benchmark",
+        "sha256": "90a617c0b148e13aaec761c319eb59481d44720084bead635775757e59239a5c",
+        "sizeBytes": 1222456
+      }
+    }
+  },
+  "buildRoot": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr",
+  "classification": "formal",
+  "completedAt": "2026-08-02T06:05:32.730502+00:00",
+  "environment": {
+    "buildTriple": "arm64-apple-macosx15.0",
+    "capturedAt": "2026-08-02T06:02:25.753284+00:00",
+    "developerDirectory": "/Applications/Xcode-beta.app/Contents/Developer",
+    "logicalCPUCount": 14,
+    "macOSSDKBuild": "26A5368f",
+    "macOSSDKPath": "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk",
+    "macOSSDKVersion": "27.0",
+    "machine": "arm64",
+    "platform": "macOS-27.0-arm64-arm-64bit",
+    "processor": "arm",
+    "pythonVersion": "3.12.8 (v3.12.8:2dc476bcb91, Dec  3 2024, 14:43:19) [Clang 13.0.0 (clang-1300.0.29.30)]",
+    "swiftDefaultTarget": "arm64-apple-macosx27.0.0",
+    "swiftVersion": "Apple Swift version 6.4-dev (LLVM 264fd65923c28d9, Swift ef761e567dc94ee)\nTarget: arm64-apple-macosx27.0.0\nBuild config: +assertions",
+    "toolIdentities": {
+      "clang": {
+        "invocationPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang",
+        "resolvedPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang-21",
+        "sha256": "8f9b4056eb50edaa6faf1de4bb9854ad0af3654920a27865f3bd8cba1c5a0928",
+        "sizeBytes": 513411120
+      },
+      "clang++": {
+        "invocationPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang++",
+        "resolvedPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang-21",
+        "sha256": "8f9b4056eb50edaa6faf1de4bb9854ad0af3654920a27865f3bd8cba1c5a0928",
+        "sizeBytes": 513411120
+      },
+      "lipo": {
+        "invocationPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/lipo",
+        "resolvedPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/lipo",
+        "sha256": "9a1145057c87054760698e27cae64d1f99bb9162ef2027f2a26d63f163154912",
+        "sizeBytes": 220656
+      },
+      "nm": {
+        "invocationPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/nm",
+        "resolvedPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/llvm-nm",
+        "sha256": "5e801ceaf414ce862593b9915fe8811072049ae5e60dc19256122eaf82d3ed80",
+        "sizeBytes": 16437968
+      },
+      "otool": {
+        "invocationPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/otool",
+        "resolvedPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/llvm-otool",
+        "sha256": "ad01e439cbcf9de85b4dd3e03d986cd507af3fdef1250d07fd0683e7e38b9abb",
+        "sizeBytes": 72672
+      },
+      "swift": {
+        "invocationPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/swift",
+        "resolvedPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/swift-driver",
+        "sha256": "aa6afc8b8fb9ba6d9c5456bcd520f8a6c675d6a123f10b9df3ca9e327a261c82",
+        "sizeBytes": 230720
+      },
+      "swiftc": {
+        "invocationPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/swiftc",
+        "resolvedPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/swift-driver",
+        "sha256": "aa6afc8b8fb9ba6d9c5456bcd520f8a6c675d6a123f10b9df3ca9e327a261c82",
+        "sizeBytes": 230720
+      },
+      "vtool": {
+        "invocationPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/vtool",
+        "resolvedPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/vtool",
+        "sha256": "b3ed16f98f44d38d540ef27345a4deb83cbc218ef93621bcb22751aeabbaba25",
+        "sizeBytes": 109952
+      }
+    },
+    "toolchainIdentifier": "org.swift.64202607231a",
+    "tools": {
+      "clang": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang",
+      "clang++": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang++",
+      "lipo": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/lipo",
+      "nm": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/nm",
+      "otool": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/otool",
+      "swift": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/swift",
+      "swiftc": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/swiftc",
+      "vtool": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/vtool"
+    },
+    "xcodeBuild": "27A5209h",
+    "xcodeVersion": "27.0"
+  },
+  "equivalence": {
+    "completeByteEquality": [
+      {
+        "authenticatedDataBytes": 32,
+        "completeOutputSHA256": "d6235e29f3193cb03a7435c879744931e5368997f9ac73021969d1e031086b1a",
+        "passed": true,
+        "payloadBytes": 256
+      },
+      {
+        "authenticatedDataBytes": 377,
+        "completeOutputSHA256": "02cfe09845098bc5d426e81883dd85ceed73ec56277f3b16173aa2ffb0b36e72",
+        "passed": true,
+        "payloadBytes": 1536
+      }
+    ],
+    "passed": true,
+    "suite": "DHKEM(X25519, HKDF-SHA256)/HKDF-SHA256/AES-128-GCM"
+  },
+  "finalSnapshotEvidence": {
+    "boringSSL": {
+      "archiveSHA256": "c46d833a020e586adfaf7706e70341105b941a5eca913c10fc0980f721980549",
+      "treeSHA256": "fb32d975b7e2d8c4fa3b8e211bed0fc8e17d3eefe160bfcd9f756d9b8a4e0ef1",
+      "unchanged": true
+    },
+    "swiftSSL": {
+      "archiveSHA256": "5e5ef67f70956b45f052e26a1a6cbecb7dd5a841a9d668810bd51f0aec59a1cf",
+      "treeSHA256": "0f5aa011f3bf74892ee9141f3bfd5d959874a25a7b422a7720bb84314fd109be",
+      "unchanged": true
+    }
+  },
+  "finalToolIdentities": {
+    "clang": {
+      "invocationPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang",
+      "resolvedPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang-21",
+      "sha256": "8f9b4056eb50edaa6faf1de4bb9854ad0af3654920a27865f3bd8cba1c5a0928",
+      "sizeBytes": 513411120
+    },
+    "clang++": {
+      "invocationPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang++",
+      "resolvedPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/clang-21",
+      "sha256": "8f9b4056eb50edaa6faf1de4bb9854ad0af3654920a27865f3bd8cba1c5a0928",
+      "sizeBytes": 513411120
+    },
+    "lipo": {
+      "invocationPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/lipo",
+      "resolvedPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/lipo",
+      "sha256": "9a1145057c87054760698e27cae64d1f99bb9162ef2027f2a26d63f163154912",
+      "sizeBytes": 220656
+    },
+    "nm": {
+      "invocationPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/nm",
+      "resolvedPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/llvm-nm",
+      "sha256": "5e801ceaf414ce862593b9915fe8811072049ae5e60dc19256122eaf82d3ed80",
+      "sizeBytes": 16437968
+    },
+    "otool": {
+      "invocationPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/otool",
+      "resolvedPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/llvm-otool",
+      "sha256": "ad01e439cbcf9de85b4dd3e03d986cd507af3fdef1250d07fd0683e7e38b9abb",
+      "sizeBytes": 72672
+    },
+    "swift": {
+      "invocationPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/swift",
+      "resolvedPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/swift-driver",
+      "sha256": "aa6afc8b8fb9ba6d9c5456bcd520f8a6c675d6a123f10b9df3ca9e327a261c82",
+      "sizeBytes": 230720
+    },
+    "swiftc": {
+      "invocationPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/swiftc",
+      "resolvedPath": "/Users/1amageek/Library/Developer/Toolchains/swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a.xctoolchain/usr/bin/swift-driver",
+      "sha256": "aa6afc8b8fb9ba6d9c5456bcd520f8a6c675d6a123f10b9df3ca9e327a261c82",
+      "sizeBytes": 230720
+    },
+    "vtool": {
+      "invocationPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/vtool",
+      "resolvedPath": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/vtool",
+      "sha256": "b3ed16f98f44d38d540ef27345a4deb83cbc218ef93621bcb22751aeabbaba25",
+      "sizeBytes": 109952
+    }
+  },
+  "passed": true,
+  "quiescence": {
+    "final": {
+      "activeBuildProcesses": {},
+      "loadAverage": [
+        1.85107421875,
+        2.23193359375,
+        2.09765625
+      ],
+      "logicalCPUCount": 14,
+      "maximumLoadPerLogicalCPU": 0.25,
+      "observedAt": "2026-08-02T06:05:32.385036+00:00",
+      "oneMinuteLoadPerLogicalCPU": 0.13221958705357142,
+      "powerMode": 0,
+      "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+      "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+    },
+    "postBuild": {
+      "activeBuildProcesses": {},
+      "loadAverage": [
+        3.2529296875,
+        2.484375,
+        2.1591796875
+      ],
+      "logicalCPUCount": 14,
+      "maximumLoadPerLogicalCPU": 0.25,
+      "observedAt": "2026-08-02T06:03:45.678845+00:00",
+      "oneMinuteLoadPerLogicalCPU": 0.23235212053571427,
+      "powerMode": 0,
+      "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+      "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+    }
+  },
+  "results": [
+    {
+      "authenticatedDataBytes": 377,
+      "boringSSLMedianNanosecondsPerOperation": 18665.52215625,
+      "boringSSLP95NanosecondsPerOperation": 18791.825509374998,
+      "calibration": [
+        {
+          "boringSSL": {
+            "checksum": 1019872,
+            "nanoseconds": 148930542
+          },
+          "iterations": 8000,
+          "swift": {
+            "checksum": 1019872,
+            "nanoseconds": 138789334
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 296484500
+          },
+          "iterations": 16000,
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 267255458
+          }
+        }
+      ],
+      "convergence": [
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 297773125
+          },
+          "index": 0,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.2529296875,
+              2.484375,
+              2.1591796875
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:47.224457+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.23235212053571427,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 268621584
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 297785500
+          },
+          "index": 1,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.2529296875,
+              2.484375,
+              2.1591796875
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:47.872828+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.23235212053571427,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 268273458
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 299446834
+          },
+          "index": 2,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.2529296875,
+              2.484375,
+              2.1591796875
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:48.521038+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.23235212053571427,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 268973375
+          }
+        }
+      ],
+      "iterationsPerSample": 16000,
+      "medianPairedSpeedup": 1.106395216196135,
+      "name": "first-open-1536",
+      "operation": "first-open",
+      "passed": true,
+      "payloadBytes": 1536,
+      "samples": [
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 297665500
+          },
+          "index": 0,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.2529296875,
+              2.484375,
+              2.1591796875
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:49.171047+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.23235212053571427,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 270071000
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 297778625
+          },
+          "index": 1,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.2529296875,
+              2.484375,
+              2.1591796875
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:49.822424+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.23235212053571427,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 269184083
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 297889333
+          },
+          "index": 2,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.072265625,
+              2.45947265625,
+              2.15234375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:50.471356+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.21944754464285715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 269425583
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 299095375
+          },
+          "index": 3,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.072265625,
+              2.45947265625,
+              2.15234375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:51.120729+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.21944754464285715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 268964542
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 296112916
+          },
+          "index": 4,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.072265625,
+              2.45947265625,
+              2.15234375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:51.770923+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.21944754464285715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 267795458
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 297390792
+          },
+          "index": 5,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.072265625,
+              2.45947265625,
+              2.15234375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:52.418228+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.21944754464285715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 270551625
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 297340292
+          },
+          "index": 6,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.072265625,
+              2.45947265625,
+              2.15234375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:53.069315+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.21944754464285715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 268189792
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 298537792
+          },
+          "index": 7,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.072265625,
+              2.45947265625,
+              2.15234375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:53.717918+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.21944754464285715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 270004416
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 299018917
+          },
+          "index": 8,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.072265625,
+              2.45947265625,
+              2.15234375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:54.369126+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.21944754464285715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 269164542
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 296631792
+          },
+          "index": 9,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.072265625,
+              2.45947265625,
+              2.15234375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:55.019022+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.21944754464285715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 267753583
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 298577875
+          },
+          "index": 10,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.90625,
+              2.43505859375,
+              2.1455078125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:55.665436+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.20758928571428573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 269019834
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 297452917
+          },
+          "index": 11,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.90625,
+              2.43505859375,
+              2.1455078125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:56.314400+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.20758928571428573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 269226833
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 299496292
+          },
+          "index": 12,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.90625,
+              2.43505859375,
+              2.1455078125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:56.965347+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.20758928571428573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 270024541
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 298186125
+          },
+          "index": 13,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.90625,
+              2.43505859375,
+              2.1455078125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:57.620039+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.20758928571428573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 270456750
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 298704292
+          },
+          "index": 14,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.90625,
+              2.43505859375,
+              2.1455078125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:58.273033+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.20758928571428573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 268375417
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 299449666
+          },
+          "index": 15,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.90625,
+              2.43505859375,
+              2.1455078125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:58.924678+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.20758928571428573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 270441625
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 298099042
+          },
+          "index": 16,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.90625,
+              2.43505859375,
+              2.1455078125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:03:59.576607+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.20758928571428573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 270160375
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 298336291
+          },
+          "index": 17,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.90625,
+              2.43505859375,
+              2.1455078125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:00.228293+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.20758928571428573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 270042250
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 299304667
+          },
+          "index": 18,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.07373046875,
+              2.4775390625,
+              2.162109375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:00.880907+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.21955217633928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 269870375
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 297736667
+          },
+          "index": 19,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.07373046875,
+              2.4775390625,
+              2.162109375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:01.533959+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.21955217633928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 270750792
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 298592417
+          },
+          "index": 20,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.07373046875,
+              2.4775390625,
+              2.162109375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:02.185815+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.21955217633928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 271356208
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 300155583
+          },
+          "index": 21,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.07373046875,
+              2.4775390625,
+              2.162109375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:02.838480+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.21955217633928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 269958459
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 299522458
+          },
+          "index": 22,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.07373046875,
+              2.4775390625,
+              2.162109375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:03.491762+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.21955217633928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 269033875
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 302711750
+          },
+          "index": 23,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.07373046875,
+              2.4775390625,
+              2.162109375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:04.144300+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.21955217633928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 270600750
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 299616292
+          },
+          "index": 24,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.07373046875,
+              2.4775390625,
+              2.162109375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:04.799932+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.21955217633928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 274369083
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 299824667
+          },
+          "index": 25,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              3.07373046875,
+              2.4775390625,
+              2.162109375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:05.456993+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.21955217633928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 270984583
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 298984500
+          },
+          "index": 26,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.9072265625,
+              2.45263671875,
+              2.1552734375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:06.111129+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.20765904017857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 270402792
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 299098708
+          },
+          "index": 27,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.9072265625,
+              2.45263671875,
+              2.1552734375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:06.764508+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.20765904017857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 270344000
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 300400625
+          },
+          "index": 28,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.9072265625,
+              2.45263671875,
+              2.1552734375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:07.418125+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.20765904017857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 269860625
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2039744,
+            "nanoseconds": 300888958
+          },
+          "index": 29,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.9072265625,
+              2.45263671875,
+              2.1552734375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:08.072231+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.20765904017857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2039744,
+            "nanoseconds": 270562375
+          }
+        }
+      ],
+      "speedupConfidenceInterval95": [
+        1.105661748552734,
+        1.1091064860235087
+      ],
+      "swiftMedianNanosecondsPerOperation": 16875.90490625,
+      "swiftP95NanosecondsPerOperation": 16949.311046875,
+      "targetSpeedup": 1.1
+    },
+    {
+      "authenticatedDataBytes": 0,
+      "boringSSLMedianNanosecondsPerOperation": 16740.211812499998,
+      "boringSSLP95NanosecondsPerOperation": 16811.615377083333,
+      "calibration": [
+        {
+          "boringSSL": {
+            "checksum": 1119375,
+            "nanoseconds": 201623542
+          },
+          "iterations": 12000,
+          "swift": {
+            "checksum": 1119375,
+            "nanoseconds": 172866125
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 400998250
+          },
+          "iterations": 24000,
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345776125
+          }
+        }
+      ],
+      "convergence": [
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 401996916
+          },
+          "index": 0,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.9072265625,
+              2.45263671875,
+              2.1552734375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:09.966965+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.20765904017857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 343877709
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 402620042
+          },
+          "index": 1,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.75439453125,
+              2.42822265625,
+              2.1484375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:10.792290+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.19674246651785715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 344408208
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 402668208
+          },
+          "index": 2,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.75439453125,
+              2.42822265625,
+              2.1484375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:11.619542+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.19674246651785715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345965792
+          }
+        }
+      ],
+      "iterationsPerSample": 24000,
+      "medianPairedSpeedup": 1.1643562209980733,
+      "name": "x25519-shared",
+      "operation": "x25519-shared",
+      "passed": true,
+      "payloadBytes": 32,
+      "samples": [
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 401407917
+          },
+          "index": 0,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.75439453125,
+              2.42822265625,
+              2.1484375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:12.448257+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.19674246651785715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345013584
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 402733333
+          },
+          "index": 1,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.75439453125,
+              2.42822265625,
+              2.1484375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:13.275550+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.19674246651785715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 343963959
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 402117584
+          },
+          "index": 2,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.75439453125,
+              2.42822265625,
+              2.1484375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:14.101039+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.19674246651785715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 344724583
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 401562208
+          },
+          "index": 3,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.75439453125,
+              2.42822265625,
+              2.1484375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:14.925666+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.19674246651785715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345333083
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 400355750
+          },
+          "index": 4,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.61376953125,
+              2.404296875,
+              2.1416015625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:15.750691+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.18669782366071427,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345034500
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 401761125
+          },
+          "index": 5,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.61376953125,
+              2.404296875,
+              2.1416015625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:16.574253+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.18669782366071427,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345923125
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 402097542
+          },
+          "index": 6,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.61376953125,
+              2.404296875,
+              2.1416015625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:17.401781+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.18669782366071427,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345953583
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 402247500
+          },
+          "index": 7,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.61376953125,
+              2.404296875,
+              2.1416015625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:18.228451+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.18669782366071427,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 346596458
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 402095417
+          },
+          "index": 8,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.61376953125,
+              2.404296875,
+              2.1416015625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:19.055323+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.18669782366071427,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 344839334
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 400609000
+          },
+          "index": 9,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.61376953125,
+              2.404296875,
+              2.1416015625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:19.879483+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.18669782366071427,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345656708
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 402520542
+          },
+          "index": 10,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.564453125,
+              2.3974609375,
+              2.140625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:20.704098+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.18317522321428573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 344932083
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 400324291
+          },
+          "index": 11,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.564453125,
+              2.3974609375,
+              2.140625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:21.531041+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.18317522321428573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345996291
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 403047500
+          },
+          "index": 12,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.564453125,
+              2.3974609375,
+              2.140625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:22.356543+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.18317522321428573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 343792708
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 401762917
+          },
+          "index": 13,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.564453125,
+              2.3974609375,
+              2.140625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:23.183173+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.18317522321428573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 344208625
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 401747834
+          },
+          "index": 14,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.564453125,
+              2.3974609375,
+              2.140625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:24.007063+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.18317522321428573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 344907583
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 400974500
+          },
+          "index": 15,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.564453125,
+              2.3974609375,
+              2.140625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:24.832149+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.18317522321428573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 344102667
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 401441000
+          },
+          "index": 16,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.43896484375,
+              2.3740234375,
+              2.1337890625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:25.657171+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17421177455357142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 344906083
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 400844042
+          },
+          "index": 17,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.43896484375,
+              2.3740234375,
+              2.1337890625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:26.481191+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17421177455357142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 344623667
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 401524209
+          },
+          "index": 18,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.43896484375,
+              2.3740234375,
+              2.1337890625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:27.304804+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17421177455357142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345157667
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 401245875
+          },
+          "index": 19,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.43896484375,
+              2.3740234375,
+              2.1337890625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:28.129546+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17421177455357142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345757333
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 403674875
+          },
+          "index": 20,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.43896484375,
+              2.3740234375,
+              2.1337890625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:28.954779+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17421177455357142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345936958
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 403239084
+          },
+          "index": 21,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.43896484375,
+              2.3740234375,
+              2.1337890625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:29.782809+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17421177455357142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345093292
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 401767250
+          },
+          "index": 22,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.40380859375,
+              2.36767578125,
+              2.1328125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:30.610167+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17170061383928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345399500
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 402660084
+          },
+          "index": 23,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.40380859375,
+              2.36767578125,
+              2.1328125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:31.434281+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17170061383928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345513375
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 400058125
+          },
+          "index": 24,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.40380859375,
+              2.36767578125,
+              2.1328125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:32.261231+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17170061383928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345655083
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 402525583
+          },
+          "index": 25,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.40380859375,
+              2.36767578125,
+              2.1328125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:33.084981+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17170061383928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345037917
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 401348042
+          },
+          "index": 26,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.40380859375,
+              2.36767578125,
+              2.1328125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:33.911467+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17170061383928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 345109250
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 403977792
+          },
+          "index": 27,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.40380859375,
+              2.36767578125,
+              2.1328125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:34.734438+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17170061383928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 344666750
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 402034583
+          },
+          "index": 28,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.40380859375,
+              2.36767578125,
+              2.1328125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:35.561990+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17170061383928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 343976041
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2238750,
+            "nanoseconds": 402424584
+          },
+          "index": 29,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.451171875,
+              2.3779296875,
+              2.1376953125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:36.385668+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17508370535714285,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2238750,
+            "nanoseconds": 343748209
+          }
+        }
+      ],
+      "speedupConfidenceInterval95": [
+        1.1630474738865515,
+        1.166551019667466
+      ],
+      "swiftMedianNanosecondsPerOperation": 14376.5086875,
+      "swiftP95NanosecondsPerOperation": 14415.71135,
+      "targetSpeedup": 1.1
+    },
+    {
+      "authenticatedDataBytes": 32,
+      "boringSSLMedianNanosecondsPerOperation": 18670.401025,
+      "boringSSLP95NanosecondsPerOperation": 18731.1869775,
+      "calibration": [
+        {
+          "boringSSL": {
+            "checksum": 1275160,
+            "nanoseconds": 185687792
+          },
+          "iterations": 10000,
+          "swift": {
+            "checksum": 1275160,
+            "nanoseconds": 167031041
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 372740667
+          },
+          "iterations": 20000,
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334510708
+          }
+        }
+      ],
+      "convergence": [
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 372926792
+          },
+          "index": 0,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.451171875,
+              2.3779296875,
+              2.1376953125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:38.398514+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17508370535714285,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334486625
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 375064209
+          },
+          "index": 1,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.451171875,
+              2.3779296875,
+              2.1376953125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:39.188489+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17508370535714285,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 332935333
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 372553250
+          },
+          "index": 2,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.451171875,
+              2.3779296875,
+              2.1376953125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:39.980159+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.17508370535714285,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 336392500
+          }
+        }
+      ],
+      "iterationsPerSample": 20000,
+      "medianPairedSpeedup": 1.1178469050971618,
+      "name": "first-open-256",
+      "operation": "first-open",
+      "passed": true,
+      "payloadBytes": 256,
+      "samples": [
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 371979167
+          },
+          "index": 0,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.3349609375,
+              2.35498046875,
+              2.130859375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:40.773355+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16678292410714285,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 333352458
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 373474250
+          },
+          "index": 1,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.3349609375,
+              2.35498046875,
+              2.130859375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:41.562022+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16678292410714285,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334027375
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 372473916
+          },
+          "index": 2,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.3349609375,
+              2.35498046875,
+              2.130859375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:42.353039+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16678292410714285,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334335125
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 374339834
+          },
+          "index": 3,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.3349609375,
+              2.35498046875,
+              2.130859375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:43.142664+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16678292410714285,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 333517542
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 372002875
+          },
+          "index": 4,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.3349609375,
+              2.35498046875,
+              2.130859375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:43.932982+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16678292410714285,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334168917
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 373889125
+          },
+          "index": 5,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.3349609375,
+              2.35498046875,
+              2.130859375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:44.722752+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16678292410714285,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334409834
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 373425584
+          },
+          "index": 6,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.3349609375,
+              2.35498046875,
+              2.130859375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:45.513134+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16678292410714285,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334253541
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 372798167
+          },
+          "index": 7,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.22802734375,
+              2.33203125,
+              2.1240234375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:46.303289+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15914481026785715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334322209
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 371326875
+          },
+          "index": 8,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.22802734375,
+              2.33203125,
+              2.1240234375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:47.093192+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15914481026785715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334401958
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 372562125
+          },
+          "index": 9,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.22802734375,
+              2.33203125,
+              2.1240234375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:47.882222+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15914481026785715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 333702459
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 372921958
+          },
+          "index": 10,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.22802734375,
+              2.33203125,
+              2.1240234375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:48.672025+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15914481026785715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 333669958
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 373362750
+          },
+          "index": 11,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.22802734375,
+              2.33203125,
+              2.1240234375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:49.461963+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15914481026785715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334355500
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 374555958
+          },
+          "index": 12,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.22802734375,
+              2.33203125,
+              2.1240234375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:50.252701+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15914481026785715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334396542
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 373396083
+          },
+          "index": 13,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.36962890625,
+              2.359375,
+              2.134765625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:51.045886+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16925920758928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 333545334
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 373567166
+          },
+          "index": 14,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.36962890625,
+              2.359375,
+              2.134765625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:51.835581+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16925920758928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334103416
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 374624208
+          },
+          "index": 15,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.36962890625,
+              2.359375,
+              2.134765625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:52.625870+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16925920758928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334518042
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 373630416
+          },
+          "index": 16,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.36962890625,
+              2.359375,
+              2.134765625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:53.418859+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16925920758928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334338875
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 373080833
+          },
+          "index": 17,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.36962890625,
+              2.359375,
+              2.134765625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:54.212022+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16925920758928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334480625
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 371731542
+          },
+          "index": 18,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.36962890625,
+              2.359375,
+              2.134765625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:55.002281+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16925920758928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 333999625
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 372101083
+          },
+          "index": 19,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.33984375,
+              2.35302734375,
+              2.1337890625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:55.792124+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16713169642857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 332450334
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 373476542
+          },
+          "index": 20,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.33984375,
+              2.35302734375,
+              2.1337890625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:56.578768+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16713169642857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 333724250
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 372765041
+          },
+          "index": 21,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.33984375,
+              2.35302734375,
+              2.1337890625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:57.368625+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16713169642857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 333649291
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 373816208
+          },
+          "index": 22,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.33984375,
+              2.35302734375,
+              2.1337890625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:58.158914+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16713169642857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 333227708
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 373528417
+          },
+          "index": 23,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.33984375,
+              2.35302734375,
+              2.1337890625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:58.948636+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16713169642857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 333569500
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 374621292
+          },
+          "index": 24,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.33984375,
+              2.35302734375,
+              2.1337890625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:04:59.739109+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16713169642857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334584375
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 372210500
+          },
+          "index": 25,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.33984375,
+              2.35302734375,
+              2.1337890625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:00.533123+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.16713169642857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 333536917
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 373419958
+          },
+          "index": 26,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.232421875,
+              2.330078125,
+              2.126953125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:01.322541+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15945870535714285,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 333107334
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 375255708
+          },
+          "index": 27,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.232421875,
+              2.330078125,
+              2.126953125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:02.112356+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15945870535714285,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 333473208
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 374623167
+          },
+          "index": 28,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.232421875,
+              2.330078125,
+              2.126953125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:02.904811+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15945870535714285,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 333579083
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 2549808,
+            "nanoseconds": 372921917
+          },
+          "index": 29,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.232421875,
+              2.330078125,
+              2.126953125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:03.695423+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15945870535714285,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 2549808,
+            "nanoseconds": 334117333
+          }
+        }
+      ],
+      "speedupConfidenceInterval95": [
+        1.1165570218721066,
+        1.1193722240258803
+      ],
+      "swiftMedianNanosecondsPerOperation": 16700.675000000003,
+      "swiftP95NanosecondsPerOperation": 16725.0602175,
+      "targetSpeedup": 1.1
+    },
+    {
+      "authenticatedDataBytes": 32,
+      "boringSSLMedianNanosecondsPerOperation": 18588.603125,
+      "boringSSLP95NanosecondsPerOperation": 18667.5499125,
+      "calibration": [
+        {
+          "boringSSL": {
+            "checksum": 10000,
+            "nanoseconds": 186524625
+          },
+          "iterations": 10000,
+          "swift": {
+            "checksum": 10000,
+            "nanoseconds": 165650958
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 371226292
+          },
+          "iterations": 20000,
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331577708
+          }
+        }
+      ],
+      "convergence": [
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 371468542
+          },
+          "index": 0,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.232421875,
+              2.330078125,
+              2.126953125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:05.668594+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15945870535714285,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 330466792
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 370133333
+          },
+          "index": 1,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.29345703125,
+              2.3408203125,
+              2.1318359375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:06.453670+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.163818359375,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331753666
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 373065917
+          },
+          "index": 2,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.29345703125,
+              2.3408203125,
+              2.1318359375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:07.239206+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.163818359375,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331598291
+          }
+        }
+      ],
+      "iterationsPerSample": 20000,
+      "medianPairedSpeedup": 1.121858409050377,
+      "name": "recipient-setup",
+      "operation": "recipient-setup",
+      "passed": true,
+      "payloadBytes": 256,
+      "samples": [
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 371823875
+          },
+          "index": 0,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.29345703125,
+              2.3408203125,
+              2.1318359375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:08.025801+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.163818359375,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331376750
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 373413542
+          },
+          "index": 1,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.29345703125,
+              2.3408203125,
+              2.1318359375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:08.812301+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.163818359375,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 330685459
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 370982959
+          },
+          "index": 2,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.29345703125,
+              2.3408203125,
+              2.1318359375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:09.599555+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.163818359375,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 332385333
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 370923583
+          },
+          "index": 3,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.29345703125,
+              2.3408203125,
+              2.1318359375
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:10.386190+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.163818359375,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 332684000
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 370378833
+          },
+          "index": 4,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.189453125,
+              2.318359375,
+              2.125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:11.172911+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15638950892857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 329984584
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 371525000
+          },
+          "index": 5,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.189453125,
+              2.318359375,
+              2.125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:11.956087+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15638950892857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331447875
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 373398417
+          },
+          "index": 6,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.189453125,
+              2.318359375,
+              2.125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:12.742485+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15638950892857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331865417
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 370862208
+          },
+          "index": 7,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.189453125,
+              2.318359375,
+              2.125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:13.532886+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15638950892857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 332315959
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 370927833
+          },
+          "index": 8,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.189453125,
+              2.318359375,
+              2.125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:14.318730+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15638950892857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 330552125
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 371127125
+          },
+          "index": 9,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.189453125,
+              2.318359375,
+              2.125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:15.102148+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.15638950892857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331888458
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 372143041
+          },
+          "index": 10,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.09375,
+              2.29638671875,
+              2.1181640625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:15.888763+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.14955357142857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 328370125
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 372164708
+          },
+          "index": 11,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.09375,
+              2.29638671875,
+              2.1181640625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:16.672549+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.14955357142857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331746292
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 372604333
+          },
+          "index": 12,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.09375,
+              2.29638671875,
+              2.1181640625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:17.460933+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.14955357142857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331079958
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 370706917
+          },
+          "index": 13,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.09375,
+              2.29638671875,
+              2.1181640625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:18.248670+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.14955357142857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331246334
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 372015167
+          },
+          "index": 14,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.09375,
+              2.29638671875,
+              2.1181640625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:19.032250+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.14955357142857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 330536000
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 371139334
+          },
+          "index": 15,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.09375,
+              2.29638671875,
+              2.1181640625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:19.818408+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.14955357142857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 332008208
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 371720250
+          },
+          "index": 16,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.09375,
+              2.29638671875,
+              2.1181640625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:20.604820+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.14955357142857142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331650333
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 371018125
+          },
+          "index": 17,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.005859375,
+              2.2744140625,
+              2.111328125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:21.391548+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.14327566964285715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 332280666
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 371577625
+          },
+          "index": 18,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.005859375,
+              2.2744140625,
+              2.111328125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:22.177033+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.14327566964285715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331784709
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 373293042
+          },
+          "index": 19,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.005859375,
+              2.2744140625,
+              2.111328125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:22.964405+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.14327566964285715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331882875
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 372559625
+          },
+          "index": 20,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.005859375,
+              2.2744140625,
+              2.111328125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:23.752887+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.14327566964285715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331320875
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 372176417
+          },
+          "index": 21,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.005859375,
+              2.2744140625,
+              2.111328125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:24.539563+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.14327566964285715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331043709
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 372912709
+          },
+          "index": 22,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              2.005859375,
+              2.2744140625,
+              2.111328125
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:25.325146+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.14327566964285715,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 330699375
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 371387417
+          },
+          "index": 23,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              1.92529296875,
+              2.2529296875,
+              2.1044921875
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:26.112255+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.13752092633928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331239000
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 370490792
+          },
+          "index": 24,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              1.92529296875,
+              2.2529296875,
+              2.1044921875
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:26.900034+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.13752092633928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331480750
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 372172500
+          },
+          "index": 25,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              1.92529296875,
+              2.2529296875,
+              2.1044921875
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:27.685096+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.13752092633928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331739583
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 373073584
+          },
+          "index": 26,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              1.92529296875,
+              2.2529296875,
+              2.1044921875
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:28.471806+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.13752092633928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 332908125
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 373197416
+          },
+          "index": 27,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              1.92529296875,
+              2.2529296875,
+              2.1044921875
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:29.261707+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.13752092633928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331257459
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 371341334
+          },
+          "index": 28,
+          "order": "boringssl-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              1.92529296875,
+              2.2529296875,
+              2.1044921875
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:30.049411+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.13752092633928573,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 331302292
+          }
+        },
+        {
+          "boringSSL": {
+            "checksum": 20000,
+            "nanoseconds": 372680875
+          },
+          "index": 29,
+          "order": "swift-first",
+          "quiescence": {
+            "activeBuildProcesses": {},
+            "loadAverage": [
+              1.85107421875,
+              2.23193359375,
+              2.09765625
+            ],
+            "logicalCPUCount": 14,
+            "maximumLoadPerLogicalCPU": 0.25,
+            "observedAt": "2026-08-02T06:05:30.835780+00:00",
+            "oneMinuteLoadPerLogicalCPU": 0.13221958705357142,
+            "powerMode": 0,
+            "powerState": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=35913827)\t100%; charged; 0:00 remaining present: true",
+            "thermalState": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+          },
+          "swift": {
+            "checksum": 20000,
+            "nanoseconds": 330558625
+          }
+        }
+      ],
+      "speedupConfidenceInterval95": [
+        1.1207350258278077,
+        1.1243596503191378
+      ],
+      "swiftMedianNanosecondsPerOperation": 16570.615625,
+      "swiftP95NanosecondsPerOperation": 16627.4799925,
+      "targetSpeedup": 1.1
+    }
+  ],
+  "sampleCount": 30,
+  "schemaVersion": 1,
+  "seed": 20260802,
+  "sources": {
+    "boringSSL": {
+      "commit": "ae49d2681a56ca7b8609f6039a770fda2a8eb550",
+      "isClean": true,
+      "origin": "https://boringssl.googlesource.com/boringssl",
+      "path": "/Users/1amageek/Desktop/networking/deep-analysis-sessions/2026-07-31_swift-ssl-architecture/.references/boringssl",
+      "statusPorcelain": ""
+    },
+    "snapshots": {
+      "boringSSL": {
+        "archivePath": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/sources/boringssl.tar",
+        "archiveSHA256": "c46d833a020e586adfaf7706e70341105b941a5eca913c10fc0980f721980549",
+        "commit": "ae49d2681a56ca7b8609f6039a770fda2a8eb550",
+        "path": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/sources/boringssl",
+        "treeSHA256": "fb32d975b7e2d8c4fa3b8e211bed0fc8e17d3eefe160bfcd9f756d9b8a4e0ef1"
+      },
+      "swiftSSL": {
+        "archivePath": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/sources/swift-ssl.tar",
+        "archiveSHA256": "5e5ef67f70956b45f052e26a1a6cbecb7dd5a841a9d668810bd51f0aec59a1cf",
+        "commit": "a30e5fb788a13f4f717e4050cd460cc13445c895",
+        "path": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/sources/swift-ssl",
+        "treeSHA256": "0f5aa011f3bf74892ee9141f3bfd5d959874a25a7b422a7720bb84314fd109be"
+      }
+    },
+    "swiftSSL": {
+      "commit": "a30e5fb788a13f4f717e4050cd460cc13445c895",
+      "isClean": true,
+      "origin": null,
+      "path": "/Users/1amageek/Desktop/networking/swift-ssl",
+      "statusPorcelain": ""
+    }
+  },
+  "targetSpeedup": 1.1,
+  "valid": true,
+  "workers": {
+    "boringSSL": {
+      "machO": {
+        "architectures": [
+          "arm64"
+        ],
+        "linkedSDKVersion": "27.0",
+        "minimumOSVersion": "15.0",
+        "platform": "MACOS",
+        "vtoolOutput": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/boringssl-build/boringssl-hpke-benchmark:\nLoad command 11\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform MACOS\n    minos 15.0\n      sdk 27.0\n   ntools 1\n     tool LD\n  version 27031.0\n"
+      },
+      "path": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/boringssl-build/boringssl-hpke-benchmark",
+      "sha256": "2fa5b8cc7a27565daf3b876e437ec0d5f08ec2179de523cdbea6bb47ddcacdd1",
+      "sizeBytes": 1730904
+    },
+    "swift": {
+      "machO": {
+        "architectures": [
+          "arm64"
+        ],
+        "linkedSDKVersion": "27.0",
+        "minimumOSVersion": "15.0",
+        "platform": "MACOS",
+        "vtoolOutput": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/swift-build/arm64-apple-macosx/release/swift-ssl-hpke-benchmark:\nLoad command 11\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform MACOS\n    minos 15.0\n      sdk 27.0\n   ntools 1\n     tool LD\n  version 27031.0\n"
+      },
+      "path": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-hpke/run-iycpe2hr/swift-build/arm64-apple-macosx/release/swift-ssl-hpke-benchmark",
+      "sha256": "90a617c0b148e13aaec761c319eb59481d44720084bead635775757e59239a5c",
+      "sizeBytes": 1222456
+    }
+  },
+  "zeroCopyContract": {
+    "HPKEInputs": "borrowed Span",
+    "allocationCountMeasured": false,
+    "ciphertextAndPlaintext": "caller-owned MutableSpan",
+    "contextSecrets": "base nonce and exporter in one SecretBytes owner",
+    "preparedAEAD": "context-owned prepared cipher; raw AEAD key not retained"
+  }
+}
