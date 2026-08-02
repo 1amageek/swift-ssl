@@ -129,19 +129,19 @@ The committed raw artifact is
 ## Current formal timing result
 
 The valid formal run completed on 2026-08-02 from clean SwiftSSL commit
-`d3fa129cb298cd443d2edd19d09a7afa61fa0c9f` and the pinned BoringSSL commit.
+`ff9a7a01d0bb79f295ea40d37bc95754cf4989d0` and the pinned BoringSSL commit.
 Complete output equality passed, but the aggregate gate failed because both
 first-open workloads missed the required `1.10x` lower confidence bound.
 
 | Workload | Swift median ns/op | BoringSSL median ns/op | Speedup | 95% paired bootstrap CI | Gate |
 |---|---:|---:|---:|---:|---:|
-| `x25519-shared` | 14,387.157 | 16,772.418 | `1.1660x` | `[1.1643, 1.1672]` | Pass |
-| `recipient-setup` | 16,144.922 | 18,653.506 | `1.1542x` | `[1.1536, 1.1558]` | Pass |
-| `first-open-256` | 17,486.929 | 18,750.276 | `1.0718x` | `[1.0704, 1.0731]` | Fail |
-| `first-open-1536` | 19,409.884 | 18,895.543 | `0.9741x` | `[0.9728, 0.9747]` | Fail |
+| `x25519-shared` | 14,349.444 | 16,690.293 | `1.1629x` | `[1.1618, 1.1652]` | Pass |
+| `recipient-setup` | 16,060.367 | 18,454.052 | `1.1475x` | `[1.1468, 1.1492]` | Pass |
+| `first-open-256` | 16,989.266 | 18,493.174 | `1.0874x` | `[1.0863, 1.0914]` | Fail |
+| `first-open-1536` | 17,374.070 | 18,547.069 | `1.0673x` | `[1.0649, 1.0697]` | Fail |
 
 This failed gate is retained as timing evidence rather than relabeled as a
 successful result. The committed raw artifact is
-[`Benchmarks/HPKE/Results/20260802T034901Z-native-hpke.json`](Results/20260802T034901Z-native-hpke.json)
+[`Benchmarks/HPKE/Results/20260802T042128Z-native-hpke.json`](Results/20260802T042128Z-native-hpke.json)
 (SHA-256
-`9e7c6f511fa3fa68edec7791d6b4d5185e07a4ef946a9b9c278bb1ac03b98463`).
+`b3f639da44962d4169de1c05ba4f40eec80a56859e32263926ecd6998d1e455a`).
