@@ -289,11 +289,11 @@ state retains the measured internal copy budgets above. Dynamic
 `memcpy`/`memmove` interposition does not observe compiler-inlined scalar
 copies, and this artifact is not timing evidence.
 
-The formal artifact is retained at
-`.test-artifacts/benchmark/20260802T-formal-hpke-memory-v1.json` (ignored by
-Git), from source commit `b3d94bf35b3a712bb27fa418e1f7e9cae00c50df`
+The committed raw artifact is
+[`Benchmarks/HPKE/Results/20260802T-native-hpke-memory.json`](Benchmarks/HPKE/Results/20260802T-native-hpke-memory.json),
+from source commit `581e9666028457f4b39af75ec93a637615d1ffde`
 (SHA-256
-`328c44cb72bb7706a1c36be05162de27cf88d6c76918cde8230515bd1efd6003`).
+`b9f9f0cd93b6036c47fee6dbae7bb2dc8af2c0cad30b5ba6cac46a9a59fb42ab`).
 
 See [docs/VERIFICATION.md](docs/VERIFICATION.md) for gates and measurement rules.
 

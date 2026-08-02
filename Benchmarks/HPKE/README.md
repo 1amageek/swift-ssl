@@ -104,8 +104,8 @@ python3 Benchmarks/HPKE/run_memory.py \
 ```
 
 The formal 2026-08-02 artifact passed at source commit
-`b3d94bf35b3a712bb27fa418e1f7e9cae00c50df`. Its SHA-256 is
-`328c44cb72bb7706a1c36be05162de27cf88d6c76918cde8230515bd1efd6003`.
+`581e9666028457f4b39af75ec93a637615d1ffde`. Its SHA-256 is
+`b9f9f0cd93b6036c47fee6dbae7bb2dc8af2c0cad30b5ba6cac46a9a59fb42ab`.
 
 | Workload | Allocations/op | Requested bytes/op | Dynamic bulk-copy bytes/op | Gate |
 |---|---:|---:|---:|---:|
@@ -122,6 +122,9 @@ state copy is zero: recipient setup and first-open retain the measured fixed
 copy budgets above. Dynamic `memcpy`/`memmove` interposition cannot observe
 compiler-inlined scalar copies, and the artifact is allocation/copy evidence,
 not timing evidence.
+
+The committed raw artifact is
+[`Benchmarks/HPKE/Results/20260802T-native-hpke-memory.json`](Results/20260802T-native-hpke-memory.json).
 
 ## Current exploratory observation
 
