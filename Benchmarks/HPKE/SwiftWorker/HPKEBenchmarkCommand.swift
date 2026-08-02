@@ -205,7 +205,7 @@ enum HPKEBenchmarkCommand {
           iterations: iterations
         )
         probe.stopAndPrint()
-        print("CHECKSUM,\(measurement.checksum)")
+        print("MEMORY_CHECKSUM,\(iterations),\(measurement.checksum)")
       } catch {
         probe.stopAndPrint()
         throw error
