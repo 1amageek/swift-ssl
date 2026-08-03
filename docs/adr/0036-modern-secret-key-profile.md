@@ -1,6 +1,6 @@
 # ADR 0036: Modern secret-key and certificate-verification profile
 
-- Status: Accepted
+- Status: Accepted; amended by ADR 0045, ADR 0050, and ADR 0051
 - Date: 2026-08-01
 
 ## Context
@@ -14,8 +14,9 @@ already uses X25519 and Ed25519.
 
 ## Decision
 
-The only secret-bearing classical public-key operations are X25519 key
-agreement and Ed25519 message signing. TLS 1.3 exposes one signature scheme,
+The default TLS secret-bearing classical public-key operations are X25519 key
+agreement and Ed25519 message signing. ADR 0045 separately permits P-256
+key agreement only for RFC 9180 DHKEM(P-256, HKDF-SHA256). TLS 1.3 exposes one signature scheme,
 Ed25519, and `TLS13SigningKey` owns only an `Ed25519PrivateKey`. The client
 validates and owns an `Ed25519PublicKey` during construction. A caller cannot
 select a NIST curve or RSA key for CertificateVerify.
@@ -23,8 +24,10 @@ select a NIST curve or RSA key for CertificateVerify.
 P-256, P-384, and P-521 remain as verification-only certificate
 compatibility capabilities. Their public enums conform to
 `DigestSignatureVerifier`, accept typed owned public keys, and expose no
-private key, signing, key-generation, ECDH, or shared-secret API. RSA-PSS has
-the same verification-only policy. RFC 5915 remains a strict format parser but
+signing API. The P-256 private-key, key-generation, ECDH, and shared-secret
+surface is owned exclusively by the RFC 9180 DHKEM profile in ADR 0045 and is
+not selectable by TLS. P-384 and P-521 expose no secret API. RSA-PSS has the
+same verification-only policy. RFC 5915 remains a strict format parser but
 does not construct a TLS signing key.
 
 Ed25519 conforms to `DigitalSignature`, which refines `SignatureVerifier` and
@@ -72,3 +75,12 @@ flowchart TD
 - Adding another TLS signer requires a new constant-time secret implementation,
   an explicit protocol/profile decision, and complete cross-target and
   interoperability evidence.
+
+## Amendments
+
+- ADR 0045 restored P-256 secret operations for RFC 9180 DHKEM.
+- ADR 0050 promoted fixed-control-flow P-256 key agreement to TLS 1.3
+  `secp256r1`.
+- ADR 0051 restored deterministic P-256 ECDSA and RSA-PSS SHA-256 signing as
+  explicit TLS 1.3 credential profiles. Its release gates supersede the
+  Ed25519-only selection rule in this record.

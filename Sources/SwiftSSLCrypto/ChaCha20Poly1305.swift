@@ -26,6 +26,37 @@ public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher, Sendable {
     keyWords = words
   }
 
+  package static func recordNumberMask(
+    key: Span<UInt8>,
+    sample: Span<UInt8>
+  ) throws(AEADError) -> ContiguousArray<UInt8> {
+    guard key.count == 32 else {
+      throw .invalidKeyLength(expected: Self.supportedKeyByteCounts, actual: key.count)
+    }
+    guard sample.count == 16 else {
+      throw .invalidNonceLength(expected: 16, actual: sample.count)
+    }
+    var keyWords = [UInt32](repeating: 0, count: 8)
+    defer { wipeWords(&keyWords) }
+    var index = 0
+    while index < keyWords.count {
+      keyWords[index] = readUInt32LittleEndian(key, offset: index * 4)
+      index += 1
+    }
+    let counter = readUInt32LittleEndian(sample, offset: 0)
+    let nonce = sample.extracting(4..<16)
+    var block = chachaBlock(counter: counter, nonce: nonce, keyWords: keyWords)
+    defer { wipe(&block) }
+    var mask = ContiguousArray<UInt8>()
+    mask.reserveCapacity(16)
+    index = 0
+    while index < 16 {
+      mask.append(block[index])
+      index += 1
+    }
+    return mask
+  }
+
   deinit {
     // This noncopyable owner is destroyed here. The immutable buffer is
     // uniquely owned for the duration of the wipe and never escapes.

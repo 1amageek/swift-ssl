@@ -6,7 +6,7 @@ final class TLS13SessionTicketTests: XCTestCase {
     func testNewSessionTicketRoundTrip() throws {
         let nonce = ContiguousArray<UInt8>([1, 2, 3])
         let ticket = ContiguousArray<UInt8>([0xA0, 0xB0, 0xC0])
-        let extensions = ContiguousArray<UInt8>([0x00, 0x2A, 0x00, 0x00])
+        let extensions = ContiguousArray<UInt8>([0x12, 0x34, 0x00, 0x00])
         let message = try TLS13SessionTicketCodec.makeNewSessionTicket(
             lifetime: 3_600,
             ageAdd: 0x1020_3040,
@@ -20,6 +20,21 @@ final class TLS13SessionTicketTests: XCTestCase {
         XCTAssertEqual(copy(parsed.ticketNonce.span), Array(nonce))
         XCTAssertEqual(copy(parsed.ticket.span), Array(ticket))
         XCTAssertEqual(copy(parsed.extensions.span), Array(extensions))
+        XCTAssertNil(parsed.maximumEarlyDataByteCount)
+    }
+
+    func testEarlyDataExtensionRoundTrip() throws {
+        let message = try TLS13SessionTicketCodec.makeNewSessionTicket(
+            lifetime: 3_600,
+            ageAdd: 7,
+            ticketNonce: ContiguousArray<UInt8>([1]).span,
+            ticket: ContiguousArray<UInt8>([2]).span,
+            maximumEarlyDataByteCount: 4_096
+        )
+        let parsed = try TLS13SessionTicketCodec.parseNewSessionTicket(
+            message.span
+        )
+        XCTAssertEqual(parsed.maximumEarlyDataByteCount, 4_096)
     }
 
     func testRejectsInvalidLifetimeAndDuplicateExtensions() throws {
@@ -36,8 +51,8 @@ final class TLS13SessionTicketTests: XCTestCase {
         }
 
         let duplicateExtensions = ContiguousArray<UInt8>([
-            0x00, 0x2A, 0x00, 0x00,
-            0x00, 0x2A, 0x00, 0x00,
+            0x12, 0x34, 0x00, 0x00,
+            0x12, 0x34, 0x00, 0x00,
         ])
         do {
             _ = try TLS13SessionTicketCodec.makeNewSessionTicket(
@@ -49,7 +64,7 @@ final class TLS13SessionTicketTests: XCTestCase {
             )
             XCTFail("duplicate ticket extensions were accepted")
         } catch {
-            XCTAssertEqual(error, .duplicateExtension(0x002A))
+            XCTAssertEqual(error, .duplicateExtension(0x1234))
         }
     }
 

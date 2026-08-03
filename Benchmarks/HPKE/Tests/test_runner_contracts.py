@@ -47,13 +47,15 @@ class RunnerContractTests(unittest.TestCase):
                 "recipient-setup",
                 "first-open-256",
                 "first-open-1536",
+                "p256-sender-setup",
+                "p256-recipient-setup",
             ],
         )
 
     def test_codegen_symbol_gate_uses_release_stable_routes(self) -> None:
         self.assertEqual(
             runner.REQUIRED_SWIFT_SYMBOLS,
-            ("HPKEX25519", "X25519FieldElement"),
+            ("HPKEX25519", "X25519FieldElement", "HPKEP256", "P256Words"),
         )
 
     def test_codegen_gate_distinguishes_direct_and_emulated_pmull(self) -> None:

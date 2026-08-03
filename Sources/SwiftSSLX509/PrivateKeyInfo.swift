@@ -1,39 +1,49 @@
 import SwiftSSLCore
 import SwiftSSLASN1
 
-public struct PrivateKeyInfo: Sendable, Hashable {
+/// A uniquely owned PKCS #8 private-key document.
+///
+/// The complete DER document is secret because it contains private-key
+/// material. It therefore remains in wiped storage and is exposed only through
+/// synchronous scoped borrows.
+public struct PrivateKeyInfo: ~Copyable, Sendable {
     public let version: UInt64
     public let algorithmIdentifier: DERAlgorithmIdentifier
     public let algorithm: PublicKeyAlgorithm
 
-    private let der: OwnedBytes
+    private let der: SecretBytes
     private let privateKeyRange: ByteRange
 
     public init(
         der encodedDER: Span<UInt8>,
         limits: ParsingLimits = PrivateKeyInfo.defaultParsingLimits
-    ) throws(PrivateKeyInfoError) {
-        let owned = OwnedBytes(copying: encodedDER)
+    ) throws {
+        let secretDER: SecretBytes
+        do {
+            secretDER = try SecretBytes(copying: encodedDER)
+        } catch let error as SecretMemoryError {
+            throw PrivateKeyInfoError.memoryFailure(error)
+        }
         var budget: ParsingBudget
         do {
-            budget = try ParsingBudget(limits: limits, inputByteCount: owned.count)
+            budget = try ParsingBudget(limits: limits, inputByteCount: encodedDER.count)
         } catch {
-            throw .resourceLimit(error)
+            throw PrivateKeyInfoError.resourceLimit(error)
         }
 
-        var cursor = DERCursor(owned.span)
+        var cursor = DERCursor(encodedDER)
         let root: DERElementView
         do {
             root = try cursor.readElement(using: &budget)
             try cursor.requireFullyConsumed()
         } catch let error as DERError {
-            throw .der(error)
+            throw PrivateKeyInfoError.der(error)
         } catch {
-            throw .invalidStructure
+            throw PrivateKeyInfoError.invalidStructure
         }
         let sequenceTag = DERTag(tagClass: .universal, isConstructed: true, number: 16)
         guard root.tag == sequenceTag else {
-            throw .invalidStructure
+            throw PrivateKeyInfoError.invalidStructure
         }
         var body = DERCursor(
             root.contentBytes,
@@ -47,21 +57,21 @@ public struct PrivateKeyInfo: Sendable, Hashable {
             algorithmElement = try body.readElement(using: &budget)
             privateKeyElement = try body.readElement(using: &budget)
         } catch let error as DERError {
-            throw .der(error)
+            throw PrivateKeyInfoError.der(error)
         } catch {
-            throw .invalidStructure
+            throw PrivateKeyInfoError.invalidStructure
         }
 
         let version: UInt64
         do {
             version = try DERPrimitiveCodec.decodePositiveInteger(from: versionElement)
         } catch let error as DERValueError {
-            throw .value(error)
+            throw PrivateKeyInfoError.value(error)
         } catch {
-            throw .invalidStructure
+            throw PrivateKeyInfoError.invalidStructure
         }
         guard version == 0 || version == 1 else {
-            throw .invalidVersion(version)
+            throw PrivateKeyInfoError.invalidVersion(version)
         }
 
         let algorithmIdentifier: DERAlgorithmIdentifier
@@ -71,14 +81,14 @@ public struct PrivateKeyInfo: Sendable, Hashable {
                 using: &budget
             )
         } catch let error as DERAlgorithmIdentifierError {
-            throw .algorithm(error)
+            throw PrivateKeyInfoError.algorithm(error)
         } catch {
-            throw .invalidStructure
+            throw PrivateKeyInfoError.invalidStructure
         }
 
         let octetTag = DERTag(tagClass: .universal, isConstructed: false, number: 4)
         guard privateKeyElement.tag == octetTag else {
-            throw .invalidStructure
+            throw PrivateKeyInfoError.invalidStructure
         }
         let privateKeyRange: ByteRange
         do {
@@ -86,8 +96,8 @@ public struct PrivateKeyInfo: Sendable, Hashable {
                 offset: privateKeyElement.encodedOffset + privateKeyElement.headerByteCount,
                 count: privateKeyElement.contentBytes.count
             )
-        } catch {
-            throw .invalidRange(error)
+        } catch let error as ByteError {
+            throw PrivateKeyInfoError.invalidRange(error)
         }
 
         var sawAttributes = false
@@ -97,32 +107,36 @@ public struct PrivateKeyInfo: Sendable, Hashable {
             do {
                 optionalElement = try body.readElement(using: &budget)
             } catch let error as DERError {
-                throw .der(error)
+                throw PrivateKeyInfoError.der(error)
             } catch {
-                throw .invalidStructure
+                throw PrivateKeyInfoError.invalidStructure
             }
             switch (optionalElement.tag.tagClass, optionalElement.tag.isConstructed, optionalElement.tag.number) {
             case (.contextSpecific, true, 0):
-                guard !sawAttributes else { throw .invalidStructure }
+                guard !sawAttributes else {
+                    throw PrivateKeyInfoError.invalidStructure
+                }
                 sawAttributes = true
             case (.contextSpecific, false, 1):
-                guard !sawPublicKey else { throw .invalidStructure }
+                guard !sawPublicKey else {
+                    throw PrivateKeyInfoError.invalidStructure
+                }
                 guard Self.validImplicitBitString(optionalElement.contentBytes) else {
-                    throw .invalidPublicKeyField
+                    throw PrivateKeyInfoError.invalidPublicKeyField
                 }
                 sawPublicKey = true
             default:
-                throw .invalidStructure
+                throw PrivateKeyInfoError.invalidStructure
             }
         }
         guard version == (sawPublicKey ? 1 : 0) else {
-            throw .invalidVersion(version)
+            throw PrivateKeyInfoError.invalidVersion(version)
         }
 
         self.version = version
         self.algorithmIdentifier = algorithmIdentifier
         self.algorithm = Self.mapAlgorithm(algorithmIdentifier)
-        self.der = owned
+        der = secretDER
         self.privateKeyRange = privateKeyRange
     }
 
@@ -130,16 +144,27 @@ public struct PrivateKeyInfo: Sendable, Hashable {
         privateKeyRange.count
     }
 
+    public var derByteCount: Int {
+        der.count
+    }
+
     public borrowing func withPrivateKeyBytes<Result: ~Copyable, Failure: Error>(
         _ body: (Span<UInt8>) throws(Failure) -> Result
     ) throws(Failure) -> Result {
-        let bytes: Span<UInt8>
-        do {
-            bytes = try der.span(in: privateKeyRange)
-        } catch {
-            preconditionFailure("PrivateKeyInfo stores a validated private-key range")
+        try der.withBorrowedBytes {
+            (bytes: Span<UInt8>) throws(Failure) -> Result in
+            try body(
+                bytes.extracting(
+                    privateKeyRange.offset..<privateKeyRange.endOffset
+                )
+            )
         }
-        return try body(bytes)
+    }
+
+    public borrowing func withDERBytes<Result: ~Copyable, Failure: Error>(
+        _ body: (Span<UInt8>) throws(Failure) -> Result
+    ) throws(Failure) -> Result {
+        try der.withBorrowedBytes(body)
     }
 
     public static let defaultParsingLimits: ParsingLimits = {

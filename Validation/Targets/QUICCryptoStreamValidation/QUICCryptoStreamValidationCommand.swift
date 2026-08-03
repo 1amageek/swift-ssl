@@ -2,6 +2,7 @@ import SwiftSSLCore
 import SwiftSSLCrypto
 import SwiftSSLQUIC
 import SwiftSSLTLS
+import SwiftSSLX509
 
 @main
 enum QUICCryptoStreamValidationCommand {
@@ -211,6 +212,8 @@ enum QUICCryptoStreamValidationCommand {
         result.store(bytes, at: level)
       case .action(.handshakeComplete): result.completed = true
       case .action(.handshakeConfirmed): result.confirmed = true
+      case .action(.earlyDataAccepted): break
+      case .action(.earlyDataRejected): break
       case .action(.sendAlert): throw Failure.handshakeDidNotComplete
       case .trafficSecret(let event):
         result.store(
@@ -235,18 +238,28 @@ enum QUICCryptoStreamValidationCommand {
       bytes: ContiguousArray(repeating: 0x22, count: 32).span
     )
     let signingKey = try Ed25519PrivateKey(seed: deterministicSeed().span)
+    let certificateDER = deterministicCertificate()
     let client = try QUICTLSClientHandshake.make(
       random: ContiguousArray(repeating: 0x01, count: 32).span,
       ephemeralKey: clientKey,
-      expectedServerPublicKey: deterministicServerPublicKey().span,
+      certificateValidator: try RFC5280TLS13ServerCertificateValidator(
+        trustAnchors: [try X509Certificate(der: certificateDER.span)]
+      ),
+      applicationProtocols: [try applicationProtocol()],
+      transportParameters: ContiguousArray<UInt8>([0x01, 0x02]).span,
       verificationInstant: instant
     )
     let server = try QUICTLSServerHandshake.make(
       random: ContiguousArray(repeating: 0x02, count: 32).span,
       ephemeralKey: serverKey,
-      certificateDER: deterministicCertificate().span,
+      certificateDER: certificateDER.span,
       signingKey: TLS13SigningKey(ed25519: signingKey),
-      verificationInstant: instant
+      verificationInstant: instant,
+      applicationProtocolSelector:
+        try ServerPreferredTLS13ApplicationProtocolSelector(
+          supportedProtocols: [try applicationProtocol()]
+        ),
+      transportParameters: ContiguousArray<UInt8>([0x03, 0x04]).span
     )
     return Endpoints(client: client, server: server)
   }
@@ -305,5 +318,12 @@ enum QUICCryptoStreamValidationCommand {
       0x6f, 0x76, 0x75, 0x1a, 0x87, 0x0d, 0x5c, 0x79,
       0x01,
     ]
+  }
+
+  private static func applicationProtocol() throws -> TLS13ApplicationProtocol {
+    let identifier: ContiguousArray<UInt8> = [0x68, 0x33]
+    return try TLS13ApplicationProtocol(
+      identifier: identifier.span
+    )
   }
 }

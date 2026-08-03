@@ -645,6 +645,7 @@ def require_swift_build_contract(
             "InoutLifetimeDependence",
             "LifetimeDependenceMutableAccessors",
             "Lifetimes",
+            "Extern",
             "Volatile",
         ),
         "SwiftSSLCrypto": (
@@ -653,6 +654,8 @@ def require_swift_build_contract(
             "InoutLifetimeDependence",
             "LifetimeDependenceMutableAccessors",
             "Lifetimes",
+            "Extern",
+            "BuiltinModule",
         ),
         "SwiftSSLSHA256Benchmark": (
             "NonescapableTypes",
@@ -660,6 +663,7 @@ def require_swift_build_contract(
             "InoutLifetimeDependence",
             "LifetimeDependenceMutableAccessors",
             "Lifetimes",
+            "Extern",
         ),
     }
     for module_name in required_modules:

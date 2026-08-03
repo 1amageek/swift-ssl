@@ -72,6 +72,7 @@ public enum HPKEError: Error, Sendable, Equatable {
   case sequenceExhausted
   case exporterLengthOutOfRange(Int)
   case keyGeneration(X25519KeyGenerationError)
+  case p256KeyGeneration(P256KeyGenerationError)
   case keyDerivation(HKDFError)
   case secretMemory(SecretMemoryError)
   case primitive(CryptoInputError)
@@ -121,11 +122,13 @@ public struct HPKESenderContext: ~Copyable, Sendable {
   private let cipher: HPKEAEADContext
   private let kdf: HPKEKDF
   private let aead: HPKEAEAD
+  private let kemIdentifier: UInt16
   private var sequence: UInt64
 
-  fileprivate init(material: consuming HPKEContextMaterial) {
+  init(material: consuming HPKEContextMaterial) {
     kdf = material.kdf
     aead = material.aead
+    kemIdentifier = material.kemIdentifier
     cipher = consume material.cipher
     secretState = consume material.secretState
     sequence = 0
@@ -195,7 +198,8 @@ public struct HPKESenderContext: ~Copyable, Sendable {
         exporterContext: exporterContext,
         length: length,
         kdf: kdf,
-        aead: aead
+        aead: aead,
+        kemIdentifier: kemIdentifier
       )
       return try HPKEExportedSecret(consuming: value)
     }
@@ -245,11 +249,13 @@ public struct HPKERecipientContext: ~Copyable, Sendable {
   private let cipher: HPKEAEADContext
   private let kdf: HPKEKDF
   private let aead: HPKEAEAD
+  private let kemIdentifier: UInt16
   private var sequence: UInt64
 
-  fileprivate init(material: consuming HPKEContextMaterial) {
+  init(material: consuming HPKEContextMaterial) {
     kdf = material.kdf
     aead = material.aead
+    kemIdentifier = material.kemIdentifier
     cipher = consume material.cipher
     secretState = consume material.secretState
     sequence = 0
@@ -330,7 +336,8 @@ public struct HPKERecipientContext: ~Copyable, Sendable {
         exporterContext: exporterContext,
         length: length,
         kdf: kdf,
-        aead: aead
+        aead: aead,
+        kemIdentifier: kemIdentifier
       )
       return try HPKEExportedSecret(consuming: value)
     }
@@ -378,7 +385,7 @@ public struct HPKESenderSetup: ~Copyable, Sendable {
   public let encapsulation: OwnedBytes
   public let context: HPKESenderContext
 
-  fileprivate init(
+  init(
     encapsulation: consuming OwnedBytes,
     context: consuming HPKESenderContext
   ) {
@@ -744,6 +751,7 @@ public enum HPKEX25519 {
     aead: HPKEAEAD
   ) throws(HPKEError) -> HPKEContextMaterial {
     return try HPKEPrimitives.withKEMSharedSecret(
+      kemIdentifier: kemIdentifier,
       dh: dh,
       encapsulation: encapsulation,
       recipientPublicKey: recipientPublicKey,
@@ -753,6 +761,7 @@ public enum HPKEX25519 {
       preparedEmptyInnerContext,
       preparedEmptyOuterContext throws(HPKEError) -> HPKEContextMaterial in
       try HPKEPrimitives.deriveContext(
+        kemIdentifier: kemIdentifier,
         sharedSecret: sharedSecret,
         preparedEmptyInnerContext: preparedEmptyInnerContext,
         preparedEmptyOuterContext: preparedEmptyOuterContext,
@@ -909,16 +918,16 @@ public enum HPKEX25519 {
   }
 }
 
-private struct HPKEContextMaterial: ~Copyable, Sendable {
+struct HPKEContextMaterial: ~Copyable, Sendable {
   let secretState: SecretBytes
   let cipher: HPKEAEADContext
   let kdf: HPKEKDF
   let aead: HPKEAEAD
+  let kemIdentifier: UInt16
 }
 
-private enum HPKEPrimitives {
+enum HPKEPrimitives {
   private static let version = ContiguousArray<UInt8>([0x48, 0x50, 0x4B, 0x45, 0x2D, 0x76, 0x31])
-  private static let kemSuiteID = ContiguousArray<UInt8>([0x4B, 0x45, 0x4D, 0x00, 0x20])
 
   static func validate(
     mode: HPKEMode,
@@ -934,6 +943,7 @@ private enum HPKEPrimitives {
   }
 
   static func withKEMSharedSecret<Result: ~Copyable>(
+    kemIdentifier: UInt16,
     dh: Span<UInt8>,
     encapsulation: Span<UInt8>,
     recipientPublicKey: Span<UInt8>,
@@ -944,6 +954,7 @@ private enum HPKEPrimitives {
       borrowing SHA256Context
     ) throws(HPKEError) -> Result
   ) throws(HPKEError) -> Result {
+    let kemSuiteID = kemSuiteID(for: kemIdentifier)
     var eaePRK = SIMD32<UInt8>(repeating: 0)
     var sharedSecret = SIMD32<UInt8>(repeating: 0)
     var preparedEmptyInnerContext = SHA256Context()
@@ -1033,6 +1044,7 @@ private enum HPKEPrimitives {
   }
 
   static func deriveContext(
+    kemIdentifier: UInt16,
     sharedSecret: Span<UInt8>,
     preparedEmptyInnerContext: borrowing SHA256Context,
     preparedEmptyOuterContext: borrowing SHA256Context,
@@ -1045,6 +1057,7 @@ private enum HPKEPrimitives {
   ) throws(HPKEError) -> HPKEContextMaterial {
     if kdf == .sha256 {
       return try deriveSHA256Context(
+        kemIdentifier: kemIdentifier,
         sharedSecret: sharedSecret,
         preparedEmptyInnerContext: preparedEmptyInnerContext,
         preparedEmptyOuterContext: preparedEmptyOuterContext,
@@ -1055,7 +1068,7 @@ private enum HPKEPrimitives {
         aead: aead
       )
     }
-    let suiteID = hpkeSuiteID(kdf: kdf, aead: aead)
+    let suiteID = hpkeSuiteID(kemIdentifier: kemIdentifier, kdf: kdf, aead: aead)
     var pskIDHash = try labeledExtract(
       salt: emptyBytes.span,
       label: "psk_id_hash",
@@ -1132,11 +1145,13 @@ private enum HPKEPrimitives {
       secretState: consume secretState,
       cipher: consume cipher,
       kdf: kdf,
-      aead: aead
+      aead: aead,
+      kemIdentifier: kemIdentifier
     )
   }
 
   private static func deriveSHA256Context(
+    kemIdentifier: UInt16,
     sharedSecret: Span<UInt8>,
     preparedEmptyInnerContext: borrowing SHA256Context,
     preparedEmptyOuterContext: borrowing SHA256Context,
@@ -1146,7 +1161,11 @@ private enum HPKEPrimitives {
     pskID: Span<UInt8>,
     aead: HPKEAEAD
   ) throws(HPKEError) -> HPKEContextMaterial {
-    let suiteID = hpkeSuiteID(kdf: .sha256, aead: aead)
+    let suiteID = hpkeSuiteID(
+      kemIdentifier: kemIdentifier,
+      kdf: .sha256,
+      aead: aead
+    )
     // Unsafe boundary invariants:
     // - These inline SIMD owners contain 64, 32, and 32 initialized bytes;
     //   every byte is wiped once before this function returns or throws.
@@ -1320,7 +1339,8 @@ private enum HPKEPrimitives {
       secretState: consume secretState,
       cipher: consume cipher,
       kdf: .sha256,
-      aead: aead
+      aead: aead,
+      kemIdentifier: kemIdentifier
     )
   }
 
@@ -1329,10 +1349,11 @@ private enum HPKEPrimitives {
     exporterContext: Span<UInt8>,
     length: Int,
     kdf: HPKEKDF,
-    aead: HPKEAEAD
+    aead: HPKEAEAD,
+    kemIdentifier: UInt16
   ) throws(HPKEError) -> ContiguousArray<UInt8> {
     guard length <= 65_535 else { throw .exporterLengthOutOfRange(length) }
-    let suiteID = hpkeSuiteID(kdf: kdf, aead: aead)
+    let suiteID = hpkeSuiteID(kemIdentifier: kemIdentifier, kdf: kdf, aead: aead)
     let value = try labeledExpand(
       prk: secret,
       label: "sec",
@@ -1416,56 +1437,187 @@ private enum HPKEPrimitives {
     return output
   }
 
-  private static let sha256AES128SuiteID = makeHPKESuiteID(kdf: .sha256, aead: .aes128GCM)
-  private static let sha256AES256SuiteID = makeHPKESuiteID(kdf: .sha256, aead: .aes256GCM)
-  private static let sha256ChaChaSuiteID = makeHPKESuiteID(
+  private static let x25519KEMSuiteID = makeKEMSuiteID(
+    kemIdentifier: HPKEX25519.kemIdentifier
+  )
+  private static let p256KEMSuiteID = makeKEMSuiteID(
+    kemIdentifier: HPKEP256.kemIdentifier
+  )
+
+  private static let x25519SHA256AES128SuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEX25519.kemIdentifier,
+    kdf: .sha256,
+    aead: .aes128GCM
+  )
+  private static let x25519SHA256AES256SuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEX25519.kemIdentifier,
+    kdf: .sha256,
+    aead: .aes256GCM
+  )
+  private static let x25519SHA256ChaChaSuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEX25519.kemIdentifier,
     kdf: .sha256,
     aead: .chaCha20Poly1305
   )
-  private static let sha384AES128SuiteID = makeHPKESuiteID(kdf: .sha384, aead: .aes128GCM)
-  private static let sha384AES256SuiteID = makeHPKESuiteID(kdf: .sha384, aead: .aes256GCM)
-  private static let sha384ChaChaSuiteID = makeHPKESuiteID(
+  private static let x25519SHA384AES128SuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEX25519.kemIdentifier,
+    kdf: .sha384,
+    aead: .aes128GCM
+  )
+  private static let x25519SHA384AES256SuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEX25519.kemIdentifier,
+    kdf: .sha384,
+    aead: .aes256GCM
+  )
+  private static let x25519SHA384ChaChaSuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEX25519.kemIdentifier,
     kdf: .sha384,
     aead: .chaCha20Poly1305
   )
-  private static let sha512AES128SuiteID = makeHPKESuiteID(kdf: .sha512, aead: .aes128GCM)
-  private static let sha512AES256SuiteID = makeHPKESuiteID(kdf: .sha512, aead: .aes256GCM)
-  private static let sha512ChaChaSuiteID = makeHPKESuiteID(
+  private static let x25519SHA512AES128SuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEX25519.kemIdentifier,
+    kdf: .sha512,
+    aead: .aes128GCM
+  )
+  private static let x25519SHA512AES256SuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEX25519.kemIdentifier,
+    kdf: .sha512,
+    aead: .aes256GCM
+  )
+  private static let x25519SHA512ChaChaSuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEX25519.kemIdentifier,
+    kdf: .sha512,
+    aead: .chaCha20Poly1305
+  )
+
+  private static let p256SHA256AES128SuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEP256.kemIdentifier,
+    kdf: .sha256,
+    aead: .aes128GCM
+  )
+  private static let p256SHA256AES256SuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEP256.kemIdentifier,
+    kdf: .sha256,
+    aead: .aes256GCM
+  )
+  private static let p256SHA256ChaChaSuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEP256.kemIdentifier,
+    kdf: .sha256,
+    aead: .chaCha20Poly1305
+  )
+  private static let p256SHA384AES128SuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEP256.kemIdentifier,
+    kdf: .sha384,
+    aead: .aes128GCM
+  )
+  private static let p256SHA384AES256SuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEP256.kemIdentifier,
+    kdf: .sha384,
+    aead: .aes256GCM
+  )
+  private static let p256SHA384ChaChaSuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEP256.kemIdentifier,
+    kdf: .sha384,
+    aead: .chaCha20Poly1305
+  )
+  private static let p256SHA512AES128SuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEP256.kemIdentifier,
+    kdf: .sha512,
+    aead: .aes128GCM
+  )
+  private static let p256SHA512AES256SuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEP256.kemIdentifier,
+    kdf: .sha512,
+    aead: .aes256GCM
+  )
+  private static let p256SHA512ChaChaSuiteID = makeHPKESuiteID(
+    kemIdentifier: HPKEP256.kemIdentifier,
     kdf: .sha512,
     aead: .chaCha20Poly1305
   )
 
   @inline(__always)
   private static func hpkeSuiteID(
+    kemIdentifier: UInt16,
     kdf: HPKEKDF,
     aead: HPKEAEAD
   ) -> ContiguousArray<UInt8> {
-    switch (kdf, aead) {
-    case (.sha256, .aes128GCM): sha256AES128SuiteID
-    case (.sha256, .aes256GCM): sha256AES256SuiteID
-    case (.sha256, .chaCha20Poly1305): sha256ChaChaSuiteID
-    case (.sha384, .aes128GCM): sha384AES128SuiteID
-    case (.sha384, .aes256GCM): sha384AES256SuiteID
-    case (.sha384, .chaCha20Poly1305): sha384ChaChaSuiteID
-    case (.sha512, .aes128GCM): sha512AES128SuiteID
-    case (.sha512, .aes256GCM): sha512AES256SuiteID
-    case (.sha512, .chaCha20Poly1305): sha512ChaChaSuiteID
+    switch (kemIdentifier, kdf, aead) {
+    case (HPKEX25519.kemIdentifier, .sha256, .aes128GCM):
+      x25519SHA256AES128SuiteID
+    case (HPKEX25519.kemIdentifier, .sha256, .aes256GCM):
+      x25519SHA256AES256SuiteID
+    case (HPKEX25519.kemIdentifier, .sha256, .chaCha20Poly1305):
+      x25519SHA256ChaChaSuiteID
+    case (HPKEX25519.kemIdentifier, .sha384, .aes128GCM):
+      x25519SHA384AES128SuiteID
+    case (HPKEX25519.kemIdentifier, .sha384, .aes256GCM):
+      x25519SHA384AES256SuiteID
+    case (HPKEX25519.kemIdentifier, .sha384, .chaCha20Poly1305):
+      x25519SHA384ChaChaSuiteID
+    case (HPKEX25519.kemIdentifier, .sha512, .aes128GCM):
+      x25519SHA512AES128SuiteID
+    case (HPKEX25519.kemIdentifier, .sha512, .aes256GCM):
+      x25519SHA512AES256SuiteID
+    case (HPKEX25519.kemIdentifier, .sha512, .chaCha20Poly1305):
+      x25519SHA512ChaChaSuiteID
+    case (HPKEP256.kemIdentifier, .sha256, .aes128GCM):
+      p256SHA256AES128SuiteID
+    case (HPKEP256.kemIdentifier, .sha256, .aes256GCM):
+      p256SHA256AES256SuiteID
+    case (HPKEP256.kemIdentifier, .sha256, .chaCha20Poly1305):
+      p256SHA256ChaChaSuiteID
+    case (HPKEP256.kemIdentifier, .sha384, .aes128GCM):
+      p256SHA384AES128SuiteID
+    case (HPKEP256.kemIdentifier, .sha384, .aes256GCM):
+      p256SHA384AES256SuiteID
+    case (HPKEP256.kemIdentifier, .sha384, .chaCha20Poly1305):
+      p256SHA384ChaChaSuiteID
+    case (HPKEP256.kemIdentifier, .sha512, .aes128GCM):
+      p256SHA512AES128SuiteID
+    case (HPKEP256.kemIdentifier, .sha512, .aes256GCM):
+      p256SHA512AES256SuiteID
+    case (HPKEP256.kemIdentifier, .sha512, .chaCha20Poly1305):
+      p256SHA512ChaChaSuiteID
+    default:
+      preconditionFailure("HPKE context contains a validated KEM identifier")
     }
   }
 
   private static func makeHPKESuiteID(
+    kemIdentifier: UInt16,
     kdf: HPKEKDF,
     aead: HPKEAEAD
   ) -> ContiguousArray<UInt8> {
     ContiguousArray([
       0x48, 0x50, 0x4B, 0x45,
-      UInt8(truncatingIfNeeded: HPKEX25519.kemIdentifier >> 8),
-      UInt8(truncatingIfNeeded: HPKEX25519.kemIdentifier),
+      UInt8(truncatingIfNeeded: kemIdentifier >> 8),
+      UInt8(truncatingIfNeeded: kemIdentifier),
       UInt8(truncatingIfNeeded: kdf.identifier >> 8),
       UInt8(truncatingIfNeeded: kdf.identifier),
       UInt8(truncatingIfNeeded: aead.identifier >> 8),
       UInt8(truncatingIfNeeded: aead.identifier),
     ])
+  }
+
+  private static func makeKEMSuiteID(
+    kemIdentifier: UInt16
+  ) -> ContiguousArray<UInt8> {
+    ContiguousArray([
+      0x4B, 0x45, 0x4D,
+      UInt8(truncatingIfNeeded: kemIdentifier >> 8),
+      UInt8(truncatingIfNeeded: kemIdentifier),
+    ])
+  }
+
+  private static func kemSuiteID(
+    for kemIdentifier: UInt16
+  ) -> ContiguousArray<UInt8> {
+    switch kemIdentifier {
+    case HPKEX25519.kemIdentifier: x25519KEMSuiteID
+    case HPKEP256.kemIdentifier: p256KEMSuiteID
+    default: preconditionFailure("HPKE uses a validated KEM identifier")
+    }
   }
 
   private static let emptyBytes = ContiguousArray<UInt8>()

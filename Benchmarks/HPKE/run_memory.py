@@ -58,6 +58,24 @@ WORKLOADS = (
         "payloadBytes": 1_536,
         "authenticatedDataBytes": 377,
     },
+    {
+        "name": "p256-shared",
+        "operation": "p256-shared",
+        "payloadBytes": 32,
+        "authenticatedDataBytes": 0,
+    },
+    {
+        "name": "p256-sender-setup",
+        "operation": "p256-sender-setup",
+        "payloadBytes": 1,
+        "authenticatedDataBytes": 0,
+    },
+    {
+        "name": "p256-recipient-setup",
+        "operation": "p256-recipient-setup",
+        "payloadBytes": 1,
+        "authenticatedDataBytes": 0,
+    },
 )
 EXPECTED_BUDGETS = {
     "x25519-shared": {
@@ -85,6 +103,27 @@ EXPECTED_BUDGETS = {
         "allocationCalls": 2,
         "allocationBytes": 412,
         "bulkCopyBytes": 2_331,
+        "mallocCalls": 1,
+        "alignedCalls": 1,
+    },
+    "p256-shared": {
+        "allocationCalls": 0,
+        "allocationBytes": 0,
+        "bulkCopyBytes": 0,
+        "mallocCalls": 0,
+        "alignedCalls": 0,
+    },
+    "p256-sender-setup": {
+        "allocationCalls": 5,
+        "allocationBytes": 605,
+        "bulkCopyBytes": 1_788,
+        "mallocCalls": 3,
+        "alignedCalls": 2,
+    },
+    "p256-recipient-setup": {
+        "allocationCalls": 2,
+        "allocationBytes": 412,
+        "bulkCopyBytes": 1_788,
         "mallocCalls": 1,
         "alignedCalls": 1,
     },
@@ -385,8 +424,9 @@ def main() -> int:
             "completedAt": completed.isoformat(),
             "measurement": "allocation and dynamic bulk-copy interposition",
             "scope": (
-                "RFC 9180 X25519 recipient setup and first authenticated open "
-                "using caller-owned input and output buffers"
+                "RFC 9180 X25519 recipient setup and first authenticated open, "
+                "plus P-256 raw ECDH and sender/recipient setup, using "
+                "caller-owned input and output buffers"
             ),
             "unmeasuredWarmupOperations": 1,
             "limitations": [

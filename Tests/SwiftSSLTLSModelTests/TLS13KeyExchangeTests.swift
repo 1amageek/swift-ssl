@@ -5,6 +5,59 @@ import XCTest
 @testable import SwiftSSLTLS
 
 final class TLS13KeyExchangeTests: XCTestCase {
+    func testP256RoundTripRejectsMalformedShareAndIsOneShot() throws {
+        let clientKey = try P256PrivateKey(bytes: repeated(0x11, count: 32).span)
+        let serverKey = try P256PrivateKey(bytes: repeated(0x22, count: 32).span)
+        var client = TLS13P256ClientKeyExchange(privateKey: clientKey)
+        var server = TLS13P256ServerKeyExchange(privateKey: serverKey)
+
+        let clientShare = ownedClientShare(client)
+        XCTAssertEqual(client.namedGroup, .secp256r1)
+        XCTAssertEqual(clientShare.count, 65)
+        XCTAssertEqual(clientShare.span[0], 0x04)
+
+        let serverResult = try server.accept(
+            clientShare: clientShare.span,
+            using: FailingEntropy()
+        )
+        XCTAssertEqual(serverResult.serverShare.count, 65)
+        XCTAssertEqual(serverResult.serverShare.span[0], 0x04)
+        let clientSecret = try client.complete(
+            serverShare: serverResult.serverShare.span
+        )
+        XCTAssertEqual(copy(clientSecret), copy(serverResult.sharedSecret))
+
+        assertInvalidState { () throws(TLS13KeyExchangeError) in
+            let unused = try client.complete(
+                serverShare: serverResult.serverShare.span
+            )
+            _ = consume unused
+        }
+        assertInvalidState { () throws(TLS13KeyExchangeError) in
+            let unused = try server.accept(
+                clientShare: clientShare.span,
+                using: FailingEntropy()
+            )
+            _ = consume unused
+        }
+
+        var malformedServer = TLS13P256ServerKeyExchange(
+            privateKey: try P256PrivateKey(bytes: repeated(0x33, count: 32).span)
+        )
+        var malformedShare = copy(clientShare.span)
+        malformedShare[0] = 0x02
+        do {
+            let unused = try malformedServer.accept(
+                clientShare: malformedShare.span,
+                using: FailingEntropy()
+            )
+            _ = consume unused
+            XCTFail("compressed P-256 share was accepted")
+        } catch {
+            XCTAssertEqual(error, .crypto(.invalidPeerKey))
+        }
+    }
+
     func testX25519RoundTripAndOneShotState() throws {
         let clientKey = try X25519PrivateKey(bytes: repeated(0x11, count: 32).span)
         let serverKey = try X25519PrivateKey(bytes: repeated(0x22, count: 32).span)

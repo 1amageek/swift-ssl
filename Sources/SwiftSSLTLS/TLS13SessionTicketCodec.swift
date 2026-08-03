@@ -8,25 +8,39 @@ public enum TLS13SessionTicketCodec {
         ageAdd: UInt32,
         ticketNonce: Span<UInt8>,
         ticket: Span<UInt8>,
+        maximumEarlyDataByteCount: UInt32? = nil,
         extensions: Span<UInt8> = Span<UInt8>()
     ) throws(TLS13SessionTicketError) -> OwnedBytes {
+        var encodedExtensions = ContiguousArray<UInt8>()
+        encodedExtensions.reserveCapacity(
+            extensions.count + (maximumEarlyDataByteCount == nil ? 0 : 8)
+        )
+        append(&encodedExtensions, extensions)
+        if let maximumEarlyDataByteCount {
+            appendUInt16(&encodedExtensions, TLS13NewSessionTicket.earlyDataExtensionType)
+            appendUInt16(&encodedExtensions, 4)
+            appendUInt32(&encodedExtensions, maximumEarlyDataByteCount)
+        }
         let ticketValue = try TLS13NewSessionTicket(
             lifetime: lifetime,
             ageAdd: ageAdd,
             ticketNonce: ticketNonce,
             ticket: ticket,
-            extensions: extensions
+            extensions: encodedExtensions.span
         )
         var body = ContiguousArray<UInt8>()
-        body.reserveCapacity(4 + 4 + 1 + ticketNonce.count + 2 + ticket.count + 2 + extensions.count)
+        body.reserveCapacity(
+            4 + 4 + 1 + ticketNonce.count + 2 + ticket.count + 2
+                + encodedExtensions.count
+        )
         appendUInt32(&body, lifetime)
         appendUInt32(&body, ageAdd)
         body.append(UInt8(ticketNonce.count))
         append(&body, ticketNonce)
         appendUInt16(&body, UInt16(ticket.count))
         append(&body, ticket)
-        appendUInt16(&body, UInt16(extensions.count))
-        append(&body, extensions)
+        appendUInt16(&body, UInt16(encodedExtensions.count))
+        body.append(contentsOf: encodedExtensions)
         _ = ticketValue
         return finish(type: newSessionTicketType, body: body)
     }

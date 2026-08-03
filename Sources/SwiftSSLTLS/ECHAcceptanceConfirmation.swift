@@ -8,7 +8,8 @@ internal enum ECHAcceptanceConfirmation {
   static func compute(
     innerClientHello: Span<UInt8>,
     serverHello: Span<UInt8>,
-    cipherSuite: TLSCipherSuite
+    cipherSuite: TLSCipherSuite,
+    handshakeEncoding: TLS13HandshakeEncoding = .tls13
   ) throws(ECHError) -> OwnedBytes {
     guard serverHello.count >= 38,
       serverHello[0] == TLS13HandshakeCodec.serverHelloType
@@ -23,7 +24,10 @@ internal enum ECHAcceptanceConfirmation {
     }
     let parsedInner: TLS13ClientHello
     do {
-      parsedInner = try TLS13HandshakeCodec.parseClientHello(innerClientHello)
+      parsedInner = try TLS13HandshakeCodec.parseClientHello(
+        innerClientHello,
+        encoding: handshakeEncoding
+      )
     } catch {
       throw .invalidClientHello
     }
@@ -37,6 +41,103 @@ internal enum ECHAcceptanceConfirmation {
     } catch {
       throw .cryptographicFailure
     }
+    return try derive(
+      innerRandom: parsedInner.random.span,
+      transcriptHash: transcriptHash.span,
+      label: "tls13 ech accept confirmation",
+      cipherSuite: cipherSuite
+    )
+  }
+
+  static func computeHelloRetryRequest(
+    innerClientHello: Span<UInt8>,
+    helloRetryRequest: Span<UInt8>,
+    cipherSuite: TLSCipherSuite,
+    handshakeEncoding: TLS13HandshakeEncoding = .tls13
+  ) throws(ECHError) -> OwnedBytes {
+    let parsedInner: TLS13ClientHello
+    let parsedRetry: TLS13HelloRetryRequest
+    do {
+      parsedInner = try TLS13HandshakeCodec.parseClientHello(
+        innerClientHello,
+        encoding: handshakeEncoding
+      )
+      parsedRetry = try TLS13HandshakeCodec.parseHelloRetryRequest(
+        helloRetryRequest,
+        encoding: handshakeEncoding
+      )
+    } catch {
+      throw .invalidClientHello
+    }
+    guard parsedRetry.cipherSuite == cipherSuite else {
+      throw .invalidClientHello
+    }
+    let zeroConfirmation = ContiguousArray<UInt8>(
+      repeating: 0,
+      count: byteCount
+    )
+    let zeroRetry: OwnedBytes
+    do {
+      zeroRetry = try TLS13HandshakeCodec.makeHelloRetryRequest(
+        cookie: parsedRetry.cookie.span,
+        cipherSuite: cipherSuite,
+        echAcceptanceConfirmation: zeroConfirmation.span,
+        encoding: handshakeEncoding
+      )
+    } catch {
+      throw .invalidClientHello
+    }
+    let transcriptHash: OwnedBytes
+    do {
+      var transcript = try TLS13Transcript()
+      try transcript.append(innerClientHello)
+      try transcript.replaceWithMessageHash(for: cipherSuite)
+      try transcript.append(zeroRetry.span)
+      transcriptHash = try transcript.digest(for: cipherSuite)
+    } catch {
+      throw .cryptographicFailure
+    }
+    return try derive(
+      innerRandom: parsedInner.random.span,
+      transcriptHash: transcriptHash.span,
+      label: "tls13 hrr ech accept confirmation",
+      cipherSuite: cipherSuite
+    )
+  }
+
+  static func isHelloRetryRequestAccepted(
+    innerClientHello: Span<UInt8>,
+    helloRetryRequest: Span<UInt8>,
+    cipherSuite: TLSCipherSuite,
+    handshakeEncoding: TLS13HandshakeEncoding = .tls13
+  ) throws(ECHError) -> Bool {
+    let parsed: TLS13HelloRetryRequest
+    do {
+      parsed = try TLS13HandshakeCodec.parseHelloRetryRequest(
+        helloRetryRequest,
+        encoding: handshakeEncoding
+      )
+    } catch {
+      throw .invalidClientHello
+    }
+    guard let confirmation = parsed.echAcceptanceConfirmation else {
+      return false
+    }
+    let expected = try computeHelloRetryRequest(
+      innerClientHello: innerClientHello,
+      helloRetryRequest: helloRetryRequest,
+      cipherSuite: cipherSuite,
+      handshakeEncoding: handshakeEncoding
+    )
+    return ConstantTime.equal(expected.span, confirmation.span)
+  }
+
+  private static func derive(
+    innerRandom: Span<UInt8>,
+    transcriptHash: Span<UInt8>,
+    label: String,
+    cipherSuite: TLSCipherSuite
+  ) throws(ECHError) -> OwnedBytes {
     let hashByteCount = cipherSuite == .aes256GCM_SHA384 ? 48 : 32
     let zeroSalt = ContiguousArray<UInt8>(repeating: 0, count: hashByteCount)
     var pseudorandomKey = ContiguousArray<UInt8>(
@@ -46,20 +147,20 @@ internal enum ECHAcceptanceConfirmation {
     defer { wipe(&pseudorandomKey) }
     var output = ContiguousArray<UInt8>(repeating: 0, count: byteCount)
     var info = ContiguousArray<UInt8>()
-    let label = ContiguousArray("tls13 ech accept confirmation".utf8)
-    info.reserveCapacity(2 + 1 + label.count + 1 + transcriptHash.count)
+    let encodedLabel = ContiguousArray(label.utf8)
+    info.reserveCapacity(2 + 1 + encodedLabel.count + 1 + transcriptHash.count)
     appendUInt16(UInt16(byteCount), to: &info)
-    info.append(UInt8(label.count))
-    info.append(contentsOf: label)
+    info.append(UInt8(encodedLabel.count))
+    info.append(contentsOf: encodedLabel)
     info.append(UInt8(transcriptHash.count))
-    append(transcriptHash.span, to: &info)
+    append(transcriptHash, to: &info)
     do {
       var keyOutput = pseudorandomKey.mutableSpan
       var confirmationOutput = output.mutableSpan
       switch cipherSuite {
       case .aes256GCM_SHA384:
         try HKDFSHA384.extract(
-          inputKeyMaterial: parsedInner.random.span,
+          inputKeyMaterial: innerRandom,
           salt: zeroSalt.span,
           into: &keyOutput
         )
@@ -70,7 +171,7 @@ internal enum ECHAcceptanceConfirmation {
         )
       case .aes128GCM_SHA256, .chacha20Poly1305_SHA256:
         try HKDFSHA256.extract(
-          inputKeyMaterial: parsedInner.random.span,
+          inputKeyMaterial: innerRandom,
           salt: zeroSalt.span,
           into: &keyOutput
         )
@@ -89,13 +190,15 @@ internal enum ECHAcceptanceConfirmation {
   static func isAccepted(
     innerClientHello: Span<UInt8>,
     serverHello: Span<UInt8>,
-    cipherSuite: TLSCipherSuite
+    cipherSuite: TLSCipherSuite,
+    handshakeEncoding: TLS13HandshakeEncoding = .tls13
   ) throws(ECHError) -> Bool {
     guard serverHello.count >= 38 else { throw .invalidClientHello }
     let expected = try compute(
       innerClientHello: innerClientHello,
       serverHello: serverHello,
-      cipherSuite: cipherSuite
+      cipherSuite: cipherSuite,
+      handshakeEncoding: handshakeEncoding
     )
     return ConstantTime.equal(
       expected.span,

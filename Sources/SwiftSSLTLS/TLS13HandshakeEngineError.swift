@@ -11,8 +11,12 @@ public enum TLS13HandshakeEngineError: Error, Sendable, Equatable {
   case keySchedule(TLS13KeyScheduleError)
   case keyExchange(TLS13KeyExchangeError)
   case crypto(CryptoInputError)
+  case signing(TLS13SigningError)
   case x25519(X25519KeyGenerationError)
   case certificate(X509CertificateError)
+  case certificateValidation(TLS13ServerCertificateValidationError)
+  case clientCertificateValidation(TLS13ClientCertificateValidationError)
+  case clientCertificateRequired
   case certificateKeyMismatch
   case certificateNotValid
   case certificateVerificationFailed
@@ -24,4 +28,12 @@ public enum TLS13HandshakeEngineError: Error, Sendable, Equatable {
   case preSharedKey(TLS13PSKError)
   case ech(ECHError)
   case echRequired(retryConfigurations: ECHConfigList?)
+  case applicationProtocol(TLS13ApplicationProtocolError)
+  case srtp(DTLSSRTPError)
+  case certificateCompression(TLS13CertificateCompressionError)
+  case delegatedCredential(TLS13DelegatedCredentialError)
+  case capability(TLS13CapabilityError)
+  case missingTransportParameters
+  case unexpectedTransportParameters
+  case earlyDataReplayProtectionFailed
 }

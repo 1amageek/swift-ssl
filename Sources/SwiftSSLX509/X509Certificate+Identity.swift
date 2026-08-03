@@ -75,7 +75,7 @@ public extension X509Certificate {
     }
 }
 
-private enum X509DNSName {
+enum X509DNSName {
     static func canonicalHostname(_ input: Span<UInt8>) throws(X509IdentityError) -> ContiguousArray<UInt8> {
         var result = ContiguousArray<UInt8>()
         var index = 0

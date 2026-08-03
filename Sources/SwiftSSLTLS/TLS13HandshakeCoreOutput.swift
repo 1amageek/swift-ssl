@@ -5,6 +5,7 @@ import SwiftSSLCore
 public struct TLS13HandshakeCoreOutput: ~Copyable, Sendable {
     public let bytes: OwnedBytes
     public let actions: ContiguousArray<TLS13HandshakeCoreAction>
+    private var earlyTrafficSecret: TLS13EarlyTrafficSecret?
     private var handshakeSecrets: TLS13TrafficSecretPair?
     private var applicationSecrets: TLS13TrafficSecretPair?
     private var nextActionIndex: Int
@@ -12,6 +13,7 @@ public struct TLS13HandshakeCoreOutput: ~Copyable, Sendable {
     package init(
         bytes: consuming OwnedBytes,
         actions: consuming ContiguousArray<TLS13HandshakeCoreAction>,
+        earlyTrafficSecret: consuming TLS13EarlyTrafficSecret? = nil,
         handshakeSecrets: consuming TLS13TrafficSecretPair? = nil,
         applicationSecrets: consuming TLS13TrafficSecretPair? = nil
     ) throws(TLS13HandshakeCoreOutputError) {
@@ -27,6 +29,10 @@ public struct TLS13HandshakeCoreOutput: ~Copyable, Sendable {
             }
             index += 1
         }
+        try Self.validateEarlySecretReference(
+            isStored: earlyTrafficSecret != nil,
+            actions: actions
+        )
         try Self.validateSecretReference(
             epoch: .initial,
             isStored: false,
@@ -44,6 +50,7 @@ public struct TLS13HandshakeCoreOutput: ~Copyable, Sendable {
         )
         self.bytes = consume bytes
         self.actions = consume actions
+        self.earlyTrafficSecret = consume earlyTrafficSecret
         self.handshakeSecrets = consume handshakeSecrets
         self.applicationSecrets = consume applicationSecrets
         nextActionIndex = 0
@@ -59,6 +66,12 @@ public struct TLS13HandshakeCoreOutput: ~Copyable, Sendable {
         guard nextActionIndex < actions.count else { return nil }
         let action = actions[nextActionIndex]
         nextActionIndex += 1
+        if case .installEarlyTrafficSecret(let disposition) = action {
+            guard let secret = earlyTrafficSecret.take() else {
+                throw .missingEarlyTrafficSecret
+            }
+            return .earlyTrafficSecret(secret, disposition: disposition)
+        }
         guard case .installTrafficSecrets(let epoch) = action else {
             return .action(action)
         }
@@ -73,9 +86,26 @@ public struct TLS13HandshakeCoreOutput: ~Copyable, Sendable {
                 throw .missingTrafficSecrets(epoch)
             }
             return .trafficSecrets(epoch: epoch, secrets: secrets)
-        case .initial:
+        case .initial, .earlyData:
             throw .missingTrafficSecrets(epoch)
         }
+    }
+
+    private static func validateEarlySecretReference(
+        isStored: Bool,
+        actions: borrowing ContiguousArray<TLS13HandshakeCoreAction>
+    ) throws(TLS13HandshakeCoreOutputError) {
+        var references = 0
+        var index = 0
+        while index < actions.count {
+            if case .installEarlyTrafficSecret = actions[index] {
+                references += 1
+            }
+            index += 1
+        }
+        guard references <= 1 else { throw .duplicateEarlyTrafficSecret }
+        if isStored, references == 0 { throw .unreferencedEarlyTrafficSecret }
+        if !isStored, references != 0 { throw .missingEarlyTrafficSecret }
     }
 
     private static func validateSecretReference(

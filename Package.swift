@@ -62,10 +62,6 @@ var products: [Product] = [
     name: "swift-ssl-nist-verification-validation",
     targets: ["SwiftSSLNISTVerificationValidation"]
   ),
-  .executable(
-    name: "swift-ssl-ech-interop-validation",
-    targets: ["SwiftSSLECHInteropValidation"]
-  ),
 ]
 
 var targets: [Target] = [
@@ -92,7 +88,7 @@ var targets: [Target] = [
   ),
   .target(
     name: "SwiftSSLTLS",
-    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLX509"],
+    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLASN1", "SwiftSSLX509"],
     swiftSettings: ownershipSettings
   ),
   .target(
@@ -102,7 +98,14 @@ var targets: [Target] = [
   ),
   .target(
     name: "SwiftSSL",
-    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto"],
+    dependencies: [
+      "SwiftSSLCore",
+      "SwiftSSLCrypto",
+      "SwiftSSLASN1",
+      "SwiftSSLX509",
+      "SwiftSSLTLS",
+      "SwiftSSLQUIC",
+    ],
     swiftSettings: ownershipSettings
   ),
   .executableTarget(
@@ -112,6 +115,7 @@ var targets: [Target] = [
       "SwiftSSLCore",
       "SwiftSSLCrypto",
       "SwiftSSLASN1",
+      "SwiftSSLX509",
       "SwiftSSLTLS",
       "SwiftSSLQUIC",
     ],
@@ -120,7 +124,11 @@ var targets: [Target] = [
   ),
   .executableTarget(
     name: "SwiftSSLHybridTargetValidation",
-    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLTLS"],
+    dependencies: [
+      "SwiftSSLCore",
+      "SwiftSSLCrypto",
+      "SwiftSSLTLS",
+    ],
     path: "Validation/Targets/HybridTargetValidation",
     swiftSettings: ownershipSettings
   ),
@@ -132,21 +140,21 @@ var targets: [Target] = [
   ),
   .executableTarget(
     name: "SwiftSSLQUICCryptoStreamValidation",
-    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLQUIC", "SwiftSSLTLS"],
+    dependencies: [
+      "SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLQUIC", "SwiftSSLTLS",
+      "SwiftSSLX509",
+    ],
     path: "Validation/Targets/QUICCryptoStreamValidation",
     swiftSettings: ownershipSettings
   ),
   .executableTarget(
     name: "SwiftSSLNISTVerificationValidation",
-    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto"],
+    dependencies: [
+      "SwiftSSLCore",
+      "SwiftSSLCrypto",
+    ],
     path: "Validation/Targets/NISTVerificationValidation",
     swiftSettings: nistValidationSettings
-  ),
-  .executableTarget(
-    name: "SwiftSSLECHInteropValidation",
-    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLTLS"],
-    path: "Validation/Targets/ECHInteropValidation",
-    swiftSettings: ownershipSettings
   ),
   .testTarget(
     name: "SwiftSSLCoreTests",
@@ -160,7 +168,9 @@ var targets: [Target] = [
   ),
   .testTarget(
     name: "SwiftSSLX509Tests",
-    dependencies: ["SwiftSSLCore", "SwiftSSLASN1", "SwiftSSLX509"],
+    dependencies: [
+      "SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLASN1", "SwiftSSLX509",
+    ],
     swiftSettings: ownershipSettings
   ),
   .testTarget(
@@ -176,6 +186,23 @@ var targets: [Target] = [
     swiftSettings: ownershipSettings
   ),
 ]
+
+if ProcessInfo.processInfo.environment["SWIFT_SSL_ENABLE_ECH_INTEROP_VALIDATION"] == "1" {
+  products.append(
+    .executable(
+      name: "swift-ssl-ech-interop-validation",
+      targets: ["SwiftSSLECHInteropValidation"]
+    )
+  )
+  targets.append(
+    .executableTarget(
+      name: "SwiftSSLECHInteropValidation",
+      dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLTLS"],
+      path: "Validation/Targets/ECHInteropValidation",
+      swiftSettings: ownershipSettings
+    )
+  )
+}
 
 if ProcessInfo.processInfo.environment["SWIFT_SSL_ENABLE_BENCHMARKS"] == "1" {
   products.append(

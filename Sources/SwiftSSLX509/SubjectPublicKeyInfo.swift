@@ -13,6 +13,18 @@ public struct SubjectPublicKeyInfo: Sendable, Hashable {
         algorithm == .ed25519 && algorithmIdentifier.parameters == .absent
     }
 
+    /// Whether this key names the SEC 1 uncompressed P-256 public-key profile.
+    public var isP256: Bool {
+        algorithm == .ecPublicKey(curve: .prime256v1)
+    }
+
+    /// Whether this key is a canonical RSA encryption SubjectPublicKeyInfo.
+    public var isRSA: Bool {
+        algorithm == .rsaEncryption
+            && (algorithmIdentifier.parameters == .null
+                || algorithmIdentifier.parameters == .absent)
+    }
+
     public init(
         der encodedDER: Span<UInt8>,
         limits: ParsingLimits = SubjectPublicKeyInfo.defaultParsingLimits
@@ -97,6 +109,12 @@ public struct SubjectPublicKeyInfo: Sendable, Hashable {
             preconditionFailure("SubjectPublicKeyInfo stores a validated key range")
         }
         return try body(bytes)
+    }
+
+    public borrowing func withDERBytes<Result: ~Copyable, Failure: Error>(
+        _ body: (Span<UInt8>) throws(Failure) -> Result
+    ) throws(Failure) -> Result {
+        try body(der.span)
     }
 
     public static let defaultParsingLimits: ParsingLimits = {

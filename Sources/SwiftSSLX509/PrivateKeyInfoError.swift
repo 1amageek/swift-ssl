@@ -10,4 +10,5 @@ public enum PrivateKeyInfoError: Error, Sendable, Equatable {
     case invalidVersion(UInt64)
     case invalidPublicKeyField
     case invalidRange(ByteError)
+    case memoryFailure(SecretMemoryError)
 }

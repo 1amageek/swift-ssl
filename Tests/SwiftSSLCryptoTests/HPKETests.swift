@@ -4,6 +4,285 @@ import XCTest
 @testable import SwiftSSLCrypto
 
 final class HPKETests: XCTestCase {
+  func testP256AllModesRoundTrip() throws {
+    let recipient = P256KeyPair(
+      privateKey: try P256PrivateKey(bytes: bytes(repeating: 0x11, count: 32).span)
+    )
+    let sender = P256KeyPair(
+      privateKey: try P256PrivateKey(bytes: bytes(repeating: 0x22, count: 32).span)
+    )
+    let info = bytes("503235362d48504b45")
+    let psk = bytes("503235362d70736b")
+    let pskID = bytes("503235362d70736b2d6964")
+    let plaintext = bytes("503235362d7061796c6f6164")
+    let aad = bytes("503235362d616164")
+
+    var baseSetup = try HPKEP256.setupBaseSender(
+      recipientPublicKey: recipient.publicKey,
+      info: info.span,
+      kdf: .sha256,
+      aead: .chaCha20Poly1305,
+      using: FixedEntropy(bytes: bytes(repeating: 0x31, count: 32))
+    )
+    var baseRecipient = try HPKEP256.setupBaseRecipient(
+      encapsulation: baseSetup.encapsulation.span,
+      recipientKeyPair: recipient,
+      info: info.span,
+      kdf: .sha256,
+      aead: .chaCha20Poly1305
+    )
+    var baseSender = baseSetup.takeContext()
+    try assertRoundTrip(
+      sender: &baseSender,
+      recipient: &baseRecipient,
+      plaintext: plaintext.span,
+      authenticatedData: aad.span
+    )
+
+    var pskSetup = try HPKEP256.setupPSKSender(
+      recipientPublicKey: recipient.publicKey,
+      info: info.span,
+      psk: psk.span,
+      pskID: pskID.span,
+      kdf: .sha384,
+      aead: .aes128GCM,
+      using: FixedEntropy(bytes: bytes(repeating: 0x32, count: 32))
+    )
+    var pskRecipient = try HPKEP256.setupPSKRecipient(
+      encapsulation: pskSetup.encapsulation.span,
+      recipientKeyPair: recipient,
+      info: info.span,
+      psk: psk.span,
+      pskID: pskID.span,
+      kdf: .sha384,
+      aead: .aes128GCM
+    )
+    var pskSender = pskSetup.takeContext()
+    try assertRoundTrip(
+      sender: &pskSender,
+      recipient: &pskRecipient,
+      plaintext: plaintext.span,
+      authenticatedData: aad.span
+    )
+
+    var authSetup = try HPKEP256.setupAuthSender(
+      recipientPublicKey: recipient.publicKey,
+      senderKeyPair: sender,
+      info: info.span,
+      kdf: .sha512,
+      aead: .aes256GCM,
+      using: FixedEntropy(bytes: bytes(repeating: 0x33, count: 32))
+    )
+    var authRecipient = try HPKEP256.setupAuthRecipient(
+      encapsulation: authSetup.encapsulation.span,
+      recipientKeyPair: recipient,
+      senderPublicKey: sender.publicKey,
+      info: info.span,
+      kdf: .sha512,
+      aead: .aes256GCM
+    )
+    var authSender = authSetup.takeContext()
+    try assertRoundTrip(
+      sender: &authSender,
+      recipient: &authRecipient,
+      plaintext: plaintext.span,
+      authenticatedData: aad.span
+    )
+
+    var authPSKSetup = try HPKEP256.setupAuthPSKSender(
+      recipientPublicKey: recipient.publicKey,
+      senderKeyPair: sender,
+      info: info.span,
+      psk: psk.span,
+      pskID: pskID.span,
+      kdf: .sha256,
+      aead: .aes128GCM,
+      using: FixedEntropy(bytes: bytes(repeating: 0x34, count: 32))
+    )
+    var authPSKRecipient = try HPKEP256.setupAuthPSKRecipient(
+      encapsulation: authPSKSetup.encapsulation.span,
+      recipientKeyPair: recipient,
+      senderPublicKey: sender.publicKey,
+      info: info.span,
+      psk: psk.span,
+      pskID: pskID.span,
+      kdf: .sha256,
+      aead: .aes128GCM
+    )
+    var authPSKSender = authPSKSetup.takeContext()
+    try assertRoundTrip(
+      sender: &authPSKSender,
+      recipient: &authPSKRecipient,
+      plaintext: plaintext.span,
+      authenticatedData: aad.span
+    )
+  }
+
+  func testP256EncodedBaseSenderMatchesPreparedPathAndRejectsInvalidKey() throws {
+    let recipient = P256KeyPair(
+      privateKey: try P256PrivateKey(bytes: bytes(repeating: 0x41, count: 32).span)
+    )
+    let info = bytes("503235362d656e636f6465642d73656e646572")
+    let plaintext = bytes("7061796c6f6164")
+    let authenticatedData = bytes("616164")
+    let entropy = bytes(repeating: 0x53, count: 32)
+
+    var preparedSetup = try HPKEP256.setupBaseSender(
+      recipientPublicKey: recipient.publicKey,
+      info: info.span,
+      kdf: .sha256,
+      aead: .aes128GCM,
+      using: FixedEntropy(bytes: entropy)
+    )
+    var encodedSetup = try HPKEP256.setupBaseSender(
+      recipientPublicKeyBytes: recipient.publicKey.span,
+      info: info.span,
+      kdf: .sha256,
+      aead: .aes128GCM,
+      using: FixedEntropy(bytes: entropy)
+    )
+    XCTAssertEqual(
+      copy(preparedSetup.encapsulation.span),
+      copy(encodedSetup.encapsulation.span)
+    )
+
+    var preparedSender = preparedSetup.takeContext()
+    var encodedSender = encodedSetup.takeContext()
+    let preparedCiphertext = try preparedSender.seal(
+      plaintext: plaintext.span,
+      authenticatedData: authenticatedData.span
+    )
+    let encodedCiphertext = try encodedSender.seal(
+      plaintext: plaintext.span,
+      authenticatedData: authenticatedData.span
+    )
+    XCTAssertEqual(copy(preparedCiphertext.span), copy(encodedCiphertext.span))
+
+    let invalidKey = bytes(repeating: 0, count: P256PublicKey.uncompressedByteCount)
+    do {
+      _ = try HPKEP256.setupBaseSender(
+        recipientPublicKeyBytes: invalidKey.span,
+        info: info.span,
+        kdf: .sha256,
+        aead: .aes128GCM,
+        using: FixedEntropy(bytes: entropy)
+      )
+      XCTFail("invalid encoded P-256 recipient key was accepted")
+    } catch {
+      XCTAssertEqual(error, .primitive(.invalidPeerKey))
+    }
+  }
+
+  func testP256RejectsInvalidEncapsulation() throws {
+    let recipient = P256KeyPair(
+      privateKey: try P256PrivateKey(bytes: bytes(repeating: 0x41, count: 32).span)
+    )
+    let invalidEncapsulation = bytes(repeating: 0, count: P256PublicKey.uncompressedByteCount)
+
+    do {
+      _ = try HPKEP256.setupBaseRecipient(
+        encapsulation: invalidEncapsulation.span,
+        recipientKeyPair: recipient,
+        info: ContiguousArray<UInt8>().span,
+        kdf: .sha256,
+        aead: .aes128GCM
+      )
+      XCTFail("invalid P-256 encapsulation was accepted")
+    } catch {
+      XCTAssertEqual(error, .invalidEncapsulation)
+    }
+  }
+
+  func testRFC9180P256AES128BaseVector() throws {
+    let recipient = P256KeyPair(
+      privateKey: try P256PrivateKey(
+        bytes: bytes(
+          "f3ce7fdae57e1a310d87f1ebbde6f328be0a99cdbcadf4d6589cf29de4b8ffd2"
+        ).span
+      )
+    )
+    let entropy = FixedEntropy(
+      bytes: bytes(
+        "4995788ef4b9d6132b249ce59a77281493eb39af373d236a1fe415cb0c2d7beb"
+      )
+    )
+    let info = bytes("4f6465206f6e2061204772656369616e2055726e")
+    var setup = try HPKEP256.setupBaseSender(
+      recipientPublicKey: recipient.publicKey,
+      info: info.span,
+      kdf: .sha256,
+      aead: .aes128GCM,
+      using: entropy
+    )
+    XCTAssertEqual(
+      copy(setup.encapsulation.span),
+      Array(
+        bytes(
+          "04a92719c6195d5085104f469a8b9814d5838ff72b60501e2c4466e5e67b325ac"
+            + "98536d7b61a1af4b78e5b7f951c0900be863c403ce65c9bfcb9382657222d18c4"
+        )
+      )
+    )
+    var recipientContext = try HPKEP256.setupBaseRecipient(
+      encapsulation: setup.encapsulation.span,
+      recipientKeyPair: recipient,
+      info: info.span,
+      kdf: .sha256,
+      aead: .aes128GCM
+    )
+    var senderContext = setup.takeContext()
+    let plaintext = bytes("4265617574792069732074727574682c20747275746820626561757479")
+    let aad = bytes("436f756e742d30")
+    let ciphertext = try senderContext.seal(
+      plaintext: plaintext.span,
+      authenticatedData: aad.span
+    )
+    XCTAssertEqual(
+      copy(ciphertext.span),
+      Array(
+        bytes(
+          "5ad590bb8baa577f8619db35a36311226a896e7342a6d836d8b7bcd2f20b6c7f"
+            + "9076ac232e3ab2523f39513434"
+        )
+      )
+    )
+    let opened = try recipientContext.open(
+      ciphertext: ciphertext.span,
+      authenticatedData: aad.span
+    )
+    XCTAssertEqual(copy(opened.span), Array(plaintext))
+    let exported = try senderContext.export(ContiguousArray<UInt8>().span, length: 32)
+    XCTAssertEqual(
+      exported.withBorrowedBytes { copy($0) },
+      Array(bytes("5e9bc3d236e1911d95e65b576a8a86d478fb827e8bdfe77b741b289890490d4d"))
+    )
+  }
+
+  private func assertRoundTrip(
+    sender: inout HPKESenderContext,
+    recipient: inout HPKERecipientContext,
+    plaintext: Span<UInt8>,
+    authenticatedData: Span<UInt8>
+  ) throws {
+    let ciphertext = try sender.seal(
+      plaintext: plaintext,
+      authenticatedData: authenticatedData
+    )
+    let opened = try recipient.open(
+      ciphertext: ciphertext.span,
+      authenticatedData: authenticatedData
+    )
+    XCTAssertEqual(copy(opened.span), copy(plaintext))
+    let senderExport = try sender.export(bytes("01").span, length: 32)
+    let recipientExport = try recipient.export(bytes("01").span, length: 32)
+    XCTAssertEqual(
+      senderExport.withBorrowedBytes { copy($0) },
+      recipientExport.withBorrowedBytes { copy($0) }
+    )
+    XCTAssertEqual(sender.sequenceNumber, 1)
+    XCTAssertEqual(recipient.sequenceNumber, 1)
+  }
+
   func testRFC9180X25519ChaChaBaseVector() throws {
     let recipientPrivate = X25519KeyPair(
       privateKey: try X25519PrivateKey(

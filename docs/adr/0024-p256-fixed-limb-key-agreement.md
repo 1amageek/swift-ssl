@@ -2,8 +2,9 @@
 
 ## Status
 
-Superseded by ADR 0036. The callable P-256 secret-key and ECDH surface was
-removed from the modern profile.
+Superseded by ADR 0036 as a general ECDH profile. ADR 0045 later introduced a
+new, validation-gated secret implementation exclusively for RFC 9180 P-256
+DHKEM; it does not restore P-256 TLS key exchange or signing.
 
 ## Context
 

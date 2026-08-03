@@ -7,11 +7,16 @@ public one-shot `SHA256` API from one exact official BoringSSL commit:
 ae49d2681a56ca7b8609f6039a770fda2a8eb550
 ```
 
-It is a manually invoked Native benchmark. It is not a test target, is not run
-by `xcodebuild test`, and does not add BoringSSL to any SwiftSSL library target
-or runtime path.
+The directory contains separate manually invoked Native and WASI comparison
+runners. Neither runner is a test target or is run by `xcodebuild test`, and
+neither adds BoringSSL to any SwiftSSL library target or runtime path.
 
-## Comparison boundary
+| Runner | Target boundary | BoringSSL backend |
+|---|---|---|
+| `run_comparison.py` | Native arm64/macOS | Platform assembly enabled |
+| `run_wasm_comparison.py` | WASI and Embedded WASI | Portable no-assembly implementation |
+
+## Native comparison boundary
 
 ```mermaid
 flowchart LR
@@ -71,7 +76,7 @@ The worker output contract is:
 ```text
 RESULT,<measured-nanoseconds>,<checksum>,<64-lowercase-hex-digest>
 DIGEST,<iteration>,<64-lowercase-hex-digest>
-CAPABILITY,boringssl_asm,1
+CAPABILITY,boringssl_asm,<0-or-1>
 ```
 
 Each worker invocation must emit exactly the records for its selected mode and
@@ -86,10 +91,155 @@ snapshot. Exploratory runs may start from and continue to expose a dirty live
 Swift tree, so they do not claim Swift source immutability and remain
 ineligible for release evidence. None of these conditions is converted into a
 successful result.
-`CAPABILITY` is emitted only by the BoringSSL capability probe. A zero value or
-missing record invalidates the comparison.
+`CAPABILITY` is emitted only by the BoringSSL capability probe. The Native
+runner requires `1`; the portable WASI runner requires `0`. A missing record or
+a value that disagrees with the selected comparison boundary invalidates the
+comparison.
 
-## Required tools and source checkouts
+### Native LLVM backend diagnostic
+
+The 2026-08-03 compiler experiment applied
+`Validation/CodeGeneration/SHA256TiedOperands/llvm-264fd65923c28-sha256-paired-two-address.patch`
+to LLVM commit `264fd65923c28d9060211c1177a8820b76ed3ae2`. Its machine pass
+preserves the old first state outside the recurrent `SHA256H` dependency and
+lets `SHA256H` update that state in place. The product remains Pure Swift; the
+experiment changes only the AArch64 compiler backend.
+
+The patched `llc` passed its end-to-end IR fixture and positive/negative
+machine-pass MIR fixture using the exact LLVM checkout's machine verifier and
+FileCheck. A complete optimized `SwiftSSLCrypto` object built by that `llc`
+matched the retained Swift worker and BoringSSL for 768 digests. Its SHA-256
+was `e1e414aac6f597f28ced2874b6e44d4cd59b34ed7aea9c1367a02aebdf753eeb`
+before and after the final pass audit. Thirty balanced exploratory pairs with
+10,000 paired bootstrap resamples produced:
+
+| Workload | Patched Swift median ns/op | BoringSSL median ns/op | Ratio | 95% paired bootstrap CI |
+|---|---:|---:|---:|---:|
+| 64 B | 34.391625 | 40.209264 | `1.170837x` | `1.166957–1.175070x` |
+| 1 KiB | 348.351735 | 353.717083 | `1.014471x` | `1.009768–1.017313x` |
+| 16 KiB | 5390.322889 | 5442.337972 | `1.009975x` | `1.006648–1.013006x` |
+
+The patch improved the retained Swift code generation by `1.169649x` at 1 KiB
+and `1.190179x` at 16 KiB, demonstrating that it removes the identified
+tied-operand penalty. The long-input comparison nevertheless remains around
+parity with BoringSSL and fails the `1.10x` lower-bound gate. This diagnostic
+used a dirty Swift source tree and a separately linked compiler object, so it
+is not formal release evidence and does not supersede a runner-owned build.
+
+The aggregate state-only ceiling record and its standalone arithmetic verifier
+are retained in `Validation/CodeGeneration/SHA256TiedOperands`. They show that
+the state chain would need to be another `6.795374%` faster at 1 KiB and
+`5.853974%` faster at 16 KiB merely to reach the `1.10x` per-block time, before
+restoring the omitted digest work. The original eight raw state-only pairs were
+not retained, so this is a reproducible diagnostic certificate rather than a
+formal benchmark artifact.
+
+## WASI and Embedded WASI comparison
+
+The WASI runner builds official BoringSSL as a portable `OPENSSL_NO_ASM`
+baseline and builds the same Pure Swift production path twice with the pinned
+ordinary and Embedded WASI SDKs. Both workers use the WASI monotonic clock
+directly. Input allocation is outside the timed region, and the optional
+one-byte input offset exercises the production unaligned-load path without
+materializing another input buffer.
+
+```mermaid
+flowchart LR
+    BSSL["Official portable BoringSSL"] --> W["WASI worker"]
+    Swift["Pure Swift production SHA-256"] --> N["Ordinary WASI worker"]
+    Swift --> E["Embedded WASI worker"]
+    W --> P["Balanced paired samples"]
+    N --> P
+    E --> P
+    P --> C["95% paired bootstrap CI"]
+```
+
+The runner validates 13 boundary and unaligned input cases against both
+BoringSSL and Python `hashlib`, audits the BoringSSL `bcm.cc` and `sha256.cc`
+Release compile entries, calibrates until both workers run for at least 250 ms,
+and measures three sustained-throughput workloads: aligned 1 MiB, aligned
+1 MiB + 1 byte, and unaligned 1 MiB + 1 byte. The decision rule is the same
+`1.10x` lower bound of the paired median-speedup 95% bootstrap interval.
+
+```sh
+cd "$SWIFT_SSL_ROOT"
+
+TOOLCHAINS=org.swift.64202607231a \
+python3 Benchmarks/SHA256/run_wasm_comparison.py \
+  --boringssl-source "$BORINGSSL_ROOT" \
+  --target both \
+  --samples 11 \
+  --bootstrap-resamples 10000 \
+  --enforce-target
+```
+
+Use at least 30 pairs and add `--formal` only with a clean Swift source tree.
+The 2026-08-03 exploratory run used WasmKit 0.3.1 and produced:
+
+| Target and workload | Swift median ms/op | BoringSSL median ms/op | Ratio | 95% paired bootstrap CI |
+|---|---:|---:|---:|---:|
+| WASI, aligned 1 MiB | 32.151 | 43.024 | 1.3389x | 1.3371–1.3402 |
+| WASI, aligned 1 MiB + 1 B | 32.155 | 42.946 | 1.3370x | 1.3267–1.3373 |
+| WASI, unaligned 1 MiB + 1 B | 32.145 | 42.972 | 1.3356x | 1.3352–1.3371 |
+| Embedded WASI, aligned 1 MiB | 32.172 | 43.046 | 1.3354x | 1.3344–1.3410 |
+| Embedded WASI, aligned 1 MiB + 1 B | 32.903 | 43.791 | 1.3311x | 1.3258–1.3418 |
+| Embedded WASI, unaligned 1 MiB + 1 B | 32.675 | 43.720 | 1.3332x | 1.3301–1.3379 |
+
+All six lower confidence bounds exceeded `1.10x`. The ignored raw artifact is
+`.test-artifacts/benchmark/20260803T022356Z-sha256-wasm.json`. Because the
+Swift tree was dirty and the sample count was 11, this is exploratory evidence,
+not a formal release result. It also does not compare against Native BoringSSL
+assembly.
+
+## WASI and Embedded WASI allocation/copy runner
+
+`run_wasm_memory.py` is a separate manual runner. It creates fresh ordinary and
+Embedded WASI Release workers and uses WasmKit's function-call profile to isolate
+the exact production hashing loop. Input/output owners are constructed before
+that scope. Each workload is executed at 1, 10, and 100 operations with three
+repetitions, and every counter must have a deterministic integral linear slope.
+
+```mermaid
+flowchart LR
+    Owner["Preallocated input/output owners"] --> Scope["Profiled SHA256.hash loop"]
+    Scope --> Calls["Allocation and copy call counters"]
+    Scope --> Codegen["WASM memory.copy site audit"]
+    Calls --> Gate["Zero full-input materialization gate"]
+    Codegen --> Gate
+```
+
+```sh
+cd "$SWIFT_SSL_ROOT"
+
+TOOLCHAINS=org.swift.64202607231a \
+python3 Benchmarks/SHA256/run_wasm_memory.py \
+  --target both \
+  --repetitions 3
+```
+
+The 2026-08-03 exploratory run produced the same result on ordinary and
+Embedded WASI:
+
+| Workload | Heap allocation calls/op | Dynamic copy calls/op | Fixed-copy helper bytes/op | Tail retained/op |
+|---|---:|---:|---:|---:|
+| Aligned 1 MiB | 0 | 0 | 0 | 0 B |
+| Aligned 1 MiB + 1 B | 0 | 0 | 0 | 1 B |
+| Unaligned 1 MiB + 1 B | 0 | 0 | 0 | 1 B |
+
+The generated ordinary and Embedded WASM binaries each contain two
+`memory.copy` sites in `SHA256Context.update` and none in finalization. The two
+sites are accepted only with the production source contract that bounds their
+destination to the inline 64-byte pending owner. Complete blocks are borrowed
+directly. WasmKit profiles function calls rather than individual
+`memory.copy` executions, so neither profile evidence nor source inspection is
+reported alone as the zero-copy proof.
+
+The ignored raw artifact is
+`.test-artifacts/benchmark/20260803T025221Z-sha256-wasm-memory.json`. It is
+exploratory because the Swift source tree was dirty, and it is memory evidence
+rather than timing evidence.
+
+## Native required tools and source checkouts
 
 The Native baseline is pinned to:
 
@@ -127,7 +277,7 @@ Apple ARM capability source, SHA-256 wrapper, BCM translation unit, and
 ARMv8 SHA instruction counts. A scalar-only run is diagnostic and is comparable
 only when both implementations explicitly use scalar backends.
 
-## Runner-owned builds
+## Native runner-owned builds
 
 The comparison runner creates a fresh build root and builds both workers itself.
 It does not accept prebuilt worker paths. For a formal run, it creates read-only
@@ -168,7 +318,7 @@ The runner requires at least 3 GiB available on both the build and artifact
 filesystems before building and reserves at least 256 MiB after the build and
 before the final artifact write.
 
-## Run a paired comparison
+## Run a Native paired comparison
 
 Use one single-threaded benchmark process at a time. Keep the machine on AC
 power, disable Low Power Mode, avoid other sustained workloads, and do not run
@@ -214,7 +364,7 @@ exploratory run; only the `swift-ssl` tree may be dirty. Exploratory timing uses
 the same cooling and per-pair quiescence gates, but mutable live Swift source
 prevents it from being release evidence.
 
-## Sampling and decision rule
+## Native sampling and decision rule
 
 | Item | Contract |
 |---|---|
@@ -281,10 +431,17 @@ python3 -m unittest discover \
 
 ## Result artifacts
 
-The default location is:
+The Native default location is:
 
 ```text
 Benchmarks/SHA256/Results/<UTC timestamp>-native-sha256.json
+```
+
+The WASI runner writes exploratory artifacts under:
+
+```text
+.test-artifacts/benchmark/<UTC timestamp>-sha256-wasm.json
+.test-artifacts/benchmark/<UTC timestamp>-sha256-wasm-memory.json
 ```
 
 The result directory is intentionally not ignored. Verify and commit the raw
@@ -304,7 +461,7 @@ artifact.
 This is a Native one-shot SHA-256 timing comparison. Even a formal timing pass
 does not establish all release gates:
 
-- allocation and logical copy budgets require a separate instrumented run;
+- Native allocation and logical copy budgets require a separate instrumented run;
 - WASI and Embedded measurements must be reported separately;
 - correctness still requires official vectors, negative tests, and differential
   tests through the production path;

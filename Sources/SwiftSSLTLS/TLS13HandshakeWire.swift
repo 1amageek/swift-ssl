@@ -225,9 +225,17 @@ enum TLS13HandshakeWire {
     )
   }
 
-  static func certificateVerifyInput(transcriptHash: Span<UInt8>) -> OwnedBytes {
+  static func certificateVerifyInput(
+    role: TLSRole,
+    transcriptHash: Span<UInt8>
+  ) -> OwnedBytes {
     var bytes = ContiguousArray<UInt8>(repeating: 0x20, count: 64)
-    bytes.append(contentsOf: "TLS 1.3, server CertificateVerify".utf8)
+    switch role {
+    case .client:
+      bytes.append(contentsOf: "TLS 1.3, client CertificateVerify".utf8)
+    case .server:
+      bytes.append(contentsOf: "TLS 1.3, server CertificateVerify".utf8)
+    }
     bytes.append(0)
     append(transcriptHash, to: &bytes)
     return OwnedBytes(consuming: bytes)
@@ -252,11 +260,21 @@ func mapHandshakeEngineError(_ error: any Error) -> TLS13HandshakeEngineError {
   if let error = error as? TLS13KeyScheduleError { return .keySchedule(error) }
   if let error = error as? TLS13KeyExchangeError { return .keyExchange(error) }
   if let error = error as? CryptoInputError { return .crypto(error) }
+  if let error = error as? TLS13SigningError { return .signing(error) }
   if let error = error as? X25519KeyGenerationError { return .x25519(error) }
   if let error = error as? X509CertificateError { return .certificate(error) }
+  if let error = error as? TLS13ServerCertificateValidationError {
+    return .certificateValidation(error)
+  }
   if let error = error as? TLS13SessionTicketError { return .sessionTicket(error) }
   if let error = error as? TLS13ResumptionError { return .resumption(error) }
   if let error = error as? TLS13PSKError { return .preSharedKey(error) }
+  if let error = error as? TLS13CertificateCompressionError {
+    return .certificateCompression(error)
+  }
+  if let error = error as? TLS13DelegatedCredentialError {
+    return .delegatedCredential(error)
+  }
   if let error = error as? ECHError { return .ech(error) }
   if let error = error as? ByteError { return .output(error) }
   return .malformedInput

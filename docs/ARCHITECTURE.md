@@ -18,12 +18,12 @@ The current package graph is:
 ```mermaid
 flowchart TD
     Core["SwiftSSLCore\nbytes, ownership, limits, capabilities"]
-    Crypto["SwiftSSLCrypto\nSHA-2/3, HMAC/HKDF, AEAD, X25519, ML-KEM, DRBG, and primitive contracts"]
+    Crypto["SwiftSSLCrypto\nSHA-2/3, HMAC/HKDF, AEAD, X25519, P-256, ML-KEM, DRBG, and primitive contracts"]
     ASN1["SwiftSSLASN1\nstrict DER foundation"]
     X509["SwiftSSLX509\ncertificate-byte models"]
     TLS["SwiftSSLTLS\nTLS 1.3 engines, records, and actions"]
     QUIC["SwiftSSLQUIC\nordered QUIC TLS output models"]
-    Facade["SwiftSSL\ncurated crypto and ML-KEM surface"]
+    Facade["SwiftSSL\numbrella and application composition"]
 
     Core --> Crypto
     Core --> ASN1
@@ -37,11 +37,15 @@ flowchart TD
     Crypto --> QUIC
     Core --> QUIC
     Crypto --> Facade
+    ASN1 --> Facade
+    X509 --> Facade
+    TLS --> Facade
+    QUIC --> Facade
 ```
 
-Dependencies flow downward only. The façade exposes curated symmetric, hash, MAC, KDF, X25519, Ed25519, ML-KEM, and verification-only P-256 entry points and does not re-export lower modules. As application-facing TLS composition is implemented, the façade may gain explicit dependencies without turning into a blanket module export.
+Dependencies between responsibility modules flow downward only. `SwiftSSL` is the package umbrella: it re-exports those modules for one-import application use while retaining their separate ownership boundaries. It also owns only application composition, including protocol-backed TLS 1.3 client/server factories; cryptographic and protocol implementations remain in their responsibility modules.
 
-Entropy and clock interfaces live in `SwiftSSLCore`. Concrete platform adapters are intentionally absent until they have real implementations and target-specific verification. They are composed by purpose—entropy for cryptographic operations, wall time for certificate verification, and monotonic time for DTLS—rather than through one all-capabilities container. Cryptographic and protocol modules never import platform implementations.
+Entropy and clock interfaces and their system implementations live in `SwiftSSLCore`. They are composed by purpose—entropy for cryptographic operations, wall time for certificate verification, and monotonic time for DTLS—rather than through one all-capabilities container. Native uses the host POSIX clock backend; WASI and Embedded WASI use WASI clock syscalls. Application storage, trust acquisition, and transport remain injected capabilities.
 
 ## 3. Module responsibilities
 
@@ -51,10 +55,10 @@ Entropy and clock interfaces live in `SwiftSSLCore`. Concrete platform adapters 
 | `SwiftSSLCrypto` | Hash, MAC, KDF, AEAD, key agreement, KEM, signatures, HPKE, fixed-width field/scalar arithmetic, algorithm identifiers and policy gates | Certificates, TLS negotiation, OS entropy selection, arbitrary public mutable big integers |
 | `SwiftSSLASN1` | Strict DER TLV parser/writer, OID and primitive codecs, RFC 7468 PEM boundaries, parse budgets | Certificate validation, BER normalization, algorithm policy, file I/O |
 | `SwiftSSLX509` | Immutable certificate/CRL/OCSP models, SPKI and private-key containers, path building, RFC 5280 policy, service identity, revocation evidence validation | Network fetching, global trust, UI, silent CN fallback |
-| `SwiftSSLTLS` | TLS 1.3 handshake and record layers, DTLS 1.3 framing/replay/flight state, transcript/key schedule, ticket/state/PSK binder primitives, resumption, 0-RTT policy, ECH, alerts, explicit capability suspension | Socket I/O, event loops, DNS, persistent stores, private-key services, QUIC packet protection; the current handshake engine is intentionally limited to the pinned X25519/Ed25519 credential profile and full-handshake path while supporting all three TLS 1.3 AEAD suites |
+| `SwiftSSLTLS` | TLS 1.3 handshake and record layers, main/post-handshake server/client certificate authentication with Ed25519, P-256 ECDSA, or RSA-PSS, X25519/`secp256r1`/pinned-hybrid key exchange, DTLS 1.3 framing/replay/flight state, transcript/key schedule, ticket/state/PSK binder primitives, resumption, 0-RTT policy, ECH, alerts, and correlated credential/signature/trust capability suspension | Socket I/O, event loops, DNS, persistent stores, private-key services, and QUIC packet protection |
 | `SwiftSSLQUIC` | Mapping TLS handshake bytes, encryption levels, alerts, and traffic-secret events to RFC 9001 | CRYPTO reassembly, QUIC packets, header protection, loss recovery, congestion control, QUIC key phase |
-| Platform adapters (future product) | Concrete entropy, clocks, persistence adapters, and diagnostics, each added only with real target verification | Boolean capability claims, protocol semantics, or target-specific weakening of ownership/concurrency contracts |
-| `SwiftSSL` | Curated compositions and stable user entry points for the implemented symmetric, hash, MAC, KDF, X25519, Ed25519, ML-KEM, and verification-only P-256 capabilities | Blanket module re-export, duplicate implementation, or hidden fallback |
+| `SwiftSSLCore` system adapters | Concrete entropy, realtime clock, and monotonic clock backends with typed failures and one cross-target protocol contract | Storage policy, trust acquisition, transport, or target-specific weakening of ownership/concurrency contracts |
+| `SwiftSSL` | One-import umbrella, curated primitive adapters, and protocol-backed TLS client/server composition over explicit platform and external credential/trust capabilities | Duplicate cryptographic/protocol implementation, socket ownership, private-key service ownership, or hidden fallback |
 
 ## 4. Ownership and zero-copy model
 
@@ -106,7 +110,13 @@ Protocols describe semantic responsibilities; concrete algorithms and parsers re
 | `KeyAgreement` | Validates peer public input and returns a noncopyable shared secret. |
 | `KeyEncapsulationMechanism` | Key generation, encapsulation, and decapsulation with `KEMError`; correctly sized ML-KEM ciphertexts use implicit rejection rather than a validity-revealing error. |
 | `DigitalSignature` / `SignatureVerifier` | Message signing refines message verification and requires distinct noncopyable private and owned public key types; Ed25519 implements both capabilities. |
-| `DigestSignatureVerifier` | Verifies a caller-selected digest without a signing requirement; NIST ECDSA implements this certificate-compatibility capability. |
+| `DigestSignatureVerifier` | Verifies a caller-selected digest without requiring a signing API; P-384/P-521 ECDSA remain certificate-compatibility capabilities, while P-256 also exposes a separate deterministic signing operation. |
+
+P-256 secret key agreement is shared by RFC 9180
+DHKEM(P-256, HKDF-SHA256) and the role-specific TLS 1.3 `secp256r1` key-share
+owners. It is selectable by Stream TLS, DTLS, and QUIC TLS but not by
+CertificateVerify. It is available through the `SwiftSSL` umbrella without
+moving its implementation out of `SwiftSSLCrypto` and `SwiftSSLTLS`.
 
 Algorithm input errors, policy errors, authentication failures, and resource exhaustion are different typed error families.
 
@@ -134,8 +144,12 @@ The engine never invokes asynchronous providers or reentrant callbacks. It emits
 | `PrivateKeySigner` | Performs external or local private-key signing without exposing the key to the engine. |
 | `SessionRepository` | Loads/consumes/stores resumption state outside the engine. |
 | `TicketProtector` | Protects and opens server tickets under explicit rotation policy. |
-| `ReplayProtector` | Authorizes server 0-RTT use; absence means rejection, not implicit acceptance. |
+| `TLS13EarlyDataReplayProtecting` | Atomically authorizes one authenticated server 0-RTT attempt from ticket identity, ticket age, and negotiated ALPN; absence means rejection, not implicit acceptance. |
 | `ECHConfigProvider` | Supplies immutable ECH configuration/key snapshots; DNS acquisition and key rotation stay outside the engine. |
+| `TLS13ClientIdentity` | Client-owned certificate chain and noncopyable signer, validated for certificate/key correspondence before the handshake starts. |
+| `TLS13ClientCertificateValidating` | Server-injected, synchronous, I/O-free client path and revocation validation boundary. |
+| `TLS13ClientAuthenticationConfiguration` | Server policy pairing optional/required certificate presence with one validator. |
+| `TLS13ValidatedClientCertificate` | Path-validated client material retained internally until CertificateVerify and Finished establish peer authentication. |
 
 ## 6. Deterministic protocol engines
 
@@ -166,15 +180,42 @@ An output that mixes copyable actions with noncopyable secrets has one noncopyab
 
 A future capability request is a terminal suspension result, not an ordinary callback and not an effect that can be followed by more engine output before a response. Its token contains engine identity, a monotonically increasing sequence, and capability kind. Resumption must reject no-pending, duplicate, stale, wrong-kind, and wrong-state responses with typed errors. The current synchronous profile does not expose asynchronous capability requests; those are still required for external private-key and trust-provider integration.
 
-Early data is not an established session. Acceptance is independently decided from resumption acceptance, requires an application replay classification and server replay approval, and is never automatically retransmitted.
+Early data is not an established session. The client must provide
+`TLS13EarlyDataClientConfiguration`, the ticket must authorize a positive byte
+limit, and the ticket ALPN must match the new offer. The server first verifies
+the PSK binder, ticket age, cipher suite, and selected ALPN, then invokes
+`TLS13EarlyDataReplayProtecting`. A missing configuration or `.reject` decision
+rejects early data without rejecting a valid resumed handshake. A replay-policy
+error fails the handshake explicitly. Acceptance is independently decided from
+resumption acceptance and early data is never automatically retransmitted.
+
+`TLS13EarlyTrafficSecret` is a distinct noncopyable client-to-server owner.
+Stream TLS installs it as the client write/server read key and sends
+EndOfEarlyData under that key before the client Finished. A rejecting Stream
+server derives a discard-only early key when the authenticated PSK is known; if
+the ticket is unknown, unauthenticated application-data records are discarded
+until a record authenticates with the handshake key. No rejected plaintext is
+delivered. QUIC emits only client-write/server-read 0-RTT secret events and
+omits EndOfEarlyData as required by its TLS mapping. HelloRetryRequest rejects
+the attempt and removes `early_data` from the second ClientHello. DTLS 1.3 does
+not expose 0-RTT and rejects an offer.
+
+Handshake and record parsing keep one owned byte backing plus checked ranges or
+scoped spans. The replay context intentionally copies the small ticket identity
+once because the injected policy receives an independently owned `Sendable`
+value; application payloads are never materialized for policy evaluation.
+
+Client authentication follows one transport-independent core path. `TLS13ClientAuthenticationConfiguration` selects main-handshake, post-handshake, or both timings and retains the optional/required server policy. The client retains its noncopyable `TLS13ClientIdentity` when the main handshake does not request it and reuses the same owner for a later request. A matching identity produces Certificate and CertificateVerify; an absent or incompatible identity produces the protocol-defined empty Certificate. External credential selection, signing, and trust evaluation suspend through typed capability tokens without changing the transcript contract. The server's validator authenticates the certificate path before CertificateVerify, but `authenticatedClientIdentity` changes only after the client's signature and Finished both verify.
+
+Each post-handshake exchange clones the transcript through the main-handshake client Finished, appends only that exchange's non-empty and unique CertificateRequest context, and authenticates its Finished with the current client application traffic secret. Concurrent exchanges and reused contexts fail explicitly. The caller supplies the request context and is responsible for generating an unpredictable value. Stream TLS seals these messages as application-key handshake records and DTLS sends them as application-epoch flights. QUIC exposes no post-handshake-authentication operation because its TLS mapping permits only NewSessionTicket after handshake completion.
 
 ### 6.1 TLS stream profile
 
-The profile owns TLS 1.3 records, transcript/key schedule, encrypted NewSessionTicket transport, ticket/state/PSK binder values, post-handshake KeyUpdate, close, and supported modern extensions. It consumes and emits byte streams but performs no I/O. Application traffic and exporter secrets use the transcript through Server Finished; a distinct resumption-master owner is created only from the transcript through Client Finished. Ticket issuance returns both the encrypted wire output and the move-only server state that the application must persist. PSK identity selection, binder transcript construction, ticket age validation, and the resumed handshake are explicit engine operations. Cross-process ticket replay coordination and ticket persistence remain application policy boundaries.
+The profile owns TLS 1.3 records, transcript/key schedule, main- and post-handshake client authentication, encrypted NewSessionTicket transport, ticket/state/PSK binder values, 0-RTT record delivery/discard, post-handshake KeyUpdate, close, and supported modern extensions. It consumes and emits byte streams but performs no I/O. Application traffic and exporter secrets use the transcript through Server Finished; a distinct resumption-master owner is created only from the transcript through Client Finished. Ticket issuance returns both the encrypted wire output and the move-only server state that the application must persist. PSK identity selection, binder transcript construction, ticket age validation, early-data replay authorization, and the resumed handshake are explicit engine operations. Cross-process replay coordination and ticket persistence remain application policy boundaries.
 
 ### 6.2 DTLS profile
 
-The profile adds epochs, record sequence numbers, record-number protection, replay windows, handshake fragmentation/reassembly, flights, ACKs, retransmission state, connection IDs, and DTLS KeyUpdate. The transport owns datagram I/O, path MTU decisions, and timer delivery.
+The profile adds epochs, record sequence numbers, record-number protection, replay windows, handshake fragmentation/reassembly, flights, ACKs, retransmission state, connection IDs, post-handshake client authentication, DTLS KeyUpdate, and DTLS-SRTP negotiation/export. The transport owns datagram I/O, path MTU decisions, media transport, and timer delivery.
 
 Invalid or replayed datagrams produce an explicit disposition/diagnostic value where the protocol requires discard. A discard is not represented as successful application data.
 
@@ -190,7 +231,7 @@ TLS records, TLS application-data records, compatibility ChangeCipherSpec, EndOf
 
 ### 6.4 ECH
 
-ECH owns config parsing/selection, HPKE inner/outer processing, padding, confirmation, HelloRetryRequest continuation, and accepted/rejected state. The current callable profile implements those responsibilities except HelloRetryRequest continuation and second-ClientHello confirmation, which remain explicit completion work. DNS SVCB/HTTPS lookup, immutable key snapshot rotation, and retry transport establishment are external responsibilities.
+ECH owns config parsing/selection, HPKE inner/outer processing, padding, confirmation, HelloRetryRequest continuation, and accepted/rejected state. The callable profile reuses one HPKE context across the two ClientHello messages, sends an empty second encapsulation, verifies the HelloRetryRequest acceptance confirmation, recomputes a resumed-handshake binder over the replaced transcript, and rejects a second HelloRetryRequest. DNS SVCB/HTTPS lookup, immutable key snapshot rotation, and retry transport establishment are external responsibilities.
 
 An authenticated ECH rejection is a terminal `ECHRetryRequired` outcome for the current transport. The engine does not release origin application data or consume tickets on that connection.
 
@@ -235,7 +276,7 @@ Errors are not converted to default values. Authentication failures never expose
 
 The Pure Swift implementation provides source portability, not automatic platform assurance. Platform adapters must explicitly establish entropy, timing, storage, zeroization, and synchronization semantics. A target receives only the capabilities required by the operation being constructed; the absence of a capability makes that composition unavailable instead of setting a Boolean flag or choosing a fallback.
 
-No `SwiftSSLPlatform` product exists in the current package. A platform product may be introduced only with concrete adapters, typed failure behavior, and Native/WASI/Embedded evidence. Until then, applications provide conformers to the capability protocols declared in `SwiftSSLCore`.
+No separate `SwiftSSLPlatform` product exists. `SwiftSSLCore` provides system entropy and clock adapters with typed Native/WASI/Embedded WASI backends. Applications provide storage, trust acquisition, transport, and any deployment-specific capability conformers.
 
 The library does not claim FIPS validation. Algorithm conformance, known-answer tests, a reproducible build, and a validated cryptographic module are separate facts.
 

@@ -77,6 +77,35 @@ public struct DERWriter: Sendable {
         )
     }
 
+    public mutating func appendObjectIdentifier(
+        _ arcs: Span<UInt64>
+    ) throws(DERWriteError) {
+        guard arcs.count >= 2, arcs[0] <= 2 else {
+            throw .invalidObjectIdentifier
+        }
+        guard arcs[0] == 2 || arcs[1] < 40 else {
+            throw .invalidObjectIdentifier
+        }
+        let (firstSubidentifier, overflow) = arcs[1].addingReportingOverflow(
+            arcs[0] * 40
+        )
+        guard !overflow else {
+            throw .invalidObjectIdentifier
+        }
+
+        var encoded = ContiguousArray<UInt8>()
+        Self.appendBase128(firstSubidentifier, to: &encoded)
+        var index = 2
+        while index < arcs.count {
+            Self.appendBase128(arcs[index], to: &encoded)
+            index += 1
+        }
+        try append(
+            tag: DERTag(tagClass: .universal, isConstructed: false, number: 6),
+            content: encoded.span
+        )
+    }
+
     public consuming func finish() -> OwnedBytes {
         builder.finish()
     }
@@ -126,5 +155,26 @@ public struct DERWriter: Sendable {
             index -= 1
             try builder.append(encoded[index])
         }
+    }
+
+    private static func appendBase128(
+        _ value: UInt64,
+        to destination: inout ContiguousArray<UInt8>
+    ) {
+        var highestShift = 0
+        var remaining = value >> 7
+        while remaining != 0 {
+            highestShift += 7
+            remaining >>= 7
+        }
+
+        var shift = highestShift
+        while shift > 0 {
+            destination.append(
+                UInt8(truncatingIfNeeded: value >> UInt64(shift)) | 0x80
+            )
+            shift -= 7
+        }
+        destination.append(UInt8(truncatingIfNeeded: value & 0x7F))
     }
 }

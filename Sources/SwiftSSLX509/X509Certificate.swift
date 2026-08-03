@@ -268,6 +268,12 @@ public struct X509Certificate: Sendable, Hashable {
         return try body(bytes)
     }
 
+    public borrowing func withDERBytes<Result: ~Copyable, Failure: Error>(
+        _ body: (Span<UInt8>) throws(Failure) -> Result
+    ) throws(Failure) -> Result {
+        try body(der.span)
+    }
+
     /// Verifies the certificate signature for the supported signature algorithms.
     public borrowing func verifySignature() throws(X509CertificateError) {
         try verifySignature(using: subjectPublicKeyInfo)

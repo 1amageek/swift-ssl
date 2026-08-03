@@ -22,6 +22,9 @@ class MemoryRunnerContractTests(unittest.TestCase):
                 "recipient-setup",
                 "first-open-256",
                 "first-open-1536",
+                "p256-shared",
+                "p256-sender-setup",
+                "p256-recipient-setup",
             ],
         )
 
@@ -39,6 +42,17 @@ class MemoryRunnerContractTests(unittest.TestCase):
             free_calls=0,
         )
         self.assertEqual(runner.validate_budget("x25519-shared", derived), [])
+
+    def test_bounded_copy_p256_shared_budget_passes(self) -> None:
+        derived = self.make_derived(
+            allocation_calls=0,
+            allocation_bytes=0,
+            bulk_copy_bytes=0,
+            malloc_calls=0,
+            aligned_calls=0,
+            free_calls=0,
+        )
+        self.assertEqual(runner.validate_budget("p256-shared", derived), [])
 
     def test_budget_rejects_allocation_and_copy_drift(self) -> None:
         derived = self.make_derived(

@@ -125,26 +125,35 @@ public struct SHA256Context: ~Copyable, HashContext {
       )
     }
 
-    pendingBytes[pendingByteCount] = 0x80
-    pendingByteCount += 1
-
-    if pendingByteCount > 56 {
-      zeroPendingBytes(from: pendingByteCount, to: Self.blockByteCount)
-      compressPendingBlock()
-      pendingByteCount = 0
-    }
-
-    zeroPendingBytes(from: pendingByteCount, to: 56)
     let bitCount = totalByteCount << 3
-    var index = 0
-    while index < 8 {
-      let shift = UInt64((7 - index) * 8)
-      pendingBytes[56 + index] = UInt8(truncatingIfNeeded: bitCount >> shift)
-      index += 1
-    }
-    compressPendingBlock()
+    if pendingByteCount == 0 {
+      SHA256Compression.compressPaddingBlock(
+        state: &state,
+        bitCount: bitCount
+      )
+    } else {
+      pendingBytes[pendingByteCount] = 0x80
+      pendingByteCount += 1
 
-    index = 0
+      if pendingByteCount > 56 {
+        zeroPendingBytes(from: pendingByteCount, to: Self.blockByteCount)
+        compressPendingBlock()
+        pendingByteCount = 0
+      }
+
+      zeroPendingBytes(from: pendingByteCount, to: 56)
+      var lengthByteIndex = 0
+      while lengthByteIndex < 8 {
+        let shift = UInt64((7 - lengthByteIndex) * 8)
+        pendingBytes[56 + lengthByteIndex] = UInt8(
+          truncatingIfNeeded: bitCount >> shift
+        )
+        lengthByteIndex += 1
+      }
+      compressPendingBlock()
+    }
+
+    var index = 0
     while index < 8 {
       let word = state[index]
       let outputOffset = index * 4

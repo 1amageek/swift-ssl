@@ -15,7 +15,9 @@ enum class Operation {
   kFirstSeal,
   kFirstOpen,
   kRecipientSetup,
-  kX25519Shared
+  kX25519Shared,
+  kP256SenderSetup,
+  kP256RecipientSetup
 };
 
 void Check(bool condition, const char *message) {
@@ -34,6 +36,69 @@ std::vector<uint8_t> DeterministicBytes(size_t count, uint8_t seed) {
 
 uint64_t Run(Operation operation, size_t payload_size, size_t aad_size,
              size_t iterations, int64_t *nanoseconds) {
+  if (operation == Operation::kP256SenderSetup ||
+      operation == Operation::kP256RecipientSetup) {
+    const std::vector<uint8_t> recipient_scalar(32, 0x41);
+    const std::vector<uint8_t> ephemeral_scalar(32, 0x53);
+    const std::vector<uint8_t> info = DeterministicBytes(77, 0x20);
+    EVP_HPKE_KEY recipient_key;
+    EVP_HPKE_KEY_zero(&recipient_key);
+    Check(EVP_HPKE_KEY_init(&recipient_key, EVP_hpke_p256_hkdf_sha256(),
+                            recipient_scalar.data(), recipient_scalar.size()) == 1,
+          "failed to initialize P-256 recipient key");
+    std::vector<uint8_t> recipient_public(EVP_HPKE_MAX_PUBLIC_KEY_LENGTH);
+    size_t recipient_public_len = 0;
+    Check(EVP_HPKE_KEY_public_key(&recipient_key, recipient_public.data(),
+                                  &recipient_public_len,
+                                  recipient_public.size()) == 1,
+          "failed to export P-256 recipient public key");
+    recipient_public.resize(recipient_public_len);
+    EVP_HPKE_KEY ephemeral_key;
+    EVP_HPKE_KEY_zero(&ephemeral_key);
+    Check(EVP_HPKE_KEY_init(&ephemeral_key, EVP_hpke_p256_hkdf_sha256(),
+                            ephemeral_scalar.data(), ephemeral_scalar.size()) == 1,
+          "failed to initialize P-256 ephemeral key");
+    std::vector<uint8_t> encapsulation(EVP_HPKE_MAX_ENC_LENGTH);
+    size_t encapsulation_len = 0;
+    Check(EVP_HPKE_KEY_public_key(&ephemeral_key, encapsulation.data(),
+                                  &encapsulation_len,
+                                  encapsulation.size()) == 1,
+          "failed to export P-256 encapsulation");
+    encapsulation.resize(encapsulation_len);
+    uint64_t checksum = 0;
+    const auto start = std::chrono::steady_clock::now();
+    for (size_t iteration = 0; iteration < iterations; iteration++) {
+      EVP_HPKE_CTX context;
+      EVP_HPKE_CTX_zero(&context);
+      if (operation == Operation::kP256SenderSetup) {
+        size_t current_encapsulation_len = 0;
+        Check(EVP_HPKE_CTX_setup_sender_with_seed_for_testing(
+                  &context, encapsulation.data(), &current_encapsulation_len,
+                  encapsulation.size(), EVP_hpke_p256_hkdf_sha256(),
+                  EVP_hpke_hkdf_sha256(), EVP_hpke_aes_128_gcm(),
+                  recipient_public.data(), recipient_public.size(), info.data(),
+                  info.size(), ephemeral_scalar.data(),
+                  ephemeral_scalar.size()) == 1,
+              "failed to initialize P-256 sender");
+        checksum += current_encapsulation_len;
+      } else {
+        Check(EVP_HPKE_CTX_setup_recipient(
+                  &context, &recipient_key, EVP_hpke_hkdf_sha256(),
+                  EVP_hpke_aes_128_gcm(), encapsulation.data(),
+                  encapsulation.size(), info.data(), info.size()) == 1,
+              "failed to initialize P-256 recipient");
+        checksum += 1;
+      }
+      EVP_HPKE_CTX_cleanup(&context);
+    }
+    const auto end = std::chrono::steady_clock::now();
+    *nanoseconds =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(end - start)
+            .count();
+    EVP_HPKE_KEY_cleanup(&ephemeral_key);
+    EVP_HPKE_KEY_cleanup(&recipient_key);
+    return checksum;
+  }
   const std::vector<uint8_t> recipient_scalar(32, 0x41);
   const std::vector<uint8_t> ephemeral_scalar(32, 0x53);
   const std::vector<uint8_t> info = DeterministicBytes(77, 0x20);
@@ -230,6 +295,10 @@ int main(int argc, char **argv) {
             ? Operation::kRecipientSetup
         : operation_name == "x25519-shared"
             ? Operation::kX25519Shared
+        : operation_name == "p256-sender-setup"
+            ? Operation::kP256SenderSetup
+        : operation_name == "p256-recipient-setup"
+            ? Operation::kP256RecipientSetup
             : throw std::runtime_error("invalid operation");
     const size_t payload_size = std::stoull(argv[2]);
     const size_t aad_size = std::stoull(argv[3]);

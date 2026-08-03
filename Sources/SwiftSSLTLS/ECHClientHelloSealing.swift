@@ -4,6 +4,7 @@ import SwiftSSLCore
 public protocol ECHClientHelloSealing: ~Copyable, Sendable {
   mutating func seal(
     innerClientHello: Span<UInt8>,
-    outerClientHello: Span<UInt8>
+    outerClientHello: Span<UInt8>,
+    encoding: TLS13HandshakeEncoding
   ) throws(ECHError) -> ECHClientHelloOffer
 }

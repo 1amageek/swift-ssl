@@ -12,6 +12,10 @@ enum HPKEBenchmarkCommand {
     case firstOpen = "first-open"
     case recipientSetup = "recipient-setup"
     case x25519Shared = "x25519-shared"
+    case p256SenderSetup = "p256-sender-setup"
+    case p256RecipientSetup = "p256-recipient-setup"
+    case p256Shared = "p256-shared"
+    case p256EncodedShared = "p256-encoded-shared"
   }
 
   private enum BenchmarkError: Error {
@@ -224,6 +228,82 @@ enum HPKEBenchmarkCommand {
   ) throws -> Measurement {
     let recipientScalar = ContiguousArray<UInt8>(repeating: 0x41, count: 32)
     let ephemeralScalar = ContiguousArray<UInt8>(repeating: 0x53, count: 32)
+    if operation == .p256SenderSetup
+      || operation == .p256RecipientSetup
+      || operation == .p256Shared
+      || operation == .p256EncodedShared
+    {
+      let recipientKey = P256KeyPair(
+        privateKey: try P256PrivateKey(bytes: recipientScalar.span)
+      )
+      let ephemeralKey = P256KeyPair(
+        privateKey: try P256PrivateKey(bytes: ephemeralScalar.span)
+      )
+      if operation == .p256Shared || operation == .p256EncodedShared {
+        var sharedSecret = ContiguousArray<UInt8>(repeating: 0, count: 32)
+        let clock = ContinuousClock()
+        let start = clock.now
+        var checksum: UInt64 = 0
+        var iteration = 0
+        while iteration < iterations {
+          var destination = sharedSecret.mutableSpan
+          if operation == .p256Shared {
+            try P256KeyAgreement.sharedSecret(
+              privateKey: recipientKey.privateKey,
+              peerPublicKey: ephemeralKey.publicKey,
+              into: &destination
+            )
+          } else {
+            try P256KeyAgreement.sharedSecret(
+              privateKey: recipientKey.privateKey,
+              peerPublicKeyBytes: ephemeralKey.publicKey.span,
+              into: &destination
+            )
+          }
+          checksum &+= UInt64(sharedSecret[iteration & 31])
+          iteration += 1
+        }
+        let elapsed = start.duration(to: clock.now).components
+        return Measurement(
+          nanoseconds: elapsed.seconds * 1_000_000_000
+            + elapsed.attoseconds / 1_000_000_000,
+          checksum: checksum
+        )
+      }
+      let info = deterministicBytes(count: 77, seed: 0x20)
+      let clock = ContinuousClock()
+      let start = clock.now
+      var checksum: UInt64 = 0
+      var iteration = 0
+      while iteration < iterations {
+        if operation == .p256SenderSetup {
+          let setup = try HPKEP256.setupBaseSender(
+            recipientPublicKeyBytes: recipientKey.publicKey.span,
+            info: info.span,
+            kdf: .sha256,
+            aead: .aes128GCM,
+            using: FixedEntropy(bytes: ephemeralScalar)
+          )
+          checksum &+= UInt64(setup.encapsulation.span.count)
+        } else {
+          let context = try HPKEP256.setupBaseRecipient(
+            encapsulation: ephemeralKey.publicKey.span,
+            recipientKeyPair: recipientKey,
+            info: info.span,
+            kdf: .sha256,
+            aead: .aes128GCM
+          )
+          checksum &+= context.sequenceNumber &+ 1
+        }
+        iteration += 1
+      }
+      let elapsed = start.duration(to: clock.now).components
+      return Measurement(
+        nanoseconds: elapsed.seconds * 1_000_000_000
+          + elapsed.attoseconds / 1_000_000_000,
+        checksum: checksum
+      )
+    }
     let recipientKey = X25519KeyPair(
       privateKey: try X25519PrivateKey(bytes: recipientScalar.span)
     )
@@ -325,7 +405,8 @@ enum HPKEBenchmarkCommand {
           aead: .aes128GCM
         )
         checksum &+= context.sequenceNumber &+ 1
-      case .x25519Shared:
+      case .x25519Shared, .p256SenderSetup, .p256RecipientSetup, .p256Shared,
+        .p256EncodedShared:
         preconditionFailure("X25519 is measured before HPKE fixture construction")
       }
       iteration += 1

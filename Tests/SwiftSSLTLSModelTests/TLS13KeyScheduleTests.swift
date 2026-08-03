@@ -69,6 +69,21 @@ final class TLS13KeyScheduleTests: XCTestCase {
         bytes("fe22f881176eda18eb8f44529e6792c50c9a3f89452f68d8ae311b4309d3cf50")
       )
     }
+    let exported = try application.exportKeyingMaterial(
+      label: "EXTRACTOR-dtls_srtp",
+      context: Span<UInt8>(),
+      outputByteCount: 88
+    )
+    exported.withBorrowedBytes { secret in
+      XCTAssertEqual(
+        copy(secret),
+        bytes(
+          "0e30a85a5b29a641bc75ca72910008b1b8236c3247fd404f89f347b815ce576c"
+            + "9afeb1dde16f00090819e0fe58fd49bee1f1a36de5bd6250e1ab4f04d612819d"
+            + "07ac0a605c3066e12c13cdc36002fdcce168b7fc660c5ef9"
+        )
+      )
+    }
 
     let resumption = try handshake.makeResumptionMasterSecret(
       transcriptHash: completedTranscriptHash.span

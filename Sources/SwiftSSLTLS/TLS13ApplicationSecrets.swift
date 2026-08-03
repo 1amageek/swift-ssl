@@ -102,6 +102,35 @@ public struct TLS13ApplicationSecrets: ~Copyable, Sendable {
     try exporterMasterSecret.withBorrowedBytes(body)
   }
 
+  /// Implements the RFC 8446 exporter construction without materializing the
+  /// exported secret in an intermediate public byte container.
+  public borrowing func exportKeyingMaterial(
+    label: String,
+    context: Span<UInt8>,
+    outputByteCount: Int
+  ) throws(TLS13KeyScheduleError) -> SecretBytes {
+    let emptyHash = try TLS13KeySchedule.hashEmptyMessage(
+      cipherSuite: cipherSuite
+    )
+    let derived = try TLS13KeySchedule.deriveSecret(
+      secret: exporterMasterSecret,
+      label: label,
+      transcriptHash: emptyHash.span,
+      cipherSuite: cipherSuite
+    )
+    let contextHash = try Self.hash(
+      context,
+      cipherSuite: cipherSuite
+    )
+    return try TLS13KeySchedule.expandLabel(
+      secret: derived,
+      label: "exporter",
+      context: contextHash.span,
+      outputByteCount: outputByteCount,
+      cipherSuite: cipherSuite
+    )
+  }
+
   public mutating func updateClientTrafficSecret() throws(TLS13KeyScheduleError) {
     let next = try TLS13KeySchedule.updateTrafficSecret(
       secret: clientTrafficSecret,
@@ -116,5 +145,44 @@ public struct TLS13ApplicationSecrets: ~Copyable, Sendable {
       cipherSuite: cipherSuite
     )
     serverTrafficSecret = consume next
+  }
+
+  package borrowing func makeClientFinishedVerifyData(
+    transcriptHash: Span<UInt8>
+  ) throws(TLS13KeyScheduleError) -> OwnedBytes {
+    try TLS13KeySchedule.finishedVerifyData(
+      trafficSecret: clientTrafficSecret,
+      transcriptHash: transcriptHash,
+      cipherSuite: cipherSuite
+    )
+  }
+
+  private static func hash(
+    _ input: Span<UInt8>,
+    cipherSuite: TLSCipherSuite
+  ) throws(TLS13KeyScheduleError) -> OwnedBytes {
+    let outputByteCount = TLS13KeySchedule.hashByteCount(for: cipherSuite)
+    var output = ContiguousArray<UInt8>(
+      repeating: 0,
+      count: outputByteCount
+    )
+    do {
+      try output.withUnsafeMutableBufferPointer {
+        buffer throws(CryptoInputError) in
+        var destination = MutableSpan(
+          _unsafeStart: buffer.baseAddress!,
+          count: outputByteCount
+        )
+        switch cipherSuite {
+        case .aes256GCM_SHA384:
+          try SHA384.hash(input, into: &destination)
+        case .aes128GCM_SHA256, .chacha20Poly1305_SHA256:
+          try SHA256.hash(input, into: &destination)
+        }
+      }
+    } catch {
+      throw .cryptographicFailure
+    }
+    return OwnedBytes(consuming: output)
   }
 }

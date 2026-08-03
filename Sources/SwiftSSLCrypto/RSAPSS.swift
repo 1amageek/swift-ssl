@@ -29,12 +29,161 @@ public struct RSAPublicKey: Sendable, Hashable {
     self.exponent = exponent
   }
 
+  /// Parses a canonical PKCS #1 `RSAPublicKey` document.
+  public init(pkcs1DER: Span<UInt8>) throws(CryptoInputError) {
+    var offset = 0
+    guard Self.readByte(pkcs1DER, at: &offset) == 0x30 else {
+      throw .nonCanonicalEncoding
+    }
+    let sequenceByteCount = try Self.readDERLength(pkcs1DER, at: &offset)
+    guard sequenceByteCount == pkcs1DER.count - offset else {
+      throw .nonCanonicalEncoding
+    }
+    let modulus = try Self.readPositiveInteger(pkcs1DER, at: &offset)
+    let encodedExponent = try Self.readPositiveInteger(pkcs1DER, at: &offset)
+    guard offset == pkcs1DER.count,
+      encodedExponent.count <= MemoryLayout<UInt64>.size
+    else {
+      throw .nonCanonicalEncoding
+    }
+    var exponent: UInt64 = 0
+    var index = 0
+    while index < encodedExponent.count {
+      exponent = (exponent << 8) | UInt64(encodedExponent[index])
+      index += 1
+    }
+    try self.init(modulus: modulus, exponent: exponent)
+  }
+
   public var modulusByteCount: Int { modulus.count }
 
   public borrowing func withModulusBytes<Result, Failure: Error>(
     _ body: (Span<UInt8>) throws(Failure) -> Result
   ) throws(Failure) -> Result {
     try body(modulus.span)
+  }
+
+  /// Encodes this key as a canonical PKCS #1 `RSAPublicKey` document.
+  public func pkcs1DER() -> ContiguousArray<UInt8> {
+    var body = ContiguousArray<UInt8>()
+    Self.appendPositiveInteger(modulus.span, to: &body)
+    var exponentBytes = ContiguousArray<UInt8>()
+    var value = exponent
+    repeat {
+      exponentBytes.insert(UInt8(truncatingIfNeeded: value), at: 0)
+      value >>= 8
+    } while value != 0
+    Self.appendPositiveInteger(exponentBytes.span, to: &body)
+
+    var result = ContiguousArray<UInt8>()
+    result.reserveCapacity(body.count + 4)
+    result.append(0x30)
+    Self.appendDERLength(body.count, to: &result)
+    result.append(contentsOf: body)
+    return result
+  }
+
+  private static func readByte(
+    _ bytes: Span<UInt8>,
+    at offset: inout Int
+  ) -> UInt8? {
+    guard offset < bytes.count else { return nil }
+    let value = bytes[offset]
+    offset += 1
+    return value
+  }
+
+  private static func readDERLength(
+    _ bytes: Span<UInt8>,
+    at offset: inout Int
+  ) throws(CryptoInputError) -> Int {
+    guard let first = readByte(bytes, at: &offset) else {
+      throw .nonCanonicalEncoding
+    }
+    if first < 0x80 { return Int(first) }
+    let byteCount = Int(first & 0x7F)
+    guard byteCount > 0,
+      byteCount <= MemoryLayout<Int>.size,
+      offset <= bytes.count - byteCount,
+      bytes[offset] != 0
+    else {
+      throw .nonCanonicalEncoding
+    }
+    var length = 0
+    var index = 0
+    while index < byteCount {
+      let multiplied = length.multipliedReportingOverflow(by: 256)
+      guard !multiplied.overflow else { throw .nonCanonicalEncoding }
+      let added = multiplied.partialValue.addingReportingOverflow(
+        Int(bytes[offset + index])
+      )
+      guard !added.overflow else { throw .nonCanonicalEncoding }
+      length = added.partialValue
+      index += 1
+    }
+    guard length >= 128 else { throw .nonCanonicalEncoding }
+    offset += byteCount
+    return length
+  }
+
+  private static func readPositiveInteger(
+    _ bytes: Span<UInt8>,
+    at offset: inout Int
+  ) throws(CryptoInputError) -> Span<UInt8> {
+    guard readByte(bytes, at: &offset) == 0x02 else {
+      throw .nonCanonicalEncoding
+    }
+    let byteCount = try readDERLength(bytes, at: &offset)
+    guard byteCount > 0, offset <= bytes.count - byteCount else {
+      throw .nonCanonicalEncoding
+    }
+    let integer = bytes.extracting(offset..<(offset + byteCount))
+    offset += byteCount
+    guard integer[0] & 0x80 == 0 else { throw .nonCanonicalEncoding }
+    if integer[0] == 0 {
+      guard byteCount > 1, integer[1] & 0x80 != 0 else {
+        throw .nonCanonicalEncoding
+      }
+      return integer.extracting(1..<integer.count)
+    }
+    return integer
+  }
+
+  private static func appendPositiveInteger(
+    _ bytes: Span<UInt8>,
+    to output: inout ContiguousArray<UInt8>
+  ) {
+    var first = 0
+    while first + 1 < bytes.count, bytes[first] == 0 {
+      first += 1
+    }
+    let needsPadding = bytes[first] & 0x80 != 0
+    output.append(0x02)
+    appendDERLength(bytes.count - first + (needsPadding ? 1 : 0), to: &output)
+    if needsPadding { output.append(0) }
+    var index = first
+    while index < bytes.count {
+      output.append(bytes[index])
+      index += 1
+    }
+  }
+
+  private static func appendDERLength(
+    _ length: Int,
+    to output: inout ContiguousArray<UInt8>
+  ) {
+    if length < 128 {
+      output.append(UInt8(length))
+      return
+    }
+    var encoded = ContiguousArray<UInt8>()
+    var value = length
+    while value != 0 {
+      encoded.insert(UInt8(truncatingIfNeeded: value), at: 0)
+      value >>= 8
+    }
+    output.append(0x80 | UInt8(encoded.count))
+    output.append(contentsOf: encoded)
   }
 }
 
@@ -52,12 +201,148 @@ public enum RSAPSSHash: Sendable, Hashable {
   }
 }
 
-/// EMSA-PSS verification for RSA public keys.
+/// RSA-PSS signing and verification with SHA-2 and MGF1.
 ///
-/// This is deliberately a verification-only surface. The public exponent is
-/// not secret, while the encoded message and all intermediate buffers remain
-/// bounded by the caller-owned modulus size.
+/// Verification uses public-input arithmetic. Signing keeps the private
+/// exponent in wipe-on-destroy storage, uses fixed-loop mask-selected secret
+/// exponentiation, and performs a public-key self-check before releasing a
+/// signature. The randomized PSS encoding also prevents repeated messages from
+/// presenting a repeated private-operation input.
 public enum RSAPSS {
+  public static func sign(
+    messageHash: Span<UInt8>,
+    using privateKey: borrowing RSAPrivateKey,
+    hash: RSAPSSHash = .sha256
+  ) throws(RSASigningError) -> ContiguousArray<UInt8> {
+    try sign(
+      messageHash: messageHash,
+      using: privateKey,
+      hash: hash,
+      entropy: SystemEntropySource()
+    )
+  }
+
+  public static func sign(
+    messageHash: Span<UInt8>,
+    using privateKey: borrowing RSAPrivateKey,
+    hash: RSAPSSHash = .sha256,
+    entropy: borrowing any EntropySource
+  ) throws(RSASigningError) -> ContiguousArray<UInt8> {
+    guard messageHash.count == hash.digestByteCount else {
+      throw .crypto(
+        .invalidLength(
+          expected: hash.digestByteCount,
+          actual: messageHash.count
+        )
+      )
+    }
+    let publicKey = privateKey.publicKey
+    let modulus = publicKey.withModulusBytes { RSAUInt(bytes: $0) }
+    let encodedMessageBitCount = modulus.bitWidth - 1
+    let encodedMessageByteCount = (encodedMessageBitCount + 7) / 8
+    let saltByteCount = hash.digestByteCount
+    let dataBlockByteCount = encodedMessageByteCount - hash.digestByteCount - 1
+    let paddingByteCount = dataBlockByteCount - saltByteCount - 1
+    guard paddingByteCount >= 0 else {
+      throw .crypto(
+        .invalidLength(
+          expected: hash.digestByteCount * 2 + 2,
+          actual: encodedMessageByteCount
+        )
+      )
+    }
+
+    var salt = ContiguousArray<UInt8>(repeating: 0, count: saltByteCount)
+    do {
+      var destination = salt.mutableSpan
+      try entropy.fill(&destination)
+    } catch let error {
+      throw .entropy(error)
+    }
+    var hashInput = ContiguousArray<UInt8>(
+      repeating: 0,
+      count: 8 + messageHash.count + salt.count
+    )
+    var index = 0
+    while index < messageHash.count {
+      hashInput[8 + index] = messageHash[index]
+      index += 1
+    }
+    index = 0
+    while index < salt.count {
+      hashInput[8 + messageHash.count + index] = salt[index]
+      index += 1
+    }
+    let encodedHash: ContiguousArray<UInt8>
+    do {
+      encodedHash = try hashDigest(hashInput.span, hash: hash)
+    } catch let error {
+      throw .crypto(error)
+    }
+    let dataBlockMask: ContiguousArray<UInt8>
+    do {
+      dataBlockMask = try mgf1(
+        seed: encodedHash.span,
+        count: dataBlockByteCount,
+        hash: hash
+      )
+    } catch let error {
+      throw .crypto(error)
+    }
+
+    var encodedMessage = ContiguousArray<UInt8>(
+      repeating: 0,
+      count: encodedMessageByteCount
+    )
+    index = 0
+    while index < dataBlockByteCount {
+      let dataBlockByte: UInt8
+      if index < paddingByteCount {
+        dataBlockByte = 0
+      } else if index == paddingByteCount {
+        dataBlockByte = 1
+      } else {
+        dataBlockByte = salt[index - paddingByteCount - 1]
+      }
+      encodedMessage[index] = dataBlockByte ^ dataBlockMask[index]
+      index += 1
+    }
+    let unusedBitCount = 8 * encodedMessageByteCount - encodedMessageBitCount
+    if unusedBitCount > 0 {
+      encodedMessage[0] &= UInt8(0xFF >> UInt8(unusedBitCount))
+    }
+    index = 0
+    while index < encodedHash.count {
+      encodedMessage[dataBlockByteCount + index] = encodedHash[index]
+      index += 1
+    }
+    encodedMessage[encodedMessage.count - 1] = 0xBC
+
+    let signature = privateKey.withPrivateExponent { exponent in
+      let encoded = RSAUInt(bytes: encodedMessage.span)
+      let signed = RSAUInt.modularPowerSecret(
+        encoded,
+        exponent: exponent,
+        modulus: modulus
+      )
+      return signed.encoded(byteCount: publicKey.modulusByteCount)
+    }
+    let verified: Bool
+    do {
+      verified = try verify(
+        signature: signature.span,
+        messageHash: messageHash,
+        publicKey: publicKey,
+        hash: hash,
+        saltLength: saltByteCount
+      )
+    } catch let error {
+      throw .crypto(error)
+    }
+    guard verified else { throw .selfCheckFailed }
+    return signature
+  }
+
   public static func verify(
     signature: Span<UInt8>,
     messageHash: Span<UInt8>,
@@ -302,6 +587,170 @@ struct RSAUInt: Equatable, Comparable {
     return result.montgomeryMultiply(one, modulus: modulus)
   }
 
+  fileprivate static func modularPowerSecret(
+    _ base: RSAUInt,
+    exponent: Span<UInt8>,
+    modulus: RSAUInt
+  ) -> RSASecretWords {
+    precondition(!modulus.isZero && modulus.words[0] & 1 == 1)
+    let wordCount = modulus.words.count
+    let radixBitCount = wordCount * UInt32.bitWidth
+    let one = RSAUInt.one(count: wordCount)
+    let oneMontgomery = one.shiftedIntoMontgomeryDomain(
+      radixBitCount: radixBitCount,
+      modulus: modulus
+    )
+    var result = RSASecretWords(copying: oneMontgomery.words, count: wordCount)
+    var value = base.modulo(modulus).shiftedIntoMontgomeryDomain(
+      radixBitCount: radixBitCount,
+      modulus: modulus
+    )
+
+    var byteIndex = exponent.count
+    while byteIndex > 0 {
+      byteIndex -= 1
+      var bitIndex = 0
+      while bitIndex < 8 {
+        let bit = UInt32((exponent[byteIndex] >> UInt8(bitIndex)) & 1)
+        let mask = UInt32(0) &- bit
+        let candidate = montgomeryMultiplySecret(
+          result,
+          value,
+          modulus: modulus
+        )
+        result.select(candidate, mask: mask)
+        value = value.montgomeryMultiply(value, modulus: modulus)
+        bitIndex += 1
+      }
+    }
+    return montgomeryMultiplySecret(result, one, modulus: modulus)
+  }
+
+  static func privateExponentMatches(
+    _ exponent: Span<UInt8>,
+    publicExponent: UInt64,
+    modulus: RSAUInt
+  ) -> Bool {
+    let wordCount = modulus.words.count
+    var baseWords = ContiguousArray<UInt32>(repeating: 0, count: wordCount)
+    baseWords[0] = 2
+    let base = RSAUInt(words: baseWords)
+    let privateResult = modularPowerSecret(
+      base,
+      exponent: exponent,
+      modulus: modulus
+    )
+    let privateResultBytes = privateResult.encoded(
+      byteCount: wordCount * MemoryLayout<UInt32>.size
+    )
+    let recovered = modularPower(
+      RSAUInt(bytes: privateResultBytes.span),
+      exponent: publicExponent,
+      modulus: modulus
+    )
+    return !(recovered < base) && !(base < recovered)
+  }
+
+  static func multiply(_ lhs: RSAUInt, _ rhs: RSAUInt) -> RSAUInt {
+    var result = ContiguousArray<UInt32>(
+      repeating: 0,
+      count: lhs.words.count + rhs.words.count
+    )
+    var outer = 0
+    while outer < lhs.words.count {
+      var carry: UInt64 = 0
+      var inner = 0
+      while inner < rhs.words.count {
+        let position = outer + inner
+        let value = UInt64(lhs.words[outer]) * UInt64(rhs.words[inner])
+          + UInt64(result[position]) + carry
+        result[position] = UInt32(truncatingIfNeeded: value)
+        carry = value >> 32
+        inner += 1
+      }
+      var position = outer + rhs.words.count
+      while carry != 0 {
+        precondition(position < result.count)
+        let value = UInt64(result[position]) + carry
+        result[position] = UInt32(truncatingIfNeeded: value)
+        carry = value >> 32
+        position += 1
+      }
+      outer += 1
+    }
+    return RSAUInt(words: result)
+  }
+
+  private static func montgomeryMultiplySecret(
+    _ secret: borrowing RSASecretWords,
+    _ publicValue: RSAUInt,
+    modulus: RSAUInt
+  ) -> RSASecretWords {
+    let count = modulus.words.count
+    precondition(secret.count == count && publicValue.words.count == count)
+    let reductionFactor = 0 &- inverseModuloWord(modulus.words[0])
+    var accumulator = RSASecretWords(count: count * 2 + 2)
+    var outer = 0
+    while outer < count {
+      let multiplier = publicValue.words[outer]
+      var carry: UInt64 = 0
+      var inner = 0
+      while inner < count {
+        let position = outer + inner
+        let value =
+          UInt64(secret.word(at: inner)) * UInt64(multiplier)
+          + UInt64(accumulator.word(at: position)) + carry
+        accumulator.setWord(UInt32(truncatingIfNeeded: value), at: position)
+        carry = value >> 32
+        inner += 1
+      }
+      accumulator.addCarry(carry, at: outer + count)
+
+      let reductionWord = accumulator.word(at: outer) &* reductionFactor
+      carry = 0
+      inner = 0
+      while inner < count {
+        let position = outer + inner
+        let value =
+          UInt64(reductionWord) * UInt64(modulus.words[inner])
+          + UInt64(accumulator.word(at: position)) + carry
+        accumulator.setWord(UInt32(truncatingIfNeeded: value), at: position)
+        carry = value >> 32
+        inner += 1
+      }
+      accumulator.addCarry(carry, at: outer + count)
+      outer += 1
+    }
+
+    var result = RSASecretWords(count: count)
+    var borrow: UInt64 = 0
+    var index = 0
+    while index < count {
+      let source = UInt64(accumulator.word(at: count + index))
+      let widened = (UInt64(1) << 32) + source
+        - UInt64(modulus.words[index]) - borrow
+      result.setWord(UInt32(truncatingIfNeeded: widened), at: index)
+      borrow = 1 &- (widened >> 32)
+      index += 1
+    }
+    let high = accumulator.word(at: count * 2)
+      | accumulator.word(at: count * 2 + 1)
+    let highNonzero = (high | (0 &- high)) >> 31
+    let useSubtraction = highNonzero | UInt32(1 &- borrow)
+    let mask = UInt32(0) &- useSubtraction
+    index = 0
+    while index < count {
+      let unreduced = accumulator.word(at: count + index)
+      let reduced = result.word(at: index)
+      result.setWord(
+        (unreduced & ~mask) | (reduced & mask),
+        at: index
+      )
+      index += 1
+    }
+    return result
+  }
+
   func modulo(_ modulus: RSAUInt) -> RSAUInt {
     var value = self
     while value >= modulus { value = value - modulus }
@@ -467,5 +916,94 @@ struct RSAUInt: Equatable, Comparable {
       index -= 1
     }
     return false
+  }
+}
+
+fileprivate struct RSASecretWords: ~Copyable {
+  private let pointer: UnsafeMutablePointer<UInt32>
+  let count: Int
+
+  // Unsafe boundary invariants:
+  // - This value uniquely owns count initialized UInt32 words.
+  // - count is bounded by the validated 4096-bit RSA modulus plus scratch space.
+  // - Word access is range checked and no pointer escapes this type.
+  // - The allocation is bound to UInt32 once, erased exactly once, then released.
+  // - The owner remains within one synchronous signing operation and crosses no
+  //   Sendable or exclusivity boundary.
+  init(count: Int) {
+    precondition(count > 0 && count <= 258)
+    pointer = UnsafeMutablePointer<UInt32>.allocate(capacity: count)
+    pointer.initialize(repeating: 0, count: count)
+    self.count = count
+  }
+
+  init(
+    copying words: ContiguousArray<UInt32>,
+    count: Int
+  ) {
+    self.init(count: count)
+    var index = 0
+    while index < count {
+      pointer[index] = index < words.count ? words[index] : 0
+      index += 1
+    }
+  }
+
+  borrowing func word(at index: Int) -> UInt32 {
+    precondition(index >= 0 && index < count)
+    return pointer[index]
+  }
+
+  mutating func setWord(_ word: UInt32, at index: Int) {
+    precondition(index >= 0 && index < count)
+    pointer[index] = word
+  }
+
+  mutating func addCarry(_ initialCarry: UInt64, at initialIndex: Int) {
+    var carry = initialCarry
+    var index = initialIndex
+    while index < count {
+      let value = UInt64(pointer[index]) + carry
+      pointer[index] = UInt32(truncatingIfNeeded: value)
+      carry = value >> 32
+      index += 1
+    }
+  }
+
+  mutating func select(
+    _ candidate: borrowing RSASecretWords,
+    mask: UInt32
+  ) {
+    precondition(candidate.count == count)
+    var index = 0
+    while index < count {
+      let current = pointer[index]
+      pointer[index] = (current & ~mask) | (candidate.pointer[index] & mask)
+      index += 1
+    }
+  }
+
+  borrowing func encoded(byteCount: Int) -> ContiguousArray<UInt8> {
+    var result = ContiguousArray<UInt8>(repeating: 0, count: byteCount)
+    var index = 0
+    while index < byteCount {
+      let wordIndex = index / 4
+      if wordIndex < count {
+        result[byteCount - 1 - index] = UInt8(
+          truncatingIfNeeded: pointer[wordIndex] >> UInt32((index & 3) * 8)
+        )
+      }
+      index += 1
+    }
+    return result
+  }
+
+  deinit {
+    SecureWipe.erase(
+      UnsafeMutableRawPointer(pointer),
+      byteCount: count * MemoryLayout<UInt32>.stride
+    )
+    pointer.deinitialize(count: count)
+    pointer.deallocate()
   }
 }

@@ -28,7 +28,11 @@ final class PrivateKeyInfoTests: XCTestCase {
             0x04, 0x20
         ]
         der.append(contentsOf: repeatElement(0x5A, count: 32))
-        XCTAssertThrowsError(try PrivateKeyInfo(der: der.span)) { error in
+        do {
+            let info = try PrivateKeyInfo(der: der.span)
+            _ = consume info
+            XCTFail("version-one PrivateKeyInfo without a public key was accepted")
+        } catch {
             XCTAssertEqual(error as? PrivateKeyInfoError, .invalidVersion(1))
         }
     }

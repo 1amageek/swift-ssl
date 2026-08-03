@@ -7,10 +7,15 @@ public enum ECHClientHelloCodec {
 
   internal static func makeInner(
     from template: Span<UInt8>,
-    maximumNameLength: UInt8
+    maximumNameLength: UInt8,
+    encoding: TLS13HandshakeEncoding = .tls13
   ) throws(ECHError) -> ECHPreparedInner {
     let templateBody = try body(of: template)
-    let layout = try parseBody(templateBody, allowTrailingPadding: false)
+    let layout = try parseBody(
+      templateBody,
+      allowTrailingPadding: false,
+      encoding: encoding
+    )
     let templateExtensions = templateBody.extracting(layout.extensionsRange)
     let entries = try parseExtensions(templateExtensions)
     guard !entries.contains(where: { $0.type == encryptedClientHelloExtensionType }),
@@ -42,7 +47,11 @@ public enum ECHClientHelloCodec {
     innerBody.append(contentsOf: innerExtensions)
     let innerClientHello = try finishHandshake(body: innerBody.span)
 
-    let innerLayout = try parseBody(innerBody.span, allowTrailingPadding: false)
+    let innerLayout = try parseBody(
+      innerBody.span,
+      allowTrailingPadding: false,
+      encoding: encoding
+    )
     var encoded = ContiguousArray<UInt8>()
     encoded.reserveCapacity(innerBody.count + Int(maximumNameLength) + 41)
     append(innerBody.span.extracting(0..<innerLayout.sessionIDLengthOffset), to: &encoded)
@@ -66,12 +75,87 @@ public enum ECHClientHelloCodec {
     )
   }
 
+  internal static func makeRetriedInner(
+    from clientHello: Span<UInt8>,
+    maximumNameLength: UInt8,
+    encoding: TLS13HandshakeEncoding = .tls13
+  ) throws(ECHError) -> ECHPreparedInner {
+    let body = try body(of: clientHello)
+    let layout = try parseBody(
+      body,
+      allowTrailingPadding: false,
+      encoding: encoding
+    )
+    let extensions = body.extracting(layout.extensionsRange)
+    let entries = try parseExtensions(extensions)
+    guard entries.filter({
+      $0.type == encryptedClientHelloExtensionType
+    }).count == 1,
+      !entries.contains(where: { $0.type == outerExtensionsType }),
+      let ech = entries.first(where: {
+        $0.type == encryptedClientHelloExtensionType
+      })
+    else {
+      throw .invalidClientHello
+    }
+    let echValue = extensions.extracting(ech.valueRange)
+    guard echValue.count == 1, echValue[0] == 1 else {
+      throw .invalidClientHello
+    }
+
+    var encoded = ContiguousArray<UInt8>()
+    encoded.reserveCapacity(body.count + Int(maximumNameLength) + 41)
+    append(body.extracting(0..<layout.sessionIDLengthOffset), to: &encoded)
+    encoded.append(0)
+    append(
+      body.extracting(layout.sessionIDRange.upperBound..<body.count),
+      to: &encoded
+    )
+    let nameLength = try serverNameLength(in: extensions)
+    if let nameLength, nameLength < Int(maximumNameLength) {
+      appendZeros(Int(maximumNameLength) - nameLength, to: &encoded)
+    } else if nameLength == nil {
+      appendZeros(Int(maximumNameLength) + 9, to: &encoded)
+    }
+    appendZeros((32 - (encoded.count & 31)) & 31, to: &encoded)
+    return ECHPreparedInner(
+      clientHello: OwnedBytes(copying: clientHello),
+      encoded: OwnedBytes(consuming: encoded)
+    )
+  }
+
+  internal static func isEncodedInner(
+    _ message: Span<UInt8>,
+    encoding: TLS13HandshakeEncoding = .tls13
+  ) throws(ECHError) -> Bool {
+    let messageBody = try body(of: message)
+    let layout = try parseBody(
+      messageBody,
+      allowTrailingPadding: false,
+      encoding: encoding
+    )
+    let extensionBytes = messageBody.extracting(layout.extensionsRange)
+    let entries = try parseExtensions(extensionBytes)
+    let encryptedClientHelloEntries = entries.filter {
+      $0.type == encryptedClientHelloExtensionType
+    }
+    guard encryptedClientHelloEntries.count <= 1 else {
+      throw .invalidClientHello
+    }
+    guard let encryptedClientHello = encryptedClientHelloEntries.first else {
+      return false
+    }
+    let value = extensionBytes.extracting(encryptedClientHello.valueRange)
+    return value.count == 1 && value[0] == 1
+  }
+
   internal static func makeOuterAAD(
     from template: Span<UInt8>,
     cipherSuite: ECHCipherSuite,
     configID: UInt8,
     encapsulation: Span<UInt8>,
-    payloadByteCount: Int
+    payloadByteCount: Int,
+    encoding: TLS13HandshakeEncoding = .tls13
   ) throws(ECHError) -> ECHOuterAAD {
     guard payloadByteCount > 0, payloadByteCount <= UInt16.max,
       encapsulation.count <= UInt16.max
@@ -79,7 +163,11 @@ public enum ECHClientHelloCodec {
       throw .invalidClientHello
     }
     let templateBody = try body(of: template)
-    let layout = try parseBody(templateBody, allowTrailingPadding: false)
+    let layout = try parseBody(
+      templateBody,
+      allowTrailingPadding: false,
+      encoding: encoding
+    )
     let templateExtensions = templateBody.extracting(layout.extensionsRange)
     let entries = try parseExtensions(templateExtensions)
     guard !entries.contains(where: { $0.type == encryptedClientHelloExtensionType }),
@@ -123,10 +211,15 @@ public enum ECHClientHelloCodec {
   }
 
   internal static func parseOuter(
-    _ message: Span<UInt8>
+    _ message: Span<UInt8>,
+    encoding: TLS13HandshakeEncoding = .tls13
   ) throws(ECHError) -> ECHParsedOuter {
     let messageBody = try body(of: message)
-    let layout = try parseBody(messageBody, allowTrailingPadding: false)
+    let layout = try parseBody(
+      messageBody,
+      allowTrailingPadding: false,
+      encoding: encoding
+    )
     let extensionBytes = messageBody.extracting(layout.extensionsRange)
     let entries = try parseExtensions(extensionBytes)
     guard let ech = entries.first(where: { $0.type == encryptedClientHelloExtensionType }) else {
@@ -187,10 +280,15 @@ public enum ECHClientHelloCodec {
   }
 
   internal static func containsOuterECH(
-    _ message: Span<UInt8>
+    _ message: Span<UInt8>,
+    encoding: TLS13HandshakeEncoding = .tls13
   ) throws(ECHError) -> Bool {
     let messageBody = try body(of: message)
-    let layout = try parseBody(messageBody, allowTrailingPadding: false)
+    let layout = try parseBody(
+      messageBody,
+      allowTrailingPadding: false,
+      encoding: encoding
+    )
     let extensionBytes = messageBody.extracting(layout.extensionsRange)
     return try parseExtensions(extensionBytes).contains {
       $0.type == encryptedClientHelloExtensionType
@@ -199,9 +297,14 @@ public enum ECHClientHelloCodec {
 
   internal static func reconstructInner(
     encoded: Span<UInt8>,
-    outer: ECHParsedOuter
+    outer: ECHParsedOuter,
+    encoding: TLS13HandshakeEncoding = .tls13
   ) throws(ECHError) -> OwnedBytes {
-    let layout = try parseBody(encoded, allowTrailingPadding: true)
+    let layout = try parseBody(
+      encoded,
+      allowTrailingPadding: true,
+      encoding: encoding
+    )
     guard layout.sessionIDRange.isEmpty else { throw .invalidClientHello }
     var paddingIndex = layout.bodyEnd
     while paddingIndex < encoded.count {
@@ -211,9 +314,10 @@ public enum ECHClientHelloCodec {
     let innerExtensions = encoded.extracting(layout.extensionsRange)
     let expandedExtensions = try expandOuterExtensions(
       inner: innerExtensions,
-      outerBody: outer.body.span
+      outerBody: outer.body.span,
+      encoding: encoding
     )
-    try validateInnerExtensions(expandedExtensions.span)
+    try validateInnerExtensions(expandedExtensions.span, encoding: encoding)
     guard expandedExtensions.count <= UInt16.max else { throw .invalidClientHello }
     guard outer.body.contains(outer.sessionIDRange) else { throw .invalidClientHello }
     let sessionID = outer.body.span.extracting(
@@ -283,13 +387,18 @@ public enum ECHClientHelloCodec {
 
   private static func expandOuterExtensions(
     inner: Span<UInt8>,
-    outerBody: Span<UInt8>
+    outerBody: Span<UInt8>,
+    encoding: TLS13HandshakeEncoding
   ) throws(ECHError) -> ContiguousArray<UInt8> {
     let innerEntries = try parseExtensions(inner)
     guard let marker = innerEntries.first(where: { $0.type == outerExtensionsType }) else {
       return copy(inner)
     }
-    let outerLayout = try parseBody(outerBody, allowTrailingPadding: false)
+    let outerLayout = try parseBody(
+      outerBody,
+      allowTrailingPadding: false,
+      encoding: encoding
+    )
     let outerExtensionBytes = outerBody.extracting(outerLayout.extensionsRange)
     let outerEntries = try parseExtensions(outerExtensionBytes)
     var listCursor = ByteCursor(inner.extracting(marker.valueRange))
@@ -345,7 +454,8 @@ public enum ECHClientHelloCodec {
   }
 
   private static func validateInnerExtensions(
-    _ extensions: Span<UInt8>
+    _ extensions: Span<UInt8>,
+    encoding: TLS13HandshakeEncoding
   ) throws(ECHError) {
     let entries = try parseExtensions(extensions)
     guard let ech = entries.first(where: { $0.type == encryptedClientHelloExtensionType }),
@@ -364,13 +474,14 @@ public enum ECHClientHelloCodec {
       guard byteCount >= 2, byteCount.isMultiple(of: 2), byteCount == cursor.remainingCount else {
         throw ECHError.invalidClientHello
       }
-      var sawTLS13 = false
+      var sawNegotiatedVersion = false
       while !cursor.isAtEnd {
         let version = try cursor.readUInt16BigEndian()
-        guard version > 0x0303 else { throw ECHError.invalidClientHello }
-        if version == 0x0304 { sawTLS13 = true }
+        if version == encoding.negotiatedVersion {
+          sawNegotiatedVersion = true
+        }
       }
-      guard sawTLS13 else { throw ECHError.invalidClientHello }
+      guard sawNegotiatedVersion else { throw ECHError.invalidClientHello }
     } catch let error as ECHError {
       throw error
     } catch {
@@ -415,11 +526,12 @@ public enum ECHClientHelloCodec {
 
   private static func parseBody(
     _ body: Span<UInt8>,
-    allowTrailingPadding: Bool
+    allowTrailingPadding: Bool,
+    encoding: TLS13HandshakeEncoding
   ) throws(ECHError) -> ECHClientHelloLayout {
     var cursor = ByteCursor(body)
     do {
-      guard try cursor.readUInt16BigEndian() == 0x0303 else {
+      guard try cursor.readUInt16BigEndian() == encoding.legacyVersion else {
         throw ECHError.invalidClientHello
       }
       _ = try cursor.readSpan(count: 32)
@@ -429,6 +541,10 @@ public enum ECHClientHelloCodec {
       let sessionIDStart = cursor.offset
       _ = try cursor.readSpan(count: sessionIDByteCount)
       let sessionIDRange = sessionIDStart..<cursor.offset
+      if encoding.includesLegacyCookie {
+        let cookieByteCount = Int(try cursor.readByte())
+        _ = try cursor.readSpan(count: cookieByteCount)
+      }
       let cipherSuiteByteCount = Int(try cursor.readUInt16BigEndian())
       guard cipherSuiteByteCount >= 2, cipherSuiteByteCount.isMultiple(of: 2) else {
         throw ECHError.invalidClientHello

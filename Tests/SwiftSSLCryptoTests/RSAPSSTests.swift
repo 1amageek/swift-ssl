@@ -4,6 +4,48 @@ import XCTest
 @testable import SwiftSSLCrypto
 
 final class RSAPSSTests: XCTestCase {
+  func testPrivateKeySigningRoundTripsWithDeterministicSalt() throws {
+    let privateKeyDER = bytes(
+      "308204a30201000282010100daff26f7df96632c4d130150fc81d99f6d1913e98dd62dbe34d772e926602c94e30c6839d6d60534b9e13c4ae0717aff5bea4978bc07f9372e1cf1fe59e44af195888d435b511564b3dbdebabf2b0ee7b8f9ef02c5379c7ca237ca32b32c6edc1469e8a2943e079225f36820d96655817f14c27d0eb36007f6f7ccfc2c58adec61d57cdb1481aca798529cd0bbae9dac029c43cf5c1e83236585670373aa9852f226adc2697b266137b965d9954072938d3bb6d6c009dc228737b9cd1988e4183582714973f2ba34a7159f24829000dbb6167c3edfd2899e73b7d20b6c3ef347e072fe2cfd458282ffc12ea537a7264f88b63480c3d5218d9ae9118ed2f4a36102030100010282010030a2f82996cb948cf3352456b32db78253bd7d11a2c18d792fcd25a52833b5d2ff35f333dd45bcf43fd0090eec17e7e42caab4d48e960ac0398a8e281a18bc9838c891ef02a9d8617c1c79b3e9df0b396578849f8de352eacf302ac4e5cc1976e145c037d34a8f6de2e5d31b708cecb28ce1b46c07c6c8ae1c285eab26c22f25e61fb39a663feae56fc905311ae0597dd985ceafa8e46cf811900b8b8a61547bc4fa799098dcf9fa34dc3e71262496becf4438a3e3444f5eca8ee5102fe3ec3c6839919f02b65b68a0c4140939cfd7d212f2a7a081cb93dc388c50d9f117240f2c78e7e197bb31f09ea8d2d831929a954fc1f2d909e2ffca4948fe7565a3521d02818100fad1f815d86973e26ada798eb87d705b2c52f03e54168d5c303285581f96d44ca54b17bc8fc3cf52288aead4cbf427abc5a6da828653a453485351060917d0f54604c080009b13efc6d337da25eb7e0740608b9545f03c2d59603b5028c44a202841077ff7b9bd8e9fad4cb54127778ddd42d563b361305656eb891835923ef302818100df84f07679e99799d862c92665bb73747d1574535b271394f7600daa4f429faf63355913dc65a97e221dcd265eb77185cb4ac79b9e5df72b919942adf7604f8c09392b2cbfc67d64cbc624fe85ebe8b8a8123bf4b24717265842fc55e27eb416f2c7eaa2f7c7275d8231048d1740850e477028e7f8299e7e0a4b985b3ed5715b0281807fd2b7c2b24a739364ef3859c2adb2afd433e4596f531af16b62a3d018312eba6cd68b1f3e8904c4130350cfe7ace2f6c840d345079de2b5cabb23249747bae6f4ab014b7a838db279ba34d188d7ad9f96705d5252952ea5d1d19808aeedf1f4d76ee49a93ade5eba476960c1d4b36c3668a63e36e8c4e2d021901020473267f0281800c26e317dddae84611f094f50474e37b02cde6cc1d598b83fecaf7133a49e9fa940f336f93fce6f11793bd3287d5bb5345d123f6feee26e0f4827b908fb169c1b842a6694167de2b5bb4c3101f61cafe370cfebb77f1cb7d6731051cfa3a5f3a1c2ae843c1eacee6138cecad6b0533f6a9c59c43b84732f9b13f98e1e5119f9f02818100afd7c707efd155d648049f9b2d8cf476f318fb7ec57f9e7c1c742974ca5344d867e7744c42e3b5a735602ee55bf28521e3522c30118ed53c94e633b4f0b3dcf5009029ebff61e23b9a03de817374f4491d8d82ecbcf6ef70fd056b9c5b94d9ebd455d1ea1d72df66d404379d63e541fe0765b33c8e32415133ab1079ecce4399"
+    )
+    let privateKey = try RSAPrivateKey(pkcs1DER: privateKeyDER.span)
+    let publicKeyDER = privateKey.publicKey.pkcs1DER()
+    let parsedPublicKey = try RSAPublicKey(pkcs1DER: publicKeyDER.span)
+    XCTAssertEqual(parsedPublicKey, privateKey.publicKey)
+
+    let message: ContiguousArray<UInt8> = [0x52, 0x53, 0x41, 0x2D, 0x50, 0x53, 0x53]
+    var digest = ContiguousArray<UInt8>(repeating: 0, count: SHA256.digestByteCount)
+    var digestDestination = digest.mutableSpan
+    try SHA256.hash(message.span, into: &digestDestination)
+    let signature = try RSAPSS.sign(
+      messageHash: digest.span,
+      using: privateKey,
+      hash: .sha256,
+      entropy: RepeatingEntropy(byte: 0xA5)
+    )
+
+    XCTAssertEqual(signature.count, 256)
+    XCTAssertTrue(
+      try RSAPSS.verify(
+        signature: signature.span,
+        messageHash: digest.span,
+        publicKey: privateKey.publicKey,
+        hash: .sha256,
+        saltLength: SHA256.digestByteCount
+      )
+    )
+
+    var mismatchedPrime = privateKeyDER
+    mismatchedPrime[550] ^= 0x02
+    do {
+      let invalidKey = try RSAPrivateKey(pkcs1DER: mismatchedPrime.span)
+      _ = consume invalidKey
+      XCTFail("an RSA key whose modulus does not equal p times q was accepted")
+    } catch {
+      XCTAssertEqual(error, .invalidKeyRelation)
+    }
+  }
+
   func testSHA256PSSVerificationAndMutation() throws {
     let modulus = bytes(
       "B5E9172F65A2FB7D5D287F277A5CC182581497CF9FFC779839113DAD70B8EA9E35EDB39C95C23ACC949B953132C0CDA4723C3E13E3FFBA97345FA8BA4947460B1E833B4EC5793402CC19AFB3E9B3C406F9F423EE47C504C4E790314BE876EF4B068EF85C021349459A0E1B05B9E860864797AC588AB6F70EC55452915D0C3DDE99A0B4AA566F759A0BDA20080F96254512B4BDBFF4E0AAF68263B9BD513D16EBF797D71BB8AA02611F544DB3C80F1EC5B60BD185D36ADBBDE988EBB9F6EE332E7501F66A1413DD348D4F7F78D9F93172A029BAC6F4072EB81AF4CC9692D6215304DD8C68F10F100925AD50987FC5D7FA1084532E90CED8F02A1BED6D92DE8A65"
@@ -290,6 +332,18 @@ final class RSAPSSTests: XCTestCase {
       XCTAssertEqual(error, expected)
     } catch {
       XCTFail("unexpected error: \(error)")
+    }
+  }
+
+  private struct RepeatingEntropy: EntropySource {
+    let byte: UInt8
+
+    func fill(_ destination: inout MutableSpan<UInt8>) throws(EntropyError) {
+      var index = 0
+      while index < destination.count {
+        destination[index] = byte
+        index += 1
+      }
     }
   }
 

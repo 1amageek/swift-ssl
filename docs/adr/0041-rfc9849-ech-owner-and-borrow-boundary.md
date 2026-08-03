@@ -52,9 +52,11 @@ configuration; it never falls back to plaintext success.
 The TLS core authenticates the origin name and uses the inner transcript after
 acceptance. Authenticated rejection uses the outer transcript, authenticates
 the public name, returns retry configurations, and prevents origin application
-data on that connection. HelloRetryRequest continuation and second-ClientHello
-confirmation are not yet callable and remain completion work rather than a
-silent fallback.
+data on that connection. HelloRetryRequest retains the single-owner HPKE
+context across the retry, seals and opens the second ClientHello with an empty
+encapsulation, recomputes the binder over the second inner transcript, and
+verifies the retry acceptance confirmation. A second HelloRetryRequest,
+context mismatch, or confirmation mismatch fails explicitly.
 
 ## Verification
 
@@ -62,6 +64,9 @@ silent fallback.
   selection, padding, accept/reject, invalid encapsulation, and error identity.
 - Stream/Core/QUIC tests cover accepted ECH, authenticated rejection, and PSK
   resumption using the inner binder transcript.
+- Core tests cover accepted and rejected HelloRetryRequest continuation,
+  second-ClientHello binder recomputation, context reuse, acceptance
+  confirmation, and second-HelloRetryRequest rejection.
 - The production target-validation route executes on Native, WASI, and
   Embedded WASI with the pinned Swift 6.4 toolchain and matching SDKs.
 - Focused AddressSanitizer execution covers AES-GCM, HPKE, ECH config, and ECH
@@ -71,6 +76,5 @@ silent fallback.
   handling in both directions.
 
 Formal allocation/copy measurement, the `1.10x` performance gate,
-HelloRetryRequest continuation, rotation-snapshot concurrency tests, fuzzing,
-a second independent peer, and security review remain required before the ECH
-responsibility is complete.
+rotation-snapshot concurrency tests, fuzzing, a second independent peer, and
+security review remain required before the ECH responsibility is complete.

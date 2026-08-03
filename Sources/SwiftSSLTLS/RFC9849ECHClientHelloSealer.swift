@@ -50,12 +50,27 @@ public struct RFC9849ECHClientHelloSealer: ECHClientHelloSealing, ~Copyable, Sen
 
   public mutating func seal(
     innerClientHello: Span<UInt8>,
-    outerClientHello: Span<UInt8>
+    outerClientHello: Span<UInt8>,
+    encoding: TLS13HandshakeEncoding = .tls13
   ) throws(ECHError) -> ECHClientHelloOffer {
-    let inner = try ECHClientHelloCodec.makeInner(
-      from: innerClientHello,
-      maximumNameLength: config.maximumNameLength
+    let inner: ECHPreparedInner
+    let inputIsEncodedInner = try ECHClientHelloCodec.isEncodedInner(
+      innerClientHello,
+      encoding: encoding
     )
+    if isFirstClientHello || !inputIsEncodedInner {
+      inner = try ECHClientHelloCodec.makeInner(
+        from: innerClientHello,
+        maximumNameLength: config.maximumNameLength,
+        encoding: encoding
+      )
+    } else {
+      inner = try ECHClientHelloCodec.makeRetriedInner(
+        from: innerClientHello,
+        maximumNameLength: config.maximumNameLength,
+        encoding: encoding
+      )
+    }
     let payloadByteCount = inner.encoded.count + HPKEAEAD.tagByteCount
     let aad: ECHOuterAAD
     if isFirstClientHello {
@@ -64,7 +79,8 @@ public struct RFC9849ECHClientHelloSealer: ECHClientHelloSealing, ~Copyable, Sen
         cipherSuite: cipherSuite,
         configID: config.configID,
         encapsulation: encapsulation.span,
-        payloadByteCount: payloadByteCount
+        payloadByteCount: payloadByteCount,
+        encoding: encoding
       )
     } else {
       aad = try ECHClientHelloCodec.makeOuterAAD(
@@ -72,7 +88,8 @@ public struct RFC9849ECHClientHelloSealer: ECHClientHelloSealing, ~Copyable, Sen
         cipherSuite: cipherSuite,
         configID: config.configID,
         encapsulation: Span<UInt8>(),
-        payloadByteCount: payloadByteCount
+        payloadByteCount: payloadByteCount,
+        encoding: encoding
       )
     }
     let encodedInner = inner.encoded

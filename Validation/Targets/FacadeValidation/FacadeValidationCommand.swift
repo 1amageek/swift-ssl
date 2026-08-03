@@ -1,5 +1,4 @@
 import SwiftSSL
-import SwiftSSLCore
 
 @main
 enum FacadeValidationCommand {
@@ -15,6 +14,8 @@ enum FacadeValidationCommand {
     case p256ECDSA
     case mlKEM
     case mlDSA
+    case tls13Factory
+    case tls13ServerFactory
     case errorContract
   }
 
@@ -31,8 +32,78 @@ enum FacadeValidationCommand {
     try validateMLDSA65()
     try validateMLDSA44()
     try validateMLDSA87()
+    try validateTLS13Factory()
+    try validateTLS13ServerFactory()
     try validateFailureContracts()
     print("swift-ssl facade validation: ok")
+  }
+
+  private static func validateTLS13Factory() throws {
+    let factory = DefaultTLS13ClientHandshakeFactory(
+      entropy: FixedEntropy(byte: 0x42),
+      wallClock: FixedWallClock()
+    )
+    for namedGroup in TLS13NamedGroup.allCases {
+      var handshake = try factory.makeHandshake(
+        namedGroup: namedGroup,
+        certificateValidator: RejectingServerCertificateValidator()
+      )
+      let output = try handshake.start()
+      let emitsRecord = output.actions.contains { action in
+        if case .emitRecordBytes = action { return true }
+        return false
+      }
+      guard emitsRecord, !output.bytes.isEmpty else {
+        throw Failure.tls13Factory
+      }
+      var externallyValidated = try factory.makeHandshake(
+        namedGroup: namedGroup,
+        externalServerTrust: TLS13ExternalServerTrust()
+      )
+      let externalOutput = try externallyValidated.start()
+      guard
+        externalOutput.actions.contains(where: { action in
+          if case .emitRecordBytes = action { return true }
+          return false
+        }),
+        !externalOutput.bytes.isEmpty
+      else {
+        throw Failure.tls13Factory
+      }
+    }
+  }
+
+  private static func validateTLS13ServerFactory() throws {
+    let clientFactory = DefaultTLS13ClientHandshakeFactory(
+      entropy: FixedEntropy(byte: 0x42),
+      wallClock: FixedWallClock()
+    )
+    let serverFactory = DefaultTLS13ServerHandshakeFactory(
+      entropy: FixedEntropy(byte: 0x24),
+      wallClock: FixedWallClock()
+    )
+    for namedGroup in TLS13NamedGroup.allCases {
+      var client = try clientFactory.makeHandshake(
+        namedGroup: namedGroup,
+        certificateValidator: RejectingServerCertificateValidator()
+      )
+      var server = try serverFactory.makeHandshake(
+        namedGroup: namedGroup,
+        externalServerCredential: TLS13ExternalServerCredential()
+      )
+      let clientHello = try client.start()
+      let transition = try server.receiveRecordStep(clientHello.bytes.span)
+      switch consume transition {
+      case .suspended(.credentialSelection, let output):
+        guard output.bytes.isEmpty else {
+          throw Failure.tls13ServerFactory
+        }
+      case .suspended:
+        throw Failure.tls13ServerFactory
+      case .output:
+        throw Failure.tls13ServerFactory
+      }
+    }
   }
 
   private static func validateMLKEM() throws {
@@ -663,7 +734,32 @@ enum FacadeValidationCommand {
       try P256ECDSA.verify(
         signature: rawSignature.span,
         messageHash: digest.span,
-        publicKey: signingKey
+        using: signingKey
+      )
+    else {
+      throw Failure.p256ECDSA
+    }
+
+    let privateScalar = try hexadecimalBytes(
+      "C9AFA9D845BA75166B5C215767B1D6934E50C3DB36E89B127B8A622B120F6721"
+    )
+    let signingDigest = try hexadecimalBytes(
+      "AF2BDBE1AA9B6EC1E2ADE1D694F41FC71A831D0268E9891562113D8A62ADD1BF"
+    )
+    let expectedSignature = try hexadecimalBytes(
+      "EFD48B2AACB6A8FD1140DD9CD45E81D69D2C877B56AAF991C34D0EA84EAF3716"
+        + "F7CB1C942D657C41D436C7A1B6E29F65F3E900DBB9AFF4064DC4AB2F843ACDA8"
+    )
+    let privateKey = try P256PrivateKey(bytes: privateScalar.span)
+    let generatedSignature = try P256ECDSA.sign(
+      messageHash: signingDigest.span,
+      using: privateKey
+    )
+    guard generatedSignature == expectedSignature,
+      try P256ECDSA.verify(
+        signature: generatedSignature.span,
+        messageHash: signingDigest.span,
+        using: privateKey.publicKey()
       )
     else {
       throw Failure.p256ECDSA
@@ -671,6 +767,59 @@ enum FacadeValidationCommand {
   }
 
   private static func validateFailureContracts() throws {
+    var clientCreationError: TLS13ClientHandshakeCreationError?
+    do {
+      let handshake = try DefaultTLS13ClientHandshakeFactory(
+        entropy: FailingEntropy(),
+        wallClock: FixedWallClock()
+      ).makeHandshake(
+        namedGroup: .x25519,
+        certificateValidator: RejectingServerCertificateValidator()
+      )
+      _ = consume handshake
+    } catch {
+      clientCreationError = error
+    }
+    guard clientCreationError == .entropy(.sourceRejected) else {
+      throw Failure.errorContract
+    }
+
+    var serverCreationError: TLS13ServerHandshakeCreationError?
+    do {
+      let handshake = try DefaultTLS13ServerHandshakeFactory(
+        entropy: FixedEntropy(byte: 0x42),
+        wallClock: FailingWallClock()
+      ).makeHandshake(
+        namedGroup: .x25519,
+        externalServerCredential: TLS13ExternalServerCredential()
+      )
+      _ = consume handshake
+    } catch {
+      serverCreationError = error
+    }
+    guard serverCreationError == .clock(.movedBackwards) else {
+      throw Failure.errorContract
+    }
+
+    serverCreationError = nil
+    do {
+      let handshake = try DefaultTLS13ServerHandshakeFactory(
+        entropy: FixedEntropy(byte: 0x42),
+        wallClock: FixedWallClock()
+      ).makeHandshake(
+        namedGroup: .x25519,
+        externalServerCredential: TLS13ExternalServerCredential(
+          certificateTypes: [.x509, .x509]
+        )
+      )
+      _ = consume handshake
+    } catch {
+      serverCreationError = error
+    }
+    guard serverCreationError == .handshake(.invalidConfiguration) else {
+      throw Failure.errorContract
+    }
+
     let input: ContiguousArray<UInt8> = [0x61, 0x62, 0x63]
     let key = ContiguousArray<UInt8>(repeating: 0x0B, count: 32)
 
@@ -817,6 +966,37 @@ enum FacadeValidationCommand {
     return result
   }
 
+  private static func hexadecimalBytes(
+    _ hexadecimal: String
+  ) throws(Failure) -> ContiguousArray<UInt8> {
+    let characters = ContiguousArray(hexadecimal.utf8)
+    guard characters.count & 1 == 0 else {
+      throw .p256ECDSA
+    }
+    var result = ContiguousArray<UInt8>()
+    result.reserveCapacity(characters.count / 2)
+    var index = 0
+    while index < characters.count {
+      guard let high = hexadecimalNibble(characters[index]),
+        let low = hexadecimalNibble(characters[index + 1])
+      else {
+        throw .p256ECDSA
+      }
+      result.append(high << 4 | low)
+      index += 2
+    }
+    return result
+  }
+
+  private static func hexadecimalNibble(_ character: UInt8) -> UInt8? {
+    switch character {
+    case 0x30...0x39: character - 0x30
+    case 0x41...0x46: character - 0x41 + 10
+    case 0x61...0x66: character - 0x61 + 10
+    default: nil
+    }
+  }
+
   private struct FixedEntropy: EntropySource {
     let byte: UInt8
 
@@ -835,6 +1015,36 @@ enum FacadeValidationCommand {
         destination[0] = 0xC3
       }
       throw .sourceRejected
+    }
+  }
+
+  private struct FixedWallClock: WallClock {
+    func now() throws(ClockError) -> VerificationInstant {
+      try VerificationInstant(
+        secondsSinceUnixEpoch: 1_800_000_000,
+        nanoseconds: 0
+      )
+    }
+  }
+
+  private struct FailingWallClock: WallClock {
+    func now() throws(ClockError) -> VerificationInstant {
+      throw .movedBackwards
+    }
+  }
+
+  private struct RejectingServerCertificateValidator:
+    TLS13ServerCertificateValidating
+  {
+    func validate(
+      _ message: borrowing TLS13CertificateMessage,
+      serverName: Span<UInt8>?,
+      at instant: VerificationInstant
+    ) throws(TLS13ServerCertificateValidationError) -> SubjectPublicKeyInfo {
+      _ = message
+      _ = serverName
+      _ = instant
+      throw .invalidCertificateMessage
     }
   }
 

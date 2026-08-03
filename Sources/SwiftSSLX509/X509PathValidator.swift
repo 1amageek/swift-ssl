@@ -10,14 +10,17 @@ public struct X509PathValidator: Sendable {
     public static let maximumPathLength = 8
 
     private let trustAnchors: ContiguousArray<X509Certificate>
+    private let policy: any X509PathPolicyEvaluating
 
     public init(
-        trustAnchors: ContiguousArray<X509Certificate>
+        trustAnchors: ContiguousArray<X509Certificate>,
+        policy: any X509PathPolicyEvaluating = RFC5280ServerPathPolicy()
     ) throws(X509PathError) {
         guard !trustAnchors.isEmpty else {
             throw .emptyTrustStore
         }
         self.trustAnchors = trustAnchors
+        self.policy = policy
     }
 
     /// Validates a leaf against the configured anchors at one instant.
@@ -25,12 +28,13 @@ public struct X509PathValidator: Sendable {
     /// `intermediates` may be unordered. A hostname, when supplied, is
     /// checked against the leaf's SAN-only identity policy after the chain is
     /// cryptographically and temporally valid.
+    @discardableResult
     public func validate(
         leaf: X509Certificate,
         intermediates: ContiguousArray<X509Certificate> = [],
         at instant: VerificationInstant,
         hostname: Span<UInt8>? = nil
-    ) throws(X509PathError) {
+    ) throws(X509PathError) -> X509ValidatedPath {
         guard Self.maximumPathLength > 0 else {
             throw .invalidPathLength
         }
@@ -51,16 +55,8 @@ public struct X509PathValidator: Sendable {
             let current = path[path.count - 1]
 
             if Self.containsExact(current, in: trustAnchors) {
-                if let hostname {
-                    do {
-                        try leaf.verifyDNSName(hostname)
-                    } catch let error as X509IdentityError {
-                        throw .identity(error)
-                    } catch {
-                        throw .identity(.malformedSubjectAlternativeName)
-                    }
-                }
-                return
+                try policy.evaluate(path: path, hostname: hostname)
+                return X509ValidatedPath(certificates: path)
             }
 
             guard path.count < Self.maximumPathLength else {
@@ -106,16 +102,8 @@ public struct X509PathValidator: Sendable {
                 var next = path
                 next.append(candidate)
                 if Self.containsExact(candidate, in: trustAnchors) {
-                    if let hostname {
-                        do {
-                            try leaf.verifyDNSName(hostname)
-                        } catch let error as X509IdentityError {
-                            throw .identity(error)
-                        } catch {
-                            throw .identity(.malformedSubjectAlternativeName)
-                        }
-                    }
-                    return
+                    try policy.evaluate(path: next, hostname: hostname)
+                    return X509ValidatedPath(certificates: next)
                 }
                 pending.append(next)
             }

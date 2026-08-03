@@ -6,6 +6,8 @@ enum TLS13StreamCoreOutputAdapter {
         role: TLSRole,
         recordBytes: inout ContiguousArray<UInt8>,
         terminalActions: inout ContiguousArray<TLSStreamAction>,
+        earlyRead: inout TLS13RecordProtector?,
+        earlyWrite: inout TLS13RecordProtector?,
         handshakeRead: inout TLS13RecordProtector?,
         handshakeWrite: inout TLS13RecordProtector?,
         applicationRead: inout TLS13RecordProtector?,
@@ -21,7 +23,16 @@ enum TLS13StreamCoreOutputAdapter {
                         bytes: coreOutput.bytes,
                         recordBytes: &recordBytes,
                         terminalActions: &terminalActions,
-                        handshakeWrite: &handshakeWrite
+                        earlyWrite: &earlyWrite,
+                        handshakeWrite: &handshakeWrite,
+                        applicationWrite: &applicationWrite
+                    )
+                case .earlyTrafficSecret(let secret, _):
+                    try installEarly(
+                        secret,
+                        role: role,
+                        earlyRead: &earlyRead,
+                        earlyWrite: &earlyWrite
                     )
                 case .trafficSecrets(let epoch, let secrets):
                     try install(
@@ -41,7 +52,9 @@ enum TLS13StreamCoreOutputAdapter {
             switch error {
             case .byteRange(let byteError): throw .output(byteError)
             case .duplicateTrafficSecrets, .missingTrafficSecrets,
-                 .unreferencedTrafficSecrets: throw .invalidState
+                 .unreferencedTrafficSecrets, .duplicateEarlyTrafficSecret,
+                 .missingEarlyTrafficSecret, .unreferencedEarlyTrafficSecret:
+                throw .invalidState
             }
         } catch let error as ByteError {
             throw .output(error)
@@ -55,7 +68,9 @@ enum TLS13StreamCoreOutputAdapter {
         bytes: OwnedBytes,
         recordBytes: inout ContiguousArray<UInt8>,
         terminalActions: inout ContiguousArray<TLSStreamAction>,
-        handshakeWrite: inout TLS13RecordProtector?
+        earlyWrite: inout TLS13RecordProtector?,
+        handshakeWrite: inout TLS13RecordProtector?,
+        applicationWrite: inout TLS13RecordProtector?
     ) throws(TLS13HandshakeEngineError) {
         switch action {
         case .emitHandshakeBytes(let epoch, let range):
@@ -92,12 +107,47 @@ enum TLS13StreamCoreOutputAdapter {
                         handshakeWrite = consume protector
                         throw error
                     }
+                case .earlyData:
+                    guard var protector = earlyWrite.take() else {
+                        throw .invalidState
+                    }
+                    do {
+                        try TLS13HandshakeWire.appendSealedRecord(
+                            content: message,
+                            contentType: .handshake,
+                            with: &protector,
+                            to: &recordBytes
+                        )
+                        earlyWrite = consume protector
+                    } catch let error {
+                        earlyWrite = consume protector
+                        throw error
+                    }
                 case .application:
-                    throw .invalidState
+                    guard var protector = applicationWrite.take() else {
+                        throw .invalidState
+                    }
+                    do {
+                        try TLS13HandshakeWire.appendSealedRecord(
+                            content: message,
+                            contentType: .handshake,
+                            with: &protector,
+                            to: &recordBytes
+                        )
+                        applicationWrite = consume protector
+                    } catch let error {
+                        applicationWrite = consume protector
+                        throw error
+                    }
                 }
             }
-        case .installTrafficSecrets:
+        case .installEarlyTrafficSecret, .installTrafficSecrets:
             throw .invalidState
+        case .earlyDataAccepted:
+            terminalActions.append(.earlyDataAccepted)
+        case .earlyDataRejected:
+            earlyWrite = nil
+            terminalActions.append(.earlyDataRejected)
         case .handshakeComplete:
             terminalActions.append(.handshakeComplete)
         case .handshakeConfirmed:
@@ -154,7 +204,7 @@ enum TLS13StreamCoreOutputAdapter {
             throw .invalidState
         }
         switch epoch {
-        case .initial:
+        case .initial, .earlyData:
             throw .invalidState
         case .handshake:
             guard handshakeRead == nil, handshakeWrite == nil else {
@@ -168,6 +218,35 @@ enum TLS13StreamCoreOutputAdapter {
             }
             applicationRead = consume readProtector
             applicationWrite = consume writeProtector
+        }
+    }
+
+    private static func installEarly(
+        _ secret: consuming TLS13EarlyTrafficSecret,
+        role: TLSRole,
+        earlyRead: inout TLS13RecordProtector?,
+        earlyWrite: inout TLS13RecordProtector?
+    ) throws(TLS13HandshakeEngineError) {
+        let secret = consume secret
+        let protector: TLS13RecordProtector
+        do {
+            protector = try secret.withBorrowedSecret {
+                bytes throws(TLS13RecordError) in
+                try TLS13RecordProtector(
+                    cipherSuite: secret.cipherSuite,
+                    trafficSecret: bytes
+                )
+            }
+        } catch let error {
+            throw .record(error)
+        }
+        switch role {
+        case .client:
+            guard earlyWrite == nil else { throw .invalidState }
+            earlyWrite = consume protector
+        case .server:
+            guard earlyRead == nil else { throw .invalidState }
+            earlyRead = consume protector
         }
     }
 }

@@ -38,6 +38,27 @@ final class DERWriterTests: XCTestCase {
         XCTAssertEqual(writer.count, 0)
     }
 
+    func testWritesCanonicalObjectIdentifier() throws {
+        let arcs: ContiguousArray<UInt64> = [1, 2, 840, 113549, 1, 5, 13]
+        var writer = try DERWriter(maximumByteCount: 16)
+        try writer.appendObjectIdentifier(arcs.span)
+
+        let result = writer.finish()
+        XCTAssertEqual(
+            copy(result.span),
+            [0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x05, 0x0D]
+        )
+    }
+
+    func testRejectsInvalidObjectIdentifier() throws {
+        let arcs: ContiguousArray<UInt64> = [1, 40]
+        var writer = try DERWriter(maximumByteCount: 16)
+        XCTAssertThrowsError(try writer.appendObjectIdentifier(arcs.span)) { error in
+            XCTAssertEqual(error as? DERWriteError, .invalidObjectIdentifier)
+        }
+        XCTAssertEqual(writer.count, 0)
+    }
+
     private func copy(_ span: Span<UInt8>) -> [UInt8] {
         var result: [UInt8] = []
         var index = 0

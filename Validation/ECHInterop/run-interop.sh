@@ -34,9 +34,11 @@ config=$(printf '%s\n' "$fixture" | sed -n 's/^config=//p')
 config_list=$(printf '%s\n' "$fixture" | sed -n 's/^config_list=//p')
 boringssl_client_hello=$(printf '%s\n' "$fixture" | sed -n 's/^client_hello=//p')
 
-swift run -c release swift-ssl-ech-interop-validation \
+SWIFT_SSL_ENABLE_ECH_INTEROP_VALIDATION=1 swift run -c release \
+  swift-ssl-ech-interop-validation \
   verify-boringssl-client "$private_key" "$config_list" \
   "$boringssl_client_hello"
-swift_client_hello=$(swift run -c release swift-ssl-ech-interop-validation \
-  make-swift-client "$config_list" | tail -n 1)
+swift_client_hello=$(SWIFT_SSL_ENABLE_ECH_INTEROP_VALIDATION=1 swift run \
+  -c release swift-ssl-ech-interop-validation make-swift-client \
+  "$config_list" | tail -n 1)
 $driver verify-swift-client "$private_key" "$config" "$swift_client_hello"

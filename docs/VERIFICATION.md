@@ -63,7 +63,13 @@ Normal native tests use `xcodebuild test` under an external timeout. Benchmark a
 - fragmented and coalesced input at every legal boundary;
 - asynchronous capability suspension, stale response, duplicate response, and failure;
 - resumption independently from 0-RTT acceptance;
-- ECH accept, authenticated reject/retry, HelloRetryRequest, and key rotation snapshot behavior;
+- 0-RTT ticket/ALPN/byte-limit gating, replay-policy accept/reject/error,
+  unknown-ticket ciphertext discard, HelloRetryRequest rejection and second
+  ClientHello removal, Stream EndOfEarlyData, QUIC directional secret delivery,
+  and absence of automatic retransmission;
+- optional and required main-handshake client authentication; RFC 8446 post-handshake authentication over Stream and DTLS application epochs; empty Certificate behavior; local and external credential/trust suspension; unique request contexts; certificate/key mismatch; client path-policy rejection; tampered CertificateVerify or Finished; and authenticated-identity exposure only after Finished;
+- ECH accept, authenticated reject/retry, and key rotation snapshot behavior;
+- ECH HelloRetryRequest HPKE-context reuse, empty second encapsulation, accepted/rejected continuation, PSK binder recomputation, and second-HRR rejection;
 - DTLS replay, reordering, loss, fragmentation, ACK, retransmission, epoch, and timer behavior;
 - QUIC encryption-level ordering, forbidden TLS messages, transport parameters, and secret events;
 - interoperability with at least two independent peer implementations for each supported profile.
@@ -80,6 +86,14 @@ Every log records:
 - concurrency and entropy capabilities exercised.
 
 Native success does not substitute for WASI or Embedded execution. Compile-only targets are reported as unverified for runtime semantics.
+
+The 2026-08-03 0-RTT change set passed five focused Native protocol tests and
+Native, WASI, and Embedded WASI release build/link/run of
+`swift-ssl-target-validation`. The final Embedded incremental Release build,
+including TLS `secp256r1`, completed in 139.45 seconds and the executable
+reported `swift-ssl target validation: ok`.
+
+The pinned Embedded WASI SDK requires `libswiftUnicodeDataTables.a` when a validation product reaches the X.509 path-policy implementation. The exact archive is resolved from the SDK's reported `swiftResourcesPath` and explicitly recorded in the link invocation; omitting it is a link failure, not a supported reduced-semantics fallback.
 
 Shared-state changes require this review matrix:
 
@@ -113,6 +127,7 @@ Hot paths define a budget before optimization.
 | HKDF expand | 0 heap/container materializations of caller input; one fixed 64-byte HMAC key-schedule scratch per operation; two inline working SHA-256 contexts plus one wiped 32-byte inner digest per block; full digest blocks written directly to caller output; at most one additional wiped 32-byte temporary for a partial final block; optimized allocation count must be 0 |
 | AEAD seal/open | 0 input copies when nonoverlapping buffers are supplied; 0 heap allocations after context creation |
 | X25519 in-place public-key derivation/shared-secret | 0 heap allocations after caller output creation; 0 dynamic bulk-copy bytes; encoded peer input remains borrowed; caller output is unchanged on length or all-zero-peer failure; no escaping unsafe pointer |
+| P-256 in-place public-key derivation/shared-secret | 0 heap allocations after key construction and caller output creation; the peer point and immutable precomputation are owned once, the scalar remains a scoped secret borrow, output is written directly, and failure leaves caller output unchanged; formal allocation/copy evidence remains required |
 | ML-KEM-768 key generation | 17 balanced allocations requesting 20,640 bytes; owned serialized/expanded keys and algorithm workspaces; 0 dynamic bulk-copy bytes beyond fixed process overhead |
 | ML-KEM-768 in-place encapsulation | 5 balanced aligned workspace allocations requesting 6,096 bytes; 0 general `malloc`; 0 caller-input/output materializations; 0 dynamic bulk-copy bytes |
 | ML-KEM-768 in-place decapsulation | 11 balanced aligned workspace/secret allocations requesting 9,808 bytes; 0 general `malloc`; 0 caller-input/output materializations; 0 dynamic bulk-copy bytes |

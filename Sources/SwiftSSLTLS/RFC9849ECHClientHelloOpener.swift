@@ -32,10 +32,14 @@ public struct RFC9849ECHClientHelloOpener: ECHClientHelloOpening, ~Copyable, Sen
   }
 
   public mutating func open(
-    _ outerClientHello: Span<UInt8>
+    _ outerClientHello: Span<UInt8>,
+    encoding: TLS13HandshakeEncoding = .tls13
   ) throws(ECHError) -> ECHOpenedClientHello {
     do {
-      let parsed = try ECHClientHelloCodec.parseOuter(outerClientHello)
+      let parsed = try ECHClientHelloCodec.parseOuter(
+        outerClientHello,
+        encoding: encoding
+      )
       let outerBody = outerClientHello.extracting(4..<outerClientHello.count)
       let encapsulation = outerBody.extracting(
         parsed.encapsulationRange.offset..<parsed.encapsulationRange.endOffset
@@ -51,7 +55,8 @@ public struct RFC9849ECHClientHelloOpener: ECHClientHelloOpening, ~Copyable, Sen
         return try openInitial(
           parsed,
           encapsulation: encapsulation,
-          ciphertext: ciphertext
+          ciphertext: ciphertext,
+          encoding: encoding
         )
       case .awaitingSecond:
         guard encapsulation.isEmpty,
@@ -61,7 +66,12 @@ public struct RFC9849ECHClientHelloOpener: ECHClientHelloOpening, ~Copyable, Sen
         else {
           throw ECHError.invalidClientHello
         }
-        let inner = try decrypt(parsed, ciphertext: ciphertext, using: &retained)
+        let inner = try decrypt(
+          parsed,
+          ciphertext: ciphertext,
+          encoding: encoding,
+          using: &retained
+        )
         context = consume retained
         phase = .awaitingSecond
         return ECHOpenedClientHello(
@@ -84,7 +94,8 @@ public struct RFC9849ECHClientHelloOpener: ECHClientHelloOpening, ~Copyable, Sen
   private mutating func openInitial(
     _ parsed: ECHParsedOuter,
     encapsulation: Span<UInt8>,
-    ciphertext: Span<UInt8>
+    ciphertext: Span<UInt8>,
+    encoding: TLS13HandshakeEncoding
   ) throws(ECHError) -> ECHOpenedClientHello {
     guard let kdf = parsed.cipherSuite.kdf,
       let aead = parsed.cipherSuite.aead
@@ -115,7 +126,12 @@ public struct RFC9849ECHClientHelloOpener: ECHClientHelloOpening, ~Copyable, Sen
       }
       var recipient = consume initialized
       do {
-        let inner = try decrypt(parsed, ciphertext: ciphertext, using: &recipient)
+        let inner = try decrypt(
+          parsed,
+          ciphertext: ciphertext,
+          encoding: encoding,
+          using: &recipient
+        )
         context = consume recipient
         selectedConfigID = parsed.configID
         selectedCipherSuite = parsed.cipherSuite
@@ -136,6 +152,7 @@ public struct RFC9849ECHClientHelloOpener: ECHClientHelloOpening, ~Copyable, Sen
   private func decrypt(
     _ parsed: ECHParsedOuter,
     ciphertext: Span<UInt8>,
+    encoding: TLS13HandshakeEncoding,
     using recipient: inout HPKERecipientContext
   ) throws(ECHError) -> OwnedBytes {
     guard ciphertext.count >= HPKEAEAD.tagByteCount else {
@@ -160,7 +177,8 @@ public struct RFC9849ECHClientHelloOpener: ECHClientHelloOpening, ~Copyable, Sen
     }
     return try ECHClientHelloCodec.reconstructInner(
       encoded: encoded.span,
-      outer: parsed
+      outer: parsed,
+      encoding: encoding
     )
   }
 }

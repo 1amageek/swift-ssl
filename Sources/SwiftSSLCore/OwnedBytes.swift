@@ -37,6 +37,12 @@ public struct OwnedBytes: Sendable, Equatable, Hashable {
         }
     }
 
+    public borrowing func withBorrowedBytes<Result: ~Copyable, Failure: Error>(
+        _ body: (Span<UInt8>) throws(Failure) -> Result
+    ) throws(Failure) -> Result {
+        try body(storage.span)
+    }
+
     public subscript(index: Int) -> UInt8 {
         storage[index]
     }

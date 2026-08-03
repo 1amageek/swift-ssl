@@ -225,7 +225,7 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
         return contentType
     }
 
-    private static let tagByteCount = 16
+    package static let tagByteCount = 16
 
     private static func validateContent(
         _ contentByteCount: Int,
@@ -239,11 +239,11 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
         }
     }
 
-    private static func hashByteCount(for suite: TLSCipherSuite) -> Int {
+    package static func hashByteCount(for suite: TLSCipherSuite) -> Int {
         suite == .aes256GCM_SHA384 ? 48 : 32
     }
 
-    private static func keyByteCount(for suite: TLSCipherSuite) -> Int {
+    package static func keyByteCount(for suite: TLSCipherSuite) -> Int {
         switch suite {
         case .aes128GCM_SHA256:
             return 16
@@ -252,7 +252,7 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
         }
     }
 
-    private static func deriveSecret(
+    package static func deriveSecret(
         trafficSecret: Span<UInt8>,
         label: String,
         outputByteCount: Int,
@@ -304,7 +304,7 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
         }
     }
 
-    private static func makeNonce(
+    package static func makeNonce(
         iv: borrowing SecretBytes,
         sequenceNumber: UInt64
     ) -> ContiguousArray<UInt8> {
@@ -325,7 +325,7 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
         return nonce
     }
 
-    private static func withCipher(
+    package static func withCipher(
         cipherSuite: TLSCipherSuite,
         key: Span<UInt8>,
         plaintext: Span<UInt8>,
@@ -361,7 +361,7 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
         }
     }
 
-    private static func withCipherOpen(
+    package static func withCipherOpen(
         cipherSuite: TLSCipherSuite,
         key: Span<UInt8>,
         ciphertextAndTag: Span<UInt8>,
@@ -389,7 +389,7 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
         }
     }
 
-    private static func spansOverlap(
+    package static func spansOverlap(
         _ first: Span<UInt8>,
         _ second: Span<UInt8>
     ) -> Bool {
@@ -408,7 +408,7 @@ public struct TLS13RecordProtector: ~Copyable, Sendable {
         }
     }
 
-    private static func wipe(_ bytes: inout ContiguousArray<UInt8>) {
+    package static func wipe(_ bytes: inout ContiguousArray<UInt8>) {
         bytes.withUnsafeMutableBufferPointer { buffer in
             guard let baseAddress = buffer.baseAddress else { return }
             SecureWipe.erase(UnsafeMutableRawPointer(baseAddress), byteCount: buffer.count)

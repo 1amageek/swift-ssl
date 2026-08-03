@@ -4,6 +4,7 @@ import SwiftSSLCore
 import SwiftSSLCrypto
 import SwiftSSLQUIC
 import SwiftSSLTLS
+import SwiftSSLX509
 
 @main
 enum TargetValidationCommand {
@@ -12,11 +13,13 @@ enum TargetValidationCommand {
     case chacha20Poly1305
     case x25519
     case hybridKeyExchange
+    case tlsP256KeyExchange
     case hpke
     case ech
     case p256
     case nistECDSA
     case rsaPSS
+    case signingKeyImport
     case rsaPKCS1v15
     case hmacDRBG
     case sha384512
@@ -34,8 +37,11 @@ enum TargetValidationCommand {
     case profileBoundary
     case uint24Failure
     case dtlsReplay
+    case dtlsSRTP
     case quicInitial
     case quicCryptoStream
+    case tlsClientAuthentication
+    case tlsEarlyData
   }
 
   private struct FixedEntropy: EntropySource {
@@ -59,10 +65,13 @@ enum TargetValidationCommand {
     try validateChaCha20Poly1305()
     try validateX25519()
     try validateHybridKeyExchange()
+    try validateTLSP256KeyExchange()
     try validateHPKE()
+    try validateP256HPKE()
     try validateECH()
     try validateP256()
     try validateRSAPSS()
+    try validateSigningKeyImport()
     try validateRSAPKCS1v15()
     try validateHMACDRBG()
     try validateSHA384AndSHA512()
@@ -79,8 +88,11 @@ enum TargetValidationCommand {
     try validateSecretOwner()
     try validateUInt24Failure()
     try validateDTLSReplay()
+    try validateDTLSSRTP()
     try validateQUICInitial()
     try validateQUICCryptoStream()
+    try validateTLSEarlyData()
+    try validateTLSClientAuthentication()
     print("swift-ssl target validation: ok")
   }
 
@@ -144,6 +156,62 @@ enum TargetValidationCommand {
     }
   }
 
+  private static func validateDTLSSRTP() throws {
+    let zeroPSK = ContiguousArray<UInt8>(repeating: 0, count: 32)
+    let sharedSecret = try hexadecimalBytes(
+      "8bd4054fb55b9d63fdfbacf9f04b9f0d35e6d63f537563efd46272900f89492d"
+    )
+    let helloTranscriptHash = try hexadecimalBytes(
+      "860c06edc07858ee8e78f0e7428c58edd6b43f2ca3e6e95f02ed063cf0e1cad8"
+    )
+    let applicationTranscriptHash = try hexadecimalBytes(
+      "9608102a0f1ccc6db6250b7b7e417b1a000eaada3daae4777a7686c9ff83df13"
+    )
+    let schedule = try TLS13KeySchedule(
+      cipherSuite: .aes128GCM_SHA256,
+      preSharedKey: zeroPSK.span
+    )
+    let handshake = try schedule.makeHandshakeSecrets(
+      ecdheSharedSecret: sharedSecret.span,
+      transcriptHash: helloTranscriptHash.span
+    )
+    let application = try handshake.makeApplicationSecrets(
+      transcriptHash: applicationTranscriptHash.span
+    )
+    let exported = try application.exportKeyingMaterial(
+      label: "EXTRACTOR-dtls_srtp",
+      context: Span<UInt8>(),
+      outputByteCount: DTLSSRTPProtectionProfile.aeadAES256GCM.exporterByteCount
+    )
+    let expected = try hexadecimalBytes(
+      "0e30a85a5b29a641bc75ca72910008b1b8236c3247fd404f89f347b815ce576c"
+        + "9afeb1dde16f00090819e0fe58fd49bee1f1a36de5bd6250e1ab4f04d612819d"
+        + "07ac0a605c3066e12c13cdc36002fdcce168b7fc660c5ef9"
+    )
+    guard exported.withBorrowedBytes({ ConstantTime.equal($0, expected.span) }) else {
+      throw Failure.dtlsSRTP
+    }
+
+    let identifier: ContiguousArray<UInt8> = [1, 2, 3]
+    let useSRTP = DTLSSRTPUseSRTPData(
+      protectionProfiles: [.aeadAES128GCM, .aeadAES256GCM],
+      masterKeyIdentifier: OwnedBytes(copying: identifier.span)
+    )
+    let clientHello = try TLS13HandshakeCodec.makeClientHello(
+      random: ContiguousArray(repeating: 0x11, count: 32).span,
+      keyShare: ContiguousArray(repeating: 0x22, count: 32).span,
+      useSRTP: useSRTP,
+      encoding: .dtls13
+    )
+    let parsed = try TLS13HandshakeCodec.parseClientHello(
+      clientHello.span,
+      encoding: .dtls13
+    )
+    guard parsed.useSRTP == useSRTP else {
+      throw Failure.dtlsSRTP
+    }
+  }
+
   private static func validateQUICInitial() throws {
     let connectionID = ContiguousArray<UInt8>([
       0x83, 0x94, 0xC8, 0xF0, 0x3E, 0x51, 0x57, 0x08,
@@ -186,6 +254,134 @@ enum TargetValidationCommand {
       guard error == .conflictingOverlap(offset: 7) else {
         throw Failure.quicCryptoStream
       }
+    }
+  }
+
+  private static func validateTLSEarlyData() throws {
+    let ticketNonce: ContiguousArray<UInt8> = [1, 2, 3]
+    let ticket: ContiguousArray<UInt8> = [0xA0, 0xB0, 0xC0]
+    let encodedTicket = try TLS13SessionTicketCodec.makeNewSessionTicket(
+      lifetime: 3_600,
+      ageAdd: 7,
+      ticketNonce: ticketNonce.span,
+      ticket: ticket.span,
+      maximumEarlyDataByteCount: 4_096
+    )
+    let parsedTicket = try TLS13SessionTicketCodec.parseNewSessionTicket(
+      encodedTicket.span
+    )
+    guard parsedTicket.maximumEarlyDataByteCount == 4_096 else {
+      throw Failure.tlsEarlyData
+    }
+
+    let preSharedKey = ContiguousArray<UInt8>(repeating: 0x55, count: 32)
+    var clientHelloTranscriptHash = ContiguousArray<UInt8>(
+      repeating: 0,
+      count: SwiftSSLCrypto.SHA256.digestByteCount
+    )
+    var clientHelloTranscriptHashSpan = clientHelloTranscriptHash.mutableSpan
+    try SwiftSSLCrypto.SHA256.hash(
+      ticket.span,
+      into: &clientHelloTranscriptHashSpan
+    )
+    let schedule = try TLS13KeySchedule(
+      cipherSuite: .aes128GCM_SHA256,
+      preSharedKey: preSharedKey.span
+    )
+    let secret = try schedule.makeClientEarlyTrafficSecret(
+      transcriptHash: clientHelloTranscriptHash.span
+    )
+    let secretBytes = secret.withBorrowedSecret { copy($0) }
+    guard secretBytes.count == 32,
+      secretBytes.contains(where: { $0 != 0 })
+    else {
+      throw Failure.tlsEarlyData
+    }
+  }
+
+  private static func validateTLSClientAuthentication() throws {
+    let seed: ContiguousArray<UInt8> = [
+      0x9D, 0x61, 0xB1, 0x9D, 0xEF, 0xFD, 0x5A, 0x60,
+      0xBA, 0x84, 0x4A, 0xF4, 0x92, 0xEC, 0x2C, 0xC4,
+      0x44, 0x49, 0xC5, 0x69, 0x7B, 0x32, 0x69, 0x19,
+      0x70, 0x3B, 0xAC, 0x03, 0x1C, 0xAE, 0x7F, 0x60,
+    ]
+    let certificateDER: ContiguousArray<UInt8> = [
+      0x30, 0x81, 0xA6, 0x30, 0x5A, 0x02, 0x01, 0x01,
+      0x30, 0x05, 0x06, 0x03, 0x2B, 0x65, 0x70, 0x30,
+      0x00, 0x30, 0x1E, 0x17, 0x0D, 0x32, 0x34, 0x30,
+      0x31, 0x30, 0x31, 0x30, 0x30, 0x30, 0x30, 0x30,
+      0x30, 0x5A, 0x17, 0x0D, 0x32, 0x35, 0x30, 0x31,
+      0x30, 0x31, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30,
+      0x5A, 0x30, 0x00, 0x30, 0x2A, 0x30, 0x05, 0x06,
+      0x03, 0x2B, 0x65, 0x70, 0x03, 0x21, 0x00, 0xD7,
+      0x5A, 0x98, 0x01, 0x82, 0xB1, 0x0A, 0xB7, 0xD5,
+      0x4B, 0xFE, 0xD3, 0xC9, 0x64, 0x07, 0x3A, 0x0E,
+      0xE1, 0x72, 0xF3, 0xDA, 0xA6, 0x23, 0x25, 0xAF,
+      0x02, 0x1A, 0x68, 0xF7, 0x07, 0x51, 0x1A, 0x30,
+      0x05, 0x06, 0x03, 0x2B, 0x65, 0x70, 0x03, 0x41,
+      0x00, 0x37, 0xDF, 0xBF, 0x24, 0xEB, 0x69, 0x2E,
+      0x0B, 0xE9, 0x24, 0x3A, 0x10, 0xE9, 0x0E, 0x7A,
+      0x42, 0x05, 0x28, 0xF6, 0xDC, 0xD6, 0x03, 0x28,
+      0x98, 0xDC, 0xA9, 0x56, 0xD5, 0x1C, 0xE3, 0xA2,
+      0x86, 0xB1, 0x55, 0x96, 0x38, 0x08, 0x32, 0xA6,
+      0x0C, 0xC5, 0x7D, 0x2A, 0x84, 0xF8, 0x43, 0xC7,
+      0x74, 0xFF, 0xE0, 0xA7, 0xB4, 0x62, 0xA9, 0x55,
+      0x6F, 0x76, 0x75, 0x1A, 0x87, 0x0D, 0x5C, 0x79,
+      0x01,
+    ]
+    let certificate = try X509Certificate(der: certificateDER.span)
+    let instant = try VerificationInstant(
+      secondsSinceUnixEpoch: 1_720_000_000,
+      nanoseconds: 0
+    )
+    let identity = try TLS13ClientIdentity(
+      certificateEntries: [
+        try TLS13CertificateEntry(certificateDER: certificateDER.span)
+      ],
+      signingKey: TLS13SigningKey(
+        ed25519: try Ed25519PrivateKey(seed: seed.span)
+      ),
+      verificationInstant: instant
+    )
+    var client = try TLS13ClientHandshake(
+      random: ContiguousArray(repeating: 0x01, count: 32).span,
+      ephemeralKey: X25519PrivateKey(
+        bytes: ContiguousArray(repeating: 0x11, count: 32).span
+      ),
+      certificateValidator: try RFC5280TLS13ServerCertificateValidator(
+        trustAnchors: [certificate]
+      ),
+      clientIdentity: identity,
+      verificationInstant: instant
+    )
+    var server = try TLS13ServerHandshake(
+      random: ContiguousArray(repeating: 0x02, count: 32).span,
+      ephemeralKey: X25519PrivateKey(
+        bytes: ContiguousArray(repeating: 0x22, count: 32).span
+      ),
+      certificateDER: certificateDER.span,
+      signingKey: TLS13SigningKey(
+        ed25519: try Ed25519PrivateKey(seed: seed.span)
+      ),
+      verificationInstant: instant,
+      clientAuthentication: TLS13ClientAuthenticationConfiguration(
+        requirement: .required,
+        validator: try RFC5280TLS13ClientCertificateValidator(
+          trustAnchors: [certificate]
+        )
+      )
+    )
+
+    let clientHello = try client.start()
+    let serverFlight = try server.receive(clientHello.bytes.span)
+    let clientFinalFlight = try client.receive(serverFlight.bytes.span)
+    _ = try server.receive(clientFinalFlight.bytes.span)
+    guard client.isEstablished,
+      server.isEstablished,
+      server.authenticatedClientIdentity != nil
+    else {
+      throw Failure.tlsClientAuthentication
     }
   }
 
@@ -390,6 +586,48 @@ enum TargetValidationCommand {
     }
   }
 
+  private static func validateTLSP256KeyExchange() throws {
+    var client = try TLS13P256ClientKeyExchange.generate(
+      using: FixedEntropy(
+        bytes: ContiguousArray(repeating: 0x11, count: 32)
+      )
+    )
+    var server = try TLS13P256ServerKeyExchange.generate(
+      using: FixedEntropy(
+        bytes: ContiguousArray(repeating: 0x22, count: 32)
+      )
+    )
+    let clientShare = client.withClientShare { OwnedBytes(copying: $0) }
+    guard client.namedGroup == .secp256r1,
+      clientShare.count == 65,
+      clientShare.span[0] == 0x04
+    else {
+      throw Failure.tlsP256KeyExchange
+    }
+
+    let serverResult = try server.accept(
+      clientShare: clientShare.span,
+      using: FixedEntropy(
+        bytes: ContiguousArray(repeating: 0x33, count: 32)
+      )
+    )
+    guard serverResult.serverShare.count == 65,
+      serverResult.serverShare.span[0] == 0x04
+    else {
+      throw Failure.tlsP256KeyExchange
+    }
+    let clientSecret = try client.complete(
+      serverShare: serverResult.serverShare.span
+    )
+    let clientSecretBytes = clientSecret.withBorrowedBytes { copy($0) }
+    let serverSecretBytes = serverResult.sharedSecret.withBorrowedBytes { copy($0) }
+    guard clientSecretBytes.count == 32,
+      clientSecretBytes == serverSecretBytes
+    else {
+      throw Failure.tlsP256KeyExchange
+    }
+  }
+
   private static func sequential(count: Int, seed: UInt8) -> ContiguousArray<UInt8> {
     var result = ContiguousArray<UInt8>()
     result.reserveCapacity(count)
@@ -475,6 +713,67 @@ enum TargetValidationCommand {
     }
   }
 
+  private static func validateP256HPKE() throws {
+    let recipientScalar = try hexadecimalBytes(
+      "f3ce7fdae57e1a310d87f1ebbde6f328be0a99cdbcadf4d6589cf29de4b8ffd2"
+    )
+    let recipient = SwiftSSLCrypto.P256KeyPair(
+      privateKey: try SwiftSSLCrypto.P256PrivateKey(
+        bytes: recipientScalar.span
+      )
+    )
+    let info = try hexadecimalBytes("4f6465206f6e2061204772656369616e2055726e")
+    let plaintext = try hexadecimalBytes(
+      "4265617574792069732074727574682c20747275746820626561757479"
+    )
+    let authenticatedData = try hexadecimalBytes("436f756e742d30")
+    let expectedEncapsulation = try hexadecimalBytes(
+      "04a92719c6195d5085104f469a8b9814d5838ff72b60501e2c4466e5e67b325ac"
+        + "98536d7b61a1af4b78e5b7f951c0900be863c403ce65c9bfcb9382657222d18c4"
+    )
+    let expectedCiphertext = try hexadecimalBytes(
+      "5ad590bb8baa577f8619db35a36311226a896e7342a6d836d8b7bcd2f20b6c7f"
+        + "9076ac232e3ab2523f39513434"
+    )
+    let entropy = FixedEntropy(
+      bytes: try hexadecimalBytes(
+        "4995788ef4b9d6132b249ce59a77281493eb39af373d236a1fe415cb0c2d7beb"
+      )
+    )
+    var setup = try SwiftSSLCrypto.HPKEP256.setupBaseSender(
+      recipientPublicKey: recipient.publicKey,
+      info: info.span,
+      kdf: .sha256,
+      aead: .aes128GCM,
+      using: entropy
+    )
+    guard copy(setup.encapsulation.span) == expectedEncapsulation else {
+      throw Failure.hpke
+    }
+    var recipientContext = try SwiftSSLCrypto.HPKEP256.setupBaseRecipient(
+      encapsulation: setup.encapsulation.span,
+      recipientKeyPair: recipient,
+      info: info.span,
+      kdf: .sha256,
+      aead: .aes128GCM
+    )
+    var senderContext = setup.takeContext()
+    let ciphertext = try senderContext.seal(
+      plaintext: plaintext.span,
+      authenticatedData: authenticatedData.span
+    )
+    guard copy(ciphertext.span) == expectedCiphertext else {
+      throw Failure.hpke
+    }
+    let opened = try recipientContext.open(
+      ciphertext: ciphertext.span,
+      authenticatedData: authenticatedData.span
+    )
+    guard copy(opened.span) == plaintext else {
+      throw Failure.hpke
+    }
+  }
+
   private static func validateP256() throws {
     let signingPublicKey = ContiguousArray<UInt8>([
       0x04, 0x6B, 0x17, 0xD1, 0xF2, 0xE1, 0x2C, 0x42,
@@ -518,7 +817,34 @@ enum TargetValidationCommand {
       try SwiftSSL.P256ECDSA.verify(
         signature: rawSignature.span,
         messageHash: digest.span,
-        publicKey: signingKey
+        using: signingKey
+      )
+    else {
+      throw Failure.nistECDSA
+    }
+
+    let privateScalar = try hexadecimalBytes(
+      "C9AFA9D845BA75166B5C215767B1D6934E50C3DB36E89B127B8A622B120F6721"
+    )
+    let signingDigest = try hexadecimalBytes(
+      "AF2BDBE1AA9B6EC1E2ADE1D694F41FC71A831D0268E9891562113D8A62ADD1BF"
+    )
+    let expectedSignature = try hexadecimalBytes(
+      "EFD48B2AACB6A8FD1140DD9CD45E81D69D2C877B56AAF991C34D0EA84EAF3716"
+        + "F7CB1C942D657C41D436C7A1B6E29F65F3E900DBB9AFF4064DC4AB2F843ACDA8"
+    )
+    let privateKey = try SwiftSSLCrypto.P256PrivateKey(
+      bytes: privateScalar.span
+    )
+    let generatedSignature = try SwiftSSLCrypto.P256ECDSA.sign(
+      messageHash: signingDigest.span,
+      using: privateKey
+    )
+    guard generatedSignature == expectedSignature,
+      try SwiftSSLCrypto.P256ECDSA.verify(
+        signature: generatedSignature.span,
+        messageHash: signingDigest.span,
+        using: privateKey.publicKey()
       )
     else {
       throw Failure.nistECDSA
@@ -575,6 +901,67 @@ enum TargetValidationCommand {
     else {
       throw Failure.rsaPSS
     }
+
+    let signingModulus = try hexadecimalBytes(
+      "daff26f7df96632c4d130150fc81d99f6d1913e98dd62dbe34d772e926602c94"
+        + "e30c6839d6d60534b9e13c4ae0717aff5bea4978bc07f9372e1cf1fe59e44af1"
+        + "95888d435b511564b3dbdebabf2b0ee7b8f9ef02c5379c7ca237ca32b32c6edc"
+        + "1469e8a2943e079225f36820d96655817f14c27d0eb36007f6f7ccfc2c58adec"
+        + "61d57cdb1481aca798529cd0bbae9dac029c43cf5c1e83236585670373aa9852f"
+        + "226adc2697b266137b965d9954072938d3bb6d6c009dc228737b9cd1988e41835"
+        + "82714973f2ba34a7159f24829000dbb6167c3edfd2899e73b7d20b6c3ef347e0"
+        + "72fe2cfd458282ffc12ea537a7264f88b63480c3d5218d9ae9118ed2f4a361"
+    )
+    let privateExponent = try hexadecimalBytes(
+      "30a2f82996cb948cf3352456b32db78253bd7d11a2c18d792fcd25a52833b5d2"
+        + "ff35f333dd45bcf43fd0090eec17e7e42caab4d48e960ac0398a8e281a18bc98"
+        + "38c891ef02a9d8617c1c79b3e9df0b396578849f8de352eacf302ac4e5cc1976"
+        + "e145c037d34a8f6de2e5d31b708cecb28ce1b46c07c6c8ae1c285eab26c22f2"
+        + "5e61fb39a663feae56fc905311ae0597dd985ceafa8e46cf811900b8b8a61547"
+        + "bc4fa799098dcf9fa34dc3e71262496becf4438a3e3444f5eca8ee5102fe3ec3"
+        + "c6839919f02b65b68a0c4140939cfd7d212f2a7a081cb93dc388c50d9f117240"
+        + "f2c78e7e197bb31f09ea8d2d831929a954fc1f2d909e2ffca4948fe7565a3521d"
+    )
+    let privateKey = try RSAPrivateKey(
+      modulus: signingModulus.span,
+      publicExponent: 65_537,
+      privateExponent: privateExponent.span
+    )
+    let signingPublicKey = privateKey.publicKey
+    let generatedSignature = try RSAPSS.sign(
+      messageHash: digest.span,
+      using: privateKey,
+      hash: .sha256,
+      entropy: FixedEntropy(
+        bytes: ContiguousArray(repeating: 0xA5, count: 32)
+      )
+    )
+    guard
+      try RSAPSS.verify(
+        signature: generatedSignature.span,
+        messageHash: digest.span,
+        publicKey: signingPublicKey,
+        hash: .sha256,
+        saltLength: 32
+      )
+    else {
+      throw Failure.rsaPSS
+    }
+  }
+
+  private static func validateSigningKeyImport() throws {
+    let privateKeyDER = try hexadecimalBytes(
+      "3041020100301306072a8648ce3d020106082a8648ce3d03010704273025020101"
+        + "04200000000000000000000000000000000000000000000000000000000000000001"
+    )
+    let privateKeyInfo = try PrivateKeyInfo(der: privateKeyDER.span)
+    let signingKey = try TLS13SigningKey(
+      privateKeyInfo: consume privateKeyInfo
+    )
+    guard signingKey.signatureScheme == .ecdsaP256SHA256 else {
+      throw Failure.signingKeyImport
+    }
+    _ = consume signingKey
   }
 
   private static func validateRSAPKCS1v15() throws {

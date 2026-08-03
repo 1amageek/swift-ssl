@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "classification": "diagnostic-impossibility-evidence",
+  "measuredDate": "2026-08-03 JST",
+  "target": {
+    "machine": "Apple M4 Max",
+    "architecture": "arm64",
+    "operatingSystem": "macOS 27.0",
+    "swiftToolchain": "org.swift.64202607231a",
+    "swiftCompilerCommit": "ef761e567dc94ee",
+    "llvmCommit": "264fd65923c28d9060211c1177a8820b76ed3ae2",
+    "boringSSLCommit": "ae49d2681a56ca7b8609f6039a770fda2a8eb550"
+  },
+  "comparison": {
+    "algorithm": "SHA-256",
+    "operation": "single-stream public one-shot digest",
+    "requiredRatio": "1.10",
+    "pairedSamples": 8
+  },
+  "stateOnlyKernel": {
+    "instructionsPerBlock": {
+      "statePreservingMove": 16,
+      "sha256h": 16,
+      "sha256h2": 16
+    },
+    "omittedRequiredOperations": [
+      "input loads",
+      "message schedule",
+      "round-constant addition",
+      "feed-forward",
+      "digest output",
+      "public API work"
+    ],
+    "llvmMCA": {
+      "cpu": "apple-m4",
+      "iterations": 100,
+      "patchedProductionInstructionsPerBlock": 101,
+      "patchedProductionTotalCycles": 11511,
+      "patchedProductionCyclesPerBlock": "115.11",
+      "stateOnlyCyclesPerBlock": "112.04",
+      "boringSSLCyclesPerBlock": "114.08",
+      "maximumRatio": "1.018208",
+      "nonStateCyclesRemovedByLowerBound": "3.07"
+    }
+  },
+  "measurements": [
+    {
+      "workloadBytes": 1024,
+      "sha256Blocks": 17,
+      "boringSSLNanosecondsPerBlock": "22.663299",
+      "stateOnlyNanosecondsPerBlock": "22.003050",
+      "maximumRatio": "1.030007"
+    },
+    {
+      "workloadBytes": 16384,
+      "sha256Blocks": 257,
+      "boringSSLNanosecondsPerBlock": "22.833215",
+      "stateOnlyNanosecondsPerBlock": "21.972605",
+      "maximumRatio": "1.039167"
+    }
+  ],
+  "patchedProduction": [
+    {
+      "workloadBytes": 64,
+      "ratio": "1.170837212",
+      "pairedBootstrap95Lower": "1.166956766",
+      "pairedBootstrap95Upper": "1.175069883"
+    },
+    {
+      "workloadBytes": 1024,
+      "ratio": "1.014470951",
+      "pairedBootstrap95Lower": "1.009767604",
+      "pairedBootstrap95Upper": "1.017312824"
+    },
+    {
+      "workloadBytes": 16384,
+      "ratio": "1.009974550",
+      "pairedBootstrap95Lower": "1.006648362",
+      "pairedBootstrap95Upper": "1.013005536"
+    }
+  ],
+  "limitations": [
+    "The state-only measurements retain no digest semantics and are not benchmark passes.",
+    "The aggregate state-only record does not retain the eight raw paired samples.",
+    "The patched production measurements are exploratory because the Swift source tree was dirty and the compiler object was linked separately."
+  ]
+}

@@ -17,7 +17,8 @@ surface. The profile supports Base, PSK, Auth, and AuthPSK setup, HKDF-SHA256,
 HKDF-SHA384, HKDF-SHA512, AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305,
 sequence-bound nonces, exporter output, and typed authentication failures.
 P-256 DHKEM, X448, ECH, and post-quantum KEMs must use separate identifiers and
-cannot silently fall back to X25519.
+cannot silently fall back to X25519. ADR 0045 owns the separately identified
+P-256 DHKEM profile and its still-open validation gates.
 
 ```mermaid
 flowchart LR

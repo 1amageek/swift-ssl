@@ -68,18 +68,29 @@ scripts/swift-test-timeout.sh 120 \
   --scratch-path .build/target-validation-hybrid-wasi \
   swift-ssl-hybrid-target-validation
 
+EMBEDDED_SWIFT_RESOURCES="$( \
+  xcrun --toolchain org.swift.64202607231a swift sdk configure \
+  --show-configuration \
+  swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
+  | awk -F': ' '$1 == "swiftResourcesPath" { print $2 }' \
+)"
+EMBEDDED_UNICODE_TABLES="${EMBEDDED_SWIFT_RESOURCES}/embedded/wasm32-unknown-wasip1/libswiftUnicodeDataTables.a"
+test -f "${EMBEDDED_UNICODE_TABLES}"
+
 scripts/swift-test-timeout.sh 120 \
   env TOOLCHAINS=org.swift.64202607231a \
   swift run -c release \
   --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
   --scratch-path .build/target-validation-hybrid-wasi-embedded \
+  -Xlinker "${EMBEDDED_UNICODE_TABLES}" \
   swift-ssl-hybrid-target-validation
 
 scripts/swift-test-timeout.sh 120 \
   env TOOLCHAINS=org.swift.64202607231a \
-  swift run \
+  swift run -c release \
   --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
   --scratch-path .build/target-validation-wasi-embedded \
+  -Xlinker "${EMBEDDED_UNICODE_TABLES}" \
   swift-ssl-target-validation
 
 swift build -c release \
@@ -93,6 +104,7 @@ scripts/swift-test-timeout.sh 120 \
 
 swift build -c release \
   --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
+  -Xlinker "${EMBEDDED_UNICODE_TABLES}" \
   --product swift-ssl-quic-crypto-stream-validation
 
 scripts/swift-test-timeout.sh 120 \
@@ -108,6 +120,7 @@ selects one bounded success or mutation case at manifest-evaluation time:
 SWIFT_SSL_NIST_VALIDATION_CASE=p384-valid \
   swift build -c release \
   --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
+  -Xlinker "${EMBEDDED_UNICODE_TABLES}" \
   --product swift-ssl-nist-verification-validation
 
 SWIFT_SSL_NIST_VALIDATION_CASE=p384-valid \

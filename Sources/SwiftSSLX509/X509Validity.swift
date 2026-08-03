@@ -22,6 +22,14 @@ public struct X509Validity: Sendable, Hashable {
         notBeforeInstant <= instant && instant <= notAfterInstant
     }
 
+    public var notBeforeVerificationInstant: VerificationInstant {
+        notBeforeInstant
+    }
+
+    public var notAfterVerificationInstant: VerificationInstant {
+        notAfterInstant
+    }
+
     internal static func decode(
         notBefore: Span<UInt8>,
         notAfter: Span<UInt8>
@@ -38,7 +46,7 @@ public struct X509Validity: Sendable, Hashable {
         )
     }
 
-    private static func decodeTime(
+    internal static func decodeTime(
         _ bytes: Span<UInt8>
     ) -> (text: String, instant: VerificationInstant)? {
         guard bytes.count == 13 || bytes.count == 15 else {

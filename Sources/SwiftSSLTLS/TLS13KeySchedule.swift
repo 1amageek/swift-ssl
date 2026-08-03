@@ -86,6 +86,23 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
     )
   }
 
+  /// Derives the client-to-server 0-RTT traffic secret from the complete
+  /// ClientHello transcript hash.
+  public borrowing func makeClientEarlyTrafficSecret(
+    transcriptHash: Span<UInt8>
+  ) throws(TLS13KeyScheduleError) -> TLS13EarlyTrafficSecret {
+    let secret = try Self.deriveSecret(
+      secret: earlySecret,
+      label: "c e traffic",
+      transcriptHash: transcriptHash,
+      cipherSuite: cipherSuite
+    )
+    return TLS13EarlyTrafficSecret(
+      cipherSuite: cipherSuite,
+      secret: secret
+    )
+  }
+
   static func hashByteCount(for suite: TLSCipherSuite) -> Int {
     suite == .aes256GCM_SHA384 ? 48 : 32
   }
@@ -211,7 +228,7 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
   /// Implements RFC 8446 HKDF-Expand-Label with the caller-supplied raw
   /// context. Callers implementing Derive-Secret must pass a transcript hash;
   /// Finished, traffic updates, and resumption pass their specified raw context.
-  private static func expandLabel(
+  static func expandLabel(
     secret: borrowing SecretBytes,
     label: String,
     context: Span<UInt8>,
@@ -252,13 +269,15 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
     outputByteCount: Int,
     cipherSuite: TLSCipherSuite
   ) throws(TLS13KeyScheduleError) -> SecretBytes {
-    var output = ContiguousArray<UInt8>(repeating: 0, count: outputByteCount)
-    defer { wipe(&output) }
+    let secretByteCount: SecretByteCount
     do {
-      try secret.withBorrowedBytes { secretBytes in
-        try output.withUnsafeMutableBufferPointer { buffer throws(HKDFError) in
-          let baseAddress = buffer.baseAddress!
-          var destination = MutableSpan(_unsafeStart: baseAddress, count: outputByteCount)
+      secretByteCount = try SecretByteCount(outputByteCount)
+    } catch {
+      throw .invalidSecretMemory
+    }
+    do {
+      return try SecretBytes(byteCount: secretByteCount) { destination throws(HKDFError) in
+        try secret.withBorrowedBytes { secretBytes throws(HKDFError) in
           switch cipherSuite {
           case .aes256GCM_SHA384:
             try HKDFSHA384.expand(
@@ -275,13 +294,8 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
           }
         }
       }
-    } catch {
-      throw .cryptographicFailure
-    }
-    do {
-      return try SecretBytes(copying: output.span)
-    } catch {
-      throw .invalidSecretMemory
+    } catch let error {
+      throw .hkdfFailure(error)
     }
   }
 
@@ -291,12 +305,14 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
     cipherSuite: TLSCipherSuite
   ) throws(TLS13KeyScheduleError) -> SecretBytes {
     let outputByteCount = Self.hashByteCount(for: cipherSuite)
-    var output = ContiguousArray<UInt8>(repeating: 0, count: outputByteCount)
-    defer { wipe(&output) }
+    let secretByteCount: SecretByteCount
     do {
-      try output.withUnsafeMutableBufferPointer { buffer throws(HKDFError) in
-        let baseAddress = buffer.baseAddress!
-        var destination = MutableSpan(_unsafeStart: baseAddress, count: outputByteCount)
+      secretByteCount = try SecretByteCount(outputByteCount)
+    } catch {
+      throw .invalidSecretMemory
+    }
+    do {
+      return try SecretBytes(byteCount: secretByteCount) { destination throws(HKDFError) in
         switch cipherSuite {
         case .aes256GCM_SHA384:
           try HKDFSHA384.extract(
@@ -312,13 +328,8 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
           )
         }
       }
-    } catch {
-      throw .cryptographicFailure
-    }
-    do {
-      return try SecretBytes(copying: output.span)
-    } catch {
-      throw .invalidSecretMemory
+    } catch let error {
+      throw .hkdfFailure(error)
     }
   }
 
@@ -328,13 +339,15 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
     cipherSuite: TLSCipherSuite
   ) throws(TLS13KeyScheduleError) -> SecretBytes {
     let outputByteCount = Self.hashByteCount(for: cipherSuite)
-    var output = ContiguousArray<UInt8>(repeating: 0, count: outputByteCount)
-    defer { wipe(&output) }
+    let secretByteCount: SecretByteCount
     do {
-      try salt.withBorrowedBytes { saltBytes in
-        try output.withUnsafeMutableBufferPointer { buffer throws(HKDFError) in
-          let baseAddress = buffer.baseAddress!
-          var destination = MutableSpan(_unsafeStart: baseAddress, count: outputByteCount)
+      secretByteCount = try SecretByteCount(outputByteCount)
+    } catch {
+      throw .invalidSecretMemory
+    }
+    do {
+      return try SecretBytes(byteCount: secretByteCount) { destination throws(HKDFError) in
+        try salt.withBorrowedBytes { saltBytes throws(HKDFError) in
           switch cipherSuite {
           case .aes256GCM_SHA384:
             try HKDFSHA384.extract(
@@ -351,17 +364,12 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
           }
         }
       }
-    } catch {
-      throw .cryptographicFailure
-    }
-    do {
-      return try SecretBytes(copying: output.span)
-    } catch {
-      throw .invalidSecretMemory
+    } catch let error {
+      throw .hkdfFailure(error)
     }
   }
 
-  private static func hashEmptyMessage(
+  static func hashEmptyMessage(
     cipherSuite: TLSCipherSuite
   ) throws(TLS13KeyScheduleError) -> OwnedBytes {
     let outputByteCount = Self.hashByteCount(for: cipherSuite)

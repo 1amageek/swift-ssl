@@ -4,30 +4,79 @@ import SwiftSSLCrypto
 /// TLS 1.3 client stream adapter backed by the record-independent core.
 public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable {
   private var core: TLS13ClientHandshakeCore
+  private var earlyRead: TLS13RecordProtector?
+  private var earlyWrite: TLS13RecordProtector?
   private var handshakeRead: TLS13RecordProtector?
   private var handshakeWrite: TLS13RecordProtector?
   private var applicationRead: TLS13RecordProtector?
   private var applicationWrite: TLS13RecordProtector?
+  private var pendingHandshakePlaintext: OwnedBytes?
+  private var pendingHandshakeMessageRanges: ContiguousArray<ByteRange>
+  private var pendingHandshakeMessageIndex: Int
+  private var earlyDataByteCountSent: UInt32
   private var hasFailed: Bool
 
   public init(
     random: Span<UInt8>,
     ephemeralKey: consuming X25519PrivateKey,
-    expectedServerPublicKey: Span<UInt8>,
+    certificateValidator: any TLS13ServerCertificateValidating,
+    clientIdentity: consuming TLS13ClientIdentity? = nil,
+    externalClientCredential: TLS13ExternalClientCredential? = nil,
+    applicationProtocols: ContiguousArray<TLS13ApplicationProtocol> = [],
+    transportParameters: Span<UInt8>? = nil,
     serverName: Span<UInt8>? = nil,
     verificationInstant: VerificationInstant,
     cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
     resumptionState: consuming TLS13ResumptionState? = nil,
+    earlyDataConfiguration: TLS13EarlyDataClientConfiguration? = nil,
     echConfiguration: consuming ECHClientConfiguration? = nil
   ) throws(TLS13HandshakeEngineError) {
     let core = try TLS13ClientHandshakeCore(
       random: random,
       ephemeralKey: ephemeralKey,
-      expectedServerPublicKey: expectedServerPublicKey,
+      certificateValidator: certificateValidator,
+      clientIdentity: consume clientIdentity,
+      externalClientCredential: externalClientCredential,
+      applicationProtocols: applicationProtocols,
+      transportParameters: transportParameters,
       serverName: serverName,
       verificationInstant: verificationInstant,
       cipherSuite: cipherSuite,
       resumptionState: resumptionState,
+      earlyDataConfiguration: earlyDataConfiguration,
+      echConfiguration: consume echConfiguration
+    )
+    self.init(core: core)
+  }
+
+  public init(
+    random: Span<UInt8>,
+    keyExchange: consuming TLS13P256ClientKeyExchange,
+    certificateValidator: any TLS13ServerCertificateValidating,
+    clientIdentity: consuming TLS13ClientIdentity? = nil,
+    externalClientCredential: TLS13ExternalClientCredential? = nil,
+    applicationProtocols: ContiguousArray<TLS13ApplicationProtocol> = [],
+    transportParameters: Span<UInt8>? = nil,
+    serverName: Span<UInt8>? = nil,
+    verificationInstant: VerificationInstant,
+    cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
+    resumptionState: consuming TLS13ResumptionState? = nil,
+    earlyDataConfiguration: TLS13EarlyDataClientConfiguration? = nil,
+    echConfiguration: consuming ECHClientConfiguration? = nil
+  ) throws(TLS13HandshakeEngineError) {
+    let core = try TLS13ClientHandshakeCore(
+      random: random,
+      keyExchange: keyExchange,
+      certificateValidator: certificateValidator,
+      clientIdentity: consume clientIdentity,
+      externalClientCredential: externalClientCredential,
+      applicationProtocols: applicationProtocols,
+      transportParameters: transportParameters,
+      serverName: serverName,
+      verificationInstant: verificationInstant,
+      cipherSuite: cipherSuite,
+      resumptionState: resumptionState,
+      earlyDataConfiguration: earlyDataConfiguration,
       echConfiguration: consume echConfiguration
     )
     self.init(core: core)
@@ -36,21 +85,130 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
   public init(
     random: Span<UInt8>,
     keyExchange: consuming TLS13X25519MLKEM768ClientKeyExchange,
-    expectedServerPublicKey: Span<UInt8>,
+    certificateValidator: any TLS13ServerCertificateValidating,
+    clientIdentity: consuming TLS13ClientIdentity? = nil,
+    externalClientCredential: TLS13ExternalClientCredential? = nil,
+    applicationProtocols: ContiguousArray<TLS13ApplicationProtocol> = [],
+    transportParameters: Span<UInt8>? = nil,
     serverName: Span<UInt8>? = nil,
     verificationInstant: VerificationInstant,
     cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
     resumptionState: consuming TLS13ResumptionState? = nil,
+    earlyDataConfiguration: TLS13EarlyDataClientConfiguration? = nil,
     echConfiguration: consuming ECHClientConfiguration? = nil
   ) throws(TLS13HandshakeEngineError) {
     let core = try TLS13ClientHandshakeCore(
       random: random,
       keyExchange: keyExchange,
-      expectedServerPublicKey: expectedServerPublicKey,
+      certificateValidator: certificateValidator,
+      clientIdentity: consume clientIdentity,
+      externalClientCredential: externalClientCredential,
+      applicationProtocols: applicationProtocols,
+      transportParameters: transportParameters,
       serverName: serverName,
       verificationInstant: verificationInstant,
       cipherSuite: cipherSuite,
       resumptionState: resumptionState,
+      earlyDataConfiguration: earlyDataConfiguration,
+      echConfiguration: consume echConfiguration
+    )
+    self.init(core: core)
+  }
+
+  public init(
+    random: Span<UInt8>,
+    ephemeralKey: consuming X25519PrivateKey,
+    externalServerTrust: TLS13ExternalServerTrust,
+    clientIdentity: consuming TLS13ClientIdentity? = nil,
+    externalClientCredential: TLS13ExternalClientCredential? = nil,
+    applicationProtocols: ContiguousArray<TLS13ApplicationProtocol> = [],
+    transportParameters: Span<UInt8>? = nil,
+    serverName: Span<UInt8>? = nil,
+    verificationInstant: VerificationInstant,
+    cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
+    resumptionState: consuming TLS13ResumptionState? = nil,
+    earlyDataConfiguration: TLS13EarlyDataClientConfiguration? = nil,
+    echConfiguration: consuming ECHClientConfiguration? = nil
+  ) throws(TLS13HandshakeEngineError) {
+    let core = try TLS13ClientHandshakeCore(
+      random: random,
+      ephemeralKey: ephemeralKey,
+      externalServerTrust: externalServerTrust,
+      clientIdentity: consume clientIdentity,
+      externalClientCredential: externalClientCredential,
+      applicationProtocols: applicationProtocols,
+      transportParameters: transportParameters,
+      serverName: serverName,
+      verificationInstant: verificationInstant,
+      cipherSuite: cipherSuite,
+      resumptionState: resumptionState,
+      earlyDataConfiguration: earlyDataConfiguration,
+      echConfiguration: consume echConfiguration
+    )
+    self.init(core: core)
+  }
+
+  public init(
+    random: Span<UInt8>,
+    keyExchange: consuming TLS13P256ClientKeyExchange,
+    externalServerTrust: TLS13ExternalServerTrust,
+    clientIdentity: consuming TLS13ClientIdentity? = nil,
+    externalClientCredential: TLS13ExternalClientCredential? = nil,
+    applicationProtocols: ContiguousArray<TLS13ApplicationProtocol> = [],
+    transportParameters: Span<UInt8>? = nil,
+    serverName: Span<UInt8>? = nil,
+    verificationInstant: VerificationInstant,
+    cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
+    resumptionState: consuming TLS13ResumptionState? = nil,
+    earlyDataConfiguration: TLS13EarlyDataClientConfiguration? = nil,
+    echConfiguration: consuming ECHClientConfiguration? = nil
+  ) throws(TLS13HandshakeEngineError) {
+    let core = try TLS13ClientHandshakeCore(
+      random: random,
+      keyExchange: keyExchange,
+      externalServerTrust: externalServerTrust,
+      clientIdentity: consume clientIdentity,
+      externalClientCredential: externalClientCredential,
+      applicationProtocols: applicationProtocols,
+      transportParameters: transportParameters,
+      serverName: serverName,
+      verificationInstant: verificationInstant,
+      cipherSuite: cipherSuite,
+      resumptionState: resumptionState,
+      earlyDataConfiguration: earlyDataConfiguration,
+      echConfiguration: consume echConfiguration
+    )
+    self.init(core: core)
+  }
+
+  public init(
+    random: Span<UInt8>,
+    keyExchange: consuming TLS13X25519MLKEM768ClientKeyExchange,
+    externalServerTrust: TLS13ExternalServerTrust,
+    clientIdentity: consuming TLS13ClientIdentity? = nil,
+    externalClientCredential: TLS13ExternalClientCredential? = nil,
+    applicationProtocols: ContiguousArray<TLS13ApplicationProtocol> = [],
+    transportParameters: Span<UInt8>? = nil,
+    serverName: Span<UInt8>? = nil,
+    verificationInstant: VerificationInstant,
+    cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
+    resumptionState: consuming TLS13ResumptionState? = nil,
+    earlyDataConfiguration: TLS13EarlyDataClientConfiguration? = nil,
+    echConfiguration: consuming ECHClientConfiguration? = nil
+  ) throws(TLS13HandshakeEngineError) {
+    let core = try TLS13ClientHandshakeCore(
+      random: random,
+      keyExchange: keyExchange,
+      externalServerTrust: externalServerTrust,
+      clientIdentity: consume clientIdentity,
+      externalClientCredential: externalClientCredential,
+      applicationProtocols: applicationProtocols,
+      transportParameters: transportParameters,
+      serverName: serverName,
+      verificationInstant: verificationInstant,
+      cipherSuite: cipherSuite,
+      resumptionState: resumptionState,
+      earlyDataConfiguration: earlyDataConfiguration,
       echConfiguration: consume echConfiguration
     )
     self.init(core: core)
@@ -58,14 +216,39 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
 
   private init(core: consuming TLS13ClientHandshakeCore) {
     self.core = core
+    earlyRead = nil
+    earlyWrite = nil
     handshakeRead = nil
     handshakeWrite = nil
     applicationRead = nil
     applicationWrite = nil
+    pendingHandshakePlaintext = nil
+    pendingHandshakeMessageRanges = []
+    pendingHandshakeMessageIndex = 0
+    earlyDataByteCountSent = 0
     hasFailed = false
   }
 
   public var isEstablished: Bool { !hasFailed && core.isEstablished }
+
+  public var negotiatedApplicationProtocol: TLS13ApplicationProtocol? {
+    core.negotiatedApplicationProtocol
+  }
+
+  public var receivedTransportParameters: OwnedBytes? {
+    core.receivedTransportParameters
+  }
+
+  public var earlyDataState: TLS13EarlyDataState { core.earlyDataState }
+
+  public var earlyDataByteLimit: UInt32 { core.earlyDataByteLimit }
+
+  public mutating func configureCertificateCompression(
+    _ configuration: TLS13CertificateCompressionConfiguration
+  ) throws(TLS13HandshakeEngineError) {
+    guard !hasFailed else { throw .invalidState }
+    try core.configureCertificateCompression(configuration)
+  }
 
   public mutating func start()
     throws(TLS13HandshakeEngineError) -> TLS13HandshakeOutput
@@ -135,6 +318,98 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
     }
   }
 
+  public mutating func receiveRecordStep(
+    _ input: Span<UInt8>
+  ) throws(TLS13HandshakeEngineError) -> TLS13StreamHandshakeTransition {
+    guard !hasFailed, !core.isEstablished,
+      pendingHandshakePlaintext == nil
+    else {
+      throw .invalidState
+    }
+    do {
+      let recordRanges = try TLS13HandshakeWire.recordRanges(input)
+      guard recordRanges.count == 1 else {
+        throw TLS13HandshakeEngineError.malformedInput
+      }
+      let record = try inputSpan(input, range: recordRanges[0])
+      var recordBytes = ContiguousArray<UInt8>()
+      var actions = ContiguousArray<TLSStreamAction>()
+      let request: TLS13CapabilityRequest?
+      if handshakeRead == nil {
+        let message = try TLS13HandshakeWire.plaintextPayload(record: record)
+        request = try appendCoreTransition(
+          try core.receiveHandshakeMessageStep(message, at: .initial),
+          recordBytes: &recordBytes,
+          terminalActions: &actions
+        )
+      } else {
+        let plaintext = try openHandshakeRecord(record)
+        request = try processHandshakePlaintextStep(
+          plaintext,
+          startingAt: 0,
+          recordBytes: &recordBytes,
+          terminalActions: &actions
+        )
+      }
+      let output = try TLS13HandshakeWire.makeOutput(
+        storage: recordBytes,
+        terminalActions: actions
+      )
+      if let request {
+        return .suspended(request, output)
+      }
+      return .output(output)
+    } catch let error {
+      hasFailed = true
+      throw mapHandshakeEngineError(error)
+    }
+  }
+
+  public mutating func resume(
+    _ response: TLS13CapabilityResponse
+  ) throws(TLS13HandshakeEngineError) -> TLS13StreamHandshakeTransition {
+    guard !hasFailed, !core.isEstablished else { throw .invalidState }
+    var recordBytes = ContiguousArray<UInt8>()
+    var actions = ContiguousArray<TLSStreamAction>()
+    let transition = try core.resume(response)
+    if let request = try appendCoreTransition(
+      transition,
+      recordBytes: &recordBytes,
+      terminalActions: &actions
+    ) {
+      return .suspended(
+        request,
+        try TLS13HandshakeWire.makeOutput(
+          storage: recordBytes,
+          terminalActions: actions
+        )
+      )
+    }
+    if let plaintext = pendingHandshakePlaintext.take() {
+      let startIndex = pendingHandshakeMessageIndex
+      if let request = try processHandshakePlaintextStep(
+        plaintext,
+        startingAt: startIndex,
+        recordBytes: &recordBytes,
+        terminalActions: &actions
+      ) {
+        return .suspended(
+          request,
+          try TLS13HandshakeWire.makeOutput(
+            storage: recordBytes,
+            terminalActions: actions
+          )
+        )
+      }
+    }
+    return .output(
+      try TLS13HandshakeWire.makeOutput(
+        storage: recordBytes,
+        terminalActions: actions
+      )
+    )
+  }
+
   public mutating func sendApplicationData(
     _ content: Span<UInt8>
   ) throws(TLS13HandshakeEngineError) -> TLS13HandshakeOutput {
@@ -153,6 +428,36 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
       throw mapHandshakeEngineError(error)
     }
     applicationWrite = consume protector
+    return try TLS13HandshakeWire.makeOutput(bytes: record)
+  }
+
+  public mutating func sendEarlyData(
+    _ content: Span<UInt8>
+  ) throws(TLS13HandshakeEngineError) -> TLS13HandshakeOutput {
+    guard !hasFailed,
+      core.earlyDataState == .offered,
+      var protector = earlyWrite.take()
+    else {
+      throw .invalidState
+    }
+    let nextCount = UInt64(earlyDataByteCountSent) + UInt64(content.count)
+    guard nextCount <= UInt64(core.earlyDataByteLimit) else {
+      earlyWrite = consume protector
+      throw .invalidConfiguration
+    }
+    let record: OwnedBytes
+    do {
+      record = try TLS13HandshakeWire.seal(
+        content: content,
+        contentType: .applicationData,
+        with: &protector
+      )
+    } catch let error {
+      earlyWrite = consume protector
+      throw mapHandshakeEngineError(error)
+    }
+    earlyWrite = consume protector
+    earlyDataByteCountSent = UInt32(nextCount)
     return try TLS13HandshakeWire.makeOutput(bytes: record)
   }
 
@@ -202,20 +507,46 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
   public mutating func receivePostHandshakeRecord(
     _ input: Span<UInt8>
   ) throws(TLS13HandshakeEngineError) -> TLS13HandshakeOutput {
-    guard isEstablished else { throw .invalidState }
+    let transition = try receivePostHandshakeRecordStep(input)
+    switch consume transition {
+    case .output(let output):
+      return output
+    case .suspended:
+      throw .capability(.wrongState)
+    }
+  }
+
+  public mutating func receivePostHandshakeRecordStep(
+    _ input: Span<UInt8>
+  ) throws(TLS13HandshakeEngineError) -> TLS13StreamHandshakeTransition {
+    guard !hasFailed, isEstablished else { throw .invalidState }
     do {
-      let message = try openHandshakeApplicationRecord(input)
-      let ranges = try TLS13HandshakeWire.handshakeMessageRanges(message.span)
+      let plaintext = try openHandshakeApplicationRecord(input)
+      let ranges = try TLS13HandshakeWire.handshakeMessageRanges(plaintext.span)
       guard ranges.count == 1 else { throw TLS13HandshakeEngineError.malformedInput }
-      let requestPeerUpdate = try TLS13HandshakeCodec.parseKeyUpdate(
-        try message.span(in: ranges[0])
-      )
-      let secret = try core.updateApplicationTrafficSecret(for: .server)
-      applicationRead = try makeProtector(secret)
-      if requestPeerUpdate {
-        return try requestKeyUpdate(requestPeerUpdate: false)
+      let message = try plaintext.span(in: ranges[0])
+      if !message.isEmpty, message[0] == TLS13HandshakeCodec.keyUpdateType {
+        let requestPeerUpdate = try TLS13HandshakeCodec.parseKeyUpdate(message)
+        let secret = try core.updateApplicationTrafficSecret(for: .server)
+        applicationRead = try makeProtector(secret)
+        let output = requestPeerUpdate
+          ? try requestKeyUpdate(requestPeerUpdate: false)
+          : try TLS13HandshakeWire.makeOutput(bytes: OwnedBytes())
+        return .output(output)
       }
-      return try TLS13HandshakeWire.makeOutput(bytes: OwnedBytes())
+      var recordBytes = ContiguousArray<UInt8>()
+      var actions = ContiguousArray<TLSStreamAction>()
+      let request = try appendCoreTransition(
+        try core.receivePostHandshakeAuthenticationRequestStep(message),
+        recordBytes: &recordBytes,
+        terminalActions: &actions
+      )
+      let output = try TLS13HandshakeWire.makeOutput(
+        storage: recordBytes,
+        terminalActions: actions
+      )
+      if let request { return .suspended(request, output) }
+      return .output(output)
     } catch let error {
       hasFailed = true
       throw mapHandshakeEngineError(error)
@@ -232,11 +563,75 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
       role: .client,
       recordBytes: &recordBytes,
       terminalActions: &terminalActions,
+      earlyRead: &earlyRead,
+      earlyWrite: &earlyWrite,
       handshakeRead: &handshakeRead,
       handshakeWrite: &handshakeWrite,
       applicationRead: &applicationRead,
       applicationWrite: &applicationWrite
     )
+  }
+
+  private mutating func appendCoreTransition(
+    _ transition: consuming TLS13HandshakeCoreTransition,
+    recordBytes: inout ContiguousArray<UInt8>,
+    terminalActions: inout ContiguousArray<TLSStreamAction>
+  ) throws(TLS13HandshakeEngineError) -> TLS13CapabilityRequest? {
+    switch consume transition {
+    case .output(let output):
+      try appendCoreOutput(
+        output,
+        recordBytes: &recordBytes,
+        terminalActions: &terminalActions
+      )
+      return nil
+    case .suspended(let request):
+      return request
+    }
+  }
+
+  private mutating func processHandshakePlaintextStep(
+    _ plaintext: consuming OwnedBytes,
+    startingAt startIndex: Int,
+    recordBytes: inout ContiguousArray<UInt8>,
+    terminalActions: inout ContiguousArray<TLSStreamAction>
+  ) throws(TLS13HandshakeEngineError) -> TLS13CapabilityRequest? {
+    let ranges: ContiguousArray<ByteRange>
+    if startIndex == 0 {
+      ranges = try TLS13HandshakeWire.handshakeMessageRanges(plaintext.span)
+    } else {
+      ranges = pendingHandshakeMessageRanges
+    }
+    pendingHandshakeMessageRanges = []
+    pendingHandshakeMessageIndex = 0
+    var index = startIndex
+    while index < ranges.count {
+      let message: Span<UInt8>
+      do {
+        message = try plaintext.span(in: ranges[index])
+      } catch let error {
+        throw .output(error)
+      }
+      let transition = try core.receiveHandshakeMessageStep(
+        message,
+        at: .handshake
+      )
+      index += 1
+      if let request = try appendCoreTransition(
+        transition,
+        recordBytes: &recordBytes,
+        terminalActions: &terminalActions
+      ) {
+        if index < ranges.count {
+          pendingHandshakePlaintext = plaintext
+          pendingHandshakeMessageRanges = ranges
+          pendingHandshakeMessageIndex = index
+        }
+        return request
+      }
+    }
+    pendingHandshakePlaintext = nil
+    return nil
   }
 
   private mutating func openHandshakeRecord(

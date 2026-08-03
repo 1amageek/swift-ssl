@@ -21,25 +21,22 @@ enum SHA256Compression {
         )
       }
     #else
-      var blockIndex = 0
-      while blockIndex < blockCount {
-        let blockOffset = offset + blockIndex * 64
-        var initialSchedule = SIMD16<UInt32>(repeating: 0)
-        var wordIndex = 0
-        while wordIndex < 16 {
-          let byteOffset = blockOffset + wordIndex * 4
-          initialSchedule[wordIndex] =
-            (UInt32(input[unchecked: byteOffset]) << 24)
-            | (UInt32(input[unchecked: byteOffset + 1]) << 16)
-            | (UInt32(input[unchecked: byteOffset + 2]) << 8)
-            | UInt32(input[unchecked: byteOffset + 3])
-          wordIndex += 1
+      // Unsafe invariants: the caller proves `offset >= 0`, `blockCount > 0`,
+      // and that the span contains `blockCount * 64` initialized bytes from
+      // `offset`. The span owner remains alive for the synchronous borrow.
+      // Each derived pointer is used only for unaligned read-only word loads;
+      // it does not escape, bind memory, mutate input, or cross Sendable.
+      input.bytes.withUnsafeBytes { bytes in
+        let firstBlock = bytes.baseAddress.unsafelyUnwrapped.advanced(by: offset)
+        var blockIndex = 0
+        while blockIndex < blockCount {
+          let block = firstBlock.advanced(by: blockIndex * 64)
+          SHA256ScalarKernel.compress(
+            state: &state,
+            initialSchedule: loadInitialSchedule(from: block)
+          )
+          blockIndex += 1
         }
-        SHA256ScalarKernel.compress(
-          state: &state,
-          initialSchedule: initialSchedule
-        )
-        blockIndex += 1
       }
     #endif
   }
@@ -58,17 +55,36 @@ enum SHA256Compression {
         )
       }
     #else
-      var initialSchedule = SIMD16<UInt32>(repeating: 0)
-      var index = 0
-      while index < 16 {
-        let byteOffset = index * 4
-        initialSchedule[index] =
-          (UInt32(pendingBytes[byteOffset]) << 24)
-          | (UInt32(pendingBytes[byteOffset + 1]) << 16)
-          | (UInt32(pendingBytes[byteOffset + 2]) << 8)
-          | UInt32(pendingBytes[byteOffset + 3])
-        index += 1
+      // Unsafe invariants: `pendingBytes` is a fully initialized inline
+      // 64-byte value retained for this synchronous closure. The helper makes
+      // unaligned read-only loads, and no pointer escapes or crosses Sendable.
+      withUnsafeBytes(of: pendingBytes) { bytes in
+        SHA256ScalarKernel.compress(
+          state: &state,
+          initialSchedule: loadInitialSchedule(
+            from: bytes.baseAddress.unsafelyUnwrapped
+          )
+        )
       }
+    #endif
+  }
+
+  @inline(__always)
+  static func compressPaddingBlock(
+    state: inout SIMD8<UInt32>,
+    bitCount: UInt64
+  ) {
+    var initialSchedule = SIMD16<UInt32>(repeating: 0)
+    initialSchedule[0] = 0x8000_0000
+    initialSchedule[14] = UInt32(truncatingIfNeeded: bitCount >> 32)
+    initialSchedule[15] = UInt32(truncatingIfNeeded: bitCount)
+
+    #if os(macOS) && arch(arm64) && canImport(simd)
+      SHA256ARM64Kernel.compress(
+        state: &state,
+        initialSchedule: initialSchedule
+      )
+    #else
       SHA256ScalarKernel.compress(
         state: &state,
         initialSchedule: initialSchedule
@@ -99,4 +115,20 @@ enum SHA256Compression {
       )
     }
   #endif
+
+  @inline(__always)
+  private static func loadInitialSchedule(
+    from block: UnsafeRawPointer
+  ) -> SIMD16<UInt32> {
+    var initialSchedule = SIMD16<UInt32>(repeating: 0)
+    var wordIndex = 0
+    while wordIndex < 16 {
+      initialSchedule[wordIndex] = block.loadUnaligned(
+        fromByteOffset: wordIndex * MemoryLayout<UInt32>.stride,
+        as: UInt32.self
+      ).bigEndian
+      wordIndex += 1
+    }
+    return initialSchedule
+  }
 }

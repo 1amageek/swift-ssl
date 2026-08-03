@@ -1099,7 +1099,10 @@ class RunnerContractTests(unittest.TestCase):
             "InoutLifetimeDependence",
             "LifetimeDependenceMutableAccessors",
             "Lifetimes",
+            "Extern",
         ]
+        if module_name == "SwiftSSLCrypto":
+            feature_names.append("BuiltinModule")
         if module_name == "SwiftSSLCore":
             feature_names.append("Volatile")
         arguments = [

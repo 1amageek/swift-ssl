@@ -22,4 +22,8 @@ public struct TLS13TrafficSecret: ~Copyable, Sendable {
     ) throws(Failure) -> Result {
         try secret.withBorrowedBytes(body)
     }
+
+    package consuming func takeSecret() -> SecretBytes {
+        secret
+    }
 }

@@ -119,9 +119,15 @@ public struct ECPrivateKey: ~Copyable, Sendable {
             }
         }
 
-        let curve = Self.mapCurve(parameterOID)
+        let encodedCurve = Self.mapCurve(parameterOID)
+        let curve: NamedCurve
         if let expectedCurve {
-            guard curve == expectedCurve else { throw .invalidParameters }
+            if parameterOID != nil, encodedCurve != expectedCurve {
+                throw .invalidParameters
+            }
+            curve = expectedCurve
+        } else {
+            curve = encodedCurve
         }
         if let expectedByteCount = Self.byteCount(for: curve) {
             guard scalarBytes.count == expectedByteCount else {

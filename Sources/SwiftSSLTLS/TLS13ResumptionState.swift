@@ -16,6 +16,8 @@ public struct TLS13ResumptionState: ~Copyable, Sendable {
     public let issuedAt: VerificationInstant
     public let lifetime: UInt32
     public let ageAdd: UInt32
+    public let maximumEarlyDataByteCount: UInt32
+    public let applicationProtocol: TLS13ApplicationProtocol?
 
     private let ticket: OwnedBytes
     private let ticketNonce: OwnedBytes
@@ -29,7 +31,9 @@ public struct TLS13ResumptionState: ~Copyable, Sendable {
         cipherSuite: TLSCipherSuite,
         issuedAt: VerificationInstant,
         lifetime: UInt32,
-        ageAdd: UInt32
+        ageAdd: UInt32,
+        maximumEarlyDataByteCount: UInt32 = 0,
+        applicationProtocol: TLS13ApplicationProtocol? = nil
     ) throws(TLS13ResumptionError) {
         guard !ticket.isEmpty, ticket.count <= Self.maximumTicketByteCount else {
             throw .invalidTicketLength(actual: ticket.count)
@@ -58,6 +62,8 @@ public struct TLS13ResumptionState: ~Copyable, Sendable {
         self.issuedAt = issuedAt
         self.lifetime = lifetime
         self.ageAdd = ageAdd
+        self.maximumEarlyDataByteCount = maximumEarlyDataByteCount
+        self.applicationProtocol = applicationProtocol
         consumed = false
     }
 

@@ -77,6 +77,20 @@ WORKLOADS = (
         "authenticatedDataBytes": 377,
         "initialIterations": 8_000,
     },
+    {
+        "name": "p256-sender-setup",
+        "operation": "p256-sender-setup",
+        "payloadBytes": 1,
+        "authenticatedDataBytes": 0,
+        "initialIterations": 5_000,
+    },
+    {
+        "name": "p256-recipient-setup",
+        "operation": "p256-recipient-setup",
+        "payloadBytes": 1,
+        "authenticatedDataBytes": 0,
+        "initialIterations": 8_000,
+    },
 )
 RESULT_PATTERN = re.compile(r"^RESULT,([0-9]+),([0-9]+)$")
 VALIDATION_PATTERNS = (
@@ -87,6 +101,8 @@ VALIDATION_PATTERNS = (
 REQUIRED_SWIFT_SYMBOLS = (
     "HPKEX25519",
     "X25519FieldElement",
+    "HPKEP256",
+    "P256Words",
 )
 DIRECT_PMULL_PATTERN = re.compile(r"\bpmull\.1q\b")
 BYTE_PMULL_PATTERN = re.compile(r"\bpmull\.8h\b")
@@ -100,7 +116,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Build and compare Pure Swift and pinned BoringSSL RFC 9180 "
-            "X25519/HKDF-SHA256/AES-128-GCM workloads."
+            "X25519 and P-256 HPKE workloads."
         )
     )
     parser.add_argument(

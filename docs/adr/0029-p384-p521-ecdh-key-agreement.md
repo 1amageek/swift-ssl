@@ -38,5 +38,5 @@ its copy.
 - The implementation remains validation-gated because the shared arithmetic
   is variable-time and has not yet passed the constant-time, differential,
   target, allocation, and benchmark release gates.
-- TLS selection must continue to reject these backends until those gates are
-  recorded; the incomplete-implementation marker is intentional.
+- ADR 0036 removed these secret-key backends. P-384 and P-521 remain
+  verification-only public-input capabilities and have no TLS selection path.

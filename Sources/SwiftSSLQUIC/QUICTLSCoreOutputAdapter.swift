@@ -20,6 +20,16 @@ package enum QUICTLSCoreOutputAdapter {
                     actions.append(mapped)
                     order.append(.action(index: actions.count - 1))
 
+                case .earlyTrafficSecret(let secret, let disposition):
+                    if disposition == .application {
+                        try appendEarlySecret(
+                            secret,
+                            role: role,
+                            slots: &slots,
+                            order: &order
+                        )
+                    }
+
                 case .trafficSecrets(let epoch, let pair):
                     try appendSecrets(
                         pair,
@@ -68,7 +78,11 @@ package enum QUICTLSCoreOutputAdapter {
             return .handshakeComplete
         case .handshakeConfirmed:
             return .handshakeConfirmed
-        case .installTrafficSecrets:
+        case .earlyDataAccepted:
+            return .earlyDataAccepted
+        case .earlyDataRejected:
+            return .earlyDataRejected
+        case .installEarlyTrafficSecret, .installTrafficSecrets:
             throw .invalidState
         }
     }
@@ -84,7 +98,7 @@ package enum QUICTLSCoreOutputAdapter {
         switch epoch {
         case .handshake: level = .handshake
         case .application: level = .oneRTT
-        case .initial: throw .unsupportedEpoch(epoch)
+        case .initial, .earlyData: throw .unsupportedEpoch(epoch)
         }
         var pair = consume pair
         guard let clientSecret = pair.takeClientSecret(),
@@ -123,11 +137,38 @@ package enum QUICTLSCoreOutputAdapter {
         order.append(.trafficSecret(direction: .write, level: level))
     }
 
+    private static func appendEarlySecret(
+        _ secret: consuming TLS13EarlyTrafficSecret,
+        role: TLSRole,
+        slots: inout QUICTrafficSecretSlots,
+        order: inout ContiguousArray<QUICTLSEffectDescriptor>
+    ) throws(QUICTLSHandshakeError) {
+        let direction: QUICSecretDirection
+        switch role {
+        case .client: direction = .write
+        case .server: direction = .read
+        }
+        let cipherSuite = secret.cipherSuite
+        let event = QUICTrafficSecretEvent(
+            direction: direction,
+            level: .zeroRTT,
+            cipherSuite: cipherSuite,
+            secret: secret.takeSecret()
+        )
+        do {
+            try slots.insert(event)
+        } catch let error {
+            throw .stepOutput(error)
+        }
+        order.append(.trafficSecret(direction: direction, level: .zeroRTT))
+    }
+
     private static func mapEpoch(
         _ epoch: TLS13HandshakeEpoch
     ) throws(QUICTLSHandshakeError) -> QUICHandshakeEncryptionLevel {
         switch epoch {
         case .initial: .initial
+        case .earlyData: throw .unsupportedEpoch(epoch)
         case .handshake: .handshake
         case .application: .oneRTT
         }

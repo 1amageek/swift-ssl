@@ -56,6 +56,26 @@ final class X509CertificateTests: XCTestCase {
         XCTAssertEqual(parsed.subjectPublicKeyInfo.algorithm, .ed25519)
     }
 
+    func testVerifiesBorrowedSignedPayloadWithX509Algorithm() throws {
+        let parsed = try X509Certificate(
+            der: makeSignedEd25519Certificate().span
+        )
+        let algorithm = try X509SignatureAlgorithm(
+            der: bytes("300506032b6570").span
+        )
+
+        XCTAssertNoThrow(try parsed.withTBSCertificateBytes { tbs in
+            try parsed.withSignatureBytes { signature in
+                try X509SignedPayloadVerifier.verify(
+                    signedBytes: tbs,
+                    signature: signature,
+                    algorithm: algorithm,
+                    using: parsed.subjectPublicKeyInfo
+                )
+            }
+        })
+    }
+
     func testRejectsModifiedEd25519CertificateSignature() throws {
         var certificate = makeSignedEd25519Certificate()
         certificate[certificate.count - 1] ^= 0x01

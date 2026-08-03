@@ -5,4 +5,5 @@ public enum TLS13SessionTicketError: Error, Sendable, Equatable {
     case invalidTicketLength(Int)
     case invalidExtensions
     case duplicateExtension(UInt16)
+    case invalidEarlyDataExtension
 }
