@@ -15,15 +15,15 @@
 
 ```mermaid
 flowchart LR
-    Core[SwiftSSLCore] --> Crypto[SwiftSSLCrypto]
-    Core --> ASN1[SwiftSSLASN1]
-    Crypto --> X509[SwiftSSLX509]
+    Core[SSLCore] --> Crypto[SSLCrypto]
+    Core --> ASN1[SSLASN1]
+    Crypto --> X509[SSLX509]
     ASN1 --> X509
-    Crypto --> TLS[SwiftSSLTLS]
+    Crypto --> TLS[SSLTLS]
     X509 --> TLS
-    TLS --> QUIC[SwiftSSLQUIC]
+    TLS --> QUIC[SSLQUIC]
     Core --> Adapters["System entropy and clocks"]
-    Adapters -. purpose-specific injection .-> Facade[SwiftSSL]
+    Adapters -. purpose-specific injection .-> Facade[SSL]
     Crypto --> Facade
     X509 --> Facade
     TLS --> Facade
@@ -46,7 +46,7 @@ The implementation target is deliberately smaller than BoringSSL's historical AP
 | QUIC | RFC 9001 handshake adapter and traffic-secret events; QUIC packet protection remains owned by the QUIC stack | Ordered action/secret output, RFC 9001 v1 Initial secret derivation, bounded per-encryption-level CRYPTO stream reassembly, zero-copy TLS handshake-message framing, record-independent TLS state transitions, role-correct client-write/server-read 0-RTT secrets, handshake and 1-RTT secret events, full-handshake client authentication, PSK resumption, explicit transport-parameter bytes, and ALPN selection are implemented; packet-stack integration, fuzzing, and external interoperability remain required |
 | Additional modern constructions | HPKE and narrowly scoped protocol constructions required by the modern profile | RFC 9180 X25519 and P-256 DHKEM Base/PSK/Auth/AuthPSK with HKDF-SHA256/384/512, AES-GCM, and ChaCha20-Poly1305 are implemented and vector-tested; RFC 9849 ECH is integrated for the X25519/HKDF-SHA256/AES-128-GCM profile; P-256 target, sanitizer, differential, allocation, constant-time automation, and `1.10x` performance gates remain open, and additional hybrid profiles remain required |
 | Platform composition | Entropy and clock capabilities supplied explicitly per operation | `SystemEntropySource`, `SystemWallClock`, and `SystemMonotonicClock` provide typed Native/WASI/Embedded WASI backends; application storage, trust acquisition, and transport remain injected responsibilities |
-| Public façade | One `SwiftSSL` umbrella import with application-facing composition | The façade exports the responsibility modules and provides protocol-backed TLS 1.3 client/server factories for X25519, `secp256r1`, and X25519MLKEM768; server credentials and signatures and optional client trust are explicit capability boundaries |
+| Public façade | One `SSL` umbrella import with application-facing composition | The façade exports the responsibility modules and provides protocol-backed TLS 1.3 client/server factories for X25519, `secp256r1`, and X25519MLKEM768; server credentials and signatures and optional client trust are explicit capability boundaries |
 
 The following are intentionally absent: SSL, TLS 1.0-1.2, DTLS 1.0-1.2, renegotiation, record compression, CBC cipher suites, RC4, DES/3DES, Blowfish, CAST, MD4, MD5, SHA-1 handshake signatures, DSA, legacy finite-field DH, the C API/ABI, `BIO`, `ENGINE`, `ex_data`, and the thread-local error queue.
 
@@ -229,7 +229,7 @@ AArch64 backend patch makes the state-preserving vector move explicit before
 an adjacent `SHA256H`/`SHA256H2` pair, allowing the first state to update in
 place. The patch and its positive/negative machine-verifier/FileCheck fixtures are retained under
 `Validation/CodeGeneration/SHA256TiedOperands`; no assembly or C shim was added
-to the SwiftSSL product.
+to the SSL product.
 
 | Patched backend workload | Patched Swift median ns/op | BoringSSL median ns/op | Ratio | 95% paired bootstrap CI |
 |---|---:|---:|---:|---:|
@@ -349,7 +349,7 @@ The committed raw artifact is
 
 All nine formal timing workloads passed the `1.10x` lower-confidence-bound
 gate. The run used 30 balanced randomized pairs per workload, 10,000 bootstrap
-resamples, clean SwiftSSL commit
+resamples, clean SSL commit
 `06a2e5eb12c2d6159945e5f48ffb06159e747ce8`, and clean BoringSSL commit
 `ae49d2681a56ca7b8609f6039a770fda2a8eb550`. It also proved bidirectional
 signature interoperability and mutation rejection for all three parameter

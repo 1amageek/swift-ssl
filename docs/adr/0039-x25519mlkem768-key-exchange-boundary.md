@@ -31,8 +31,8 @@ The responsibilities are separated as follows:
 
 ```mermaid
 flowchart LR
-    Core["SwiftSSLCore: owners, spans, entropy"] --> Crypto["SwiftSSLCrypto: X25519 and ML-KEM"]
-    Crypto --> KEX["SwiftSSLTLS: role-specific key exchange"]
+    Core["SSLCore: owners, spans, entropy"] --> Crypto["SSLCrypto: X25519 and ML-KEM"]
+    Crypto --> KEX["SSLTLS: role-specific key exchange"]
     KEX --> CoreTLS["TLS 1.3 record-independent core"]
     CoreTLS --> Stream["Stream TLS adapter"]
     CoreTLS --> QUIC["QUIC TLS adapter"]

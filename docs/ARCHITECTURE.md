@@ -17,13 +17,13 @@ The current package graph is:
 
 ```mermaid
 flowchart TD
-    Core["SwiftSSLCore\nbytes, ownership, limits, capabilities"]
-    Crypto["SwiftSSLCrypto\nSHA-2/3, HMAC/HKDF, AEAD, X25519, P-256, ML-KEM, DRBG, and primitive contracts"]
-    ASN1["SwiftSSLASN1\nstrict DER foundation"]
-    X509["SwiftSSLX509\ncertificate-byte models"]
-    TLS["SwiftSSLTLS\nTLS 1.3 engines, records, and actions"]
-    QUIC["SwiftSSLQUIC\nordered QUIC TLS output models"]
-    Facade["SwiftSSL\numbrella and application composition"]
+    Core["SSLCore\nbytes, ownership, limits, capabilities"]
+    Crypto["SSLCrypto\nSHA-2/3, HMAC/HKDF, AEAD, X25519, P-256, ML-KEM, DRBG, and primitive contracts"]
+    ASN1["SSLASN1\nstrict DER foundation"]
+    X509["SSLX509\ncertificate-byte models"]
+    TLS["SSLTLS\nTLS 1.3 engines, records, and actions"]
+    QUIC["SSLQUIC\nordered QUIC TLS output models"]
+    Facade["SSL\numbrella and application composition"]
 
     Core --> Crypto
     Core --> ASN1
@@ -43,22 +43,22 @@ flowchart TD
     QUIC --> Facade
 ```
 
-Dependencies between responsibility modules flow downward only. `SwiftSSL` is the package umbrella: it re-exports those modules for one-import application use while retaining their separate ownership boundaries. It also owns only application composition, including protocol-backed TLS 1.3 client/server factories; cryptographic and protocol implementations remain in their responsibility modules.
+Dependencies between responsibility modules flow downward only. `SSL` is the package umbrella: it re-exports those modules for one-import application use while retaining their separate ownership boundaries. It also owns only application composition, including protocol-backed TLS 1.3 client/server factories; cryptographic and protocol implementations remain in their responsibility modules.
 
-Entropy and clock interfaces and their system implementations live in `SwiftSSLCore`. They are composed by purpose—entropy for cryptographic operations, wall time for certificate verification, and monotonic time for DTLS—rather than through one all-capabilities container. Native uses the host POSIX clock backend; WASI and Embedded WASI use WASI clock syscalls. Application storage, trust acquisition, and transport remain injected capabilities.
+Entropy and clock interfaces and their system implementations live in `SSLCore`. They are composed by purpose—entropy for cryptographic operations, wall time for certificate verification, and monotonic time for DTLS—rather than through one all-capabilities container. Native uses the host POSIX clock backend; WASI and Embedded WASI use WASI clock syscalls. Application storage, trust acquisition, and transport remain injected capabilities.
 
 ## 3. Module responsibilities
 
 | Module | Owns | Must not own |
 |---|---|---|
-| `SwiftSSLCore` | Owned byte storage, scoped byte borrows, checked cursors/builders, resource limits, secret-memory owner, constant-time utilities, entropy/time capability protocols, shared error primitives | Algorithms, ASN.1 meaning, sockets, Foundation data types |
-| `SwiftSSLCrypto` | Hash, MAC, KDF, AEAD, key agreement, KEM, signatures, HPKE, fixed-width field/scalar arithmetic, algorithm identifiers and policy gates | Certificates, TLS negotiation, OS entropy selection, arbitrary public mutable big integers |
-| `SwiftSSLASN1` | Strict DER TLV parser/writer, OID and primitive codecs, RFC 7468 PEM boundaries, parse budgets | Certificate validation, BER normalization, algorithm policy, file I/O |
-| `SwiftSSLX509` | Immutable certificate/CRL/OCSP models, SPKI and private-key containers, path building, RFC 5280 policy, service identity, revocation evidence validation | Network fetching, global trust, UI, silent CN fallback |
-| `SwiftSSLTLS` | TLS 1.3 handshake and record layers, main/post-handshake server/client certificate authentication with Ed25519, P-256 ECDSA, or RSA-PSS, X25519/`secp256r1`/pinned-hybrid key exchange, DTLS 1.3 framing/replay/flight state, transcript/key schedule, ticket/state/PSK binder primitives, resumption, 0-RTT policy, ECH, alerts, and correlated credential/signature/trust capability suspension | Socket I/O, event loops, DNS, persistent stores, private-key services, and QUIC packet protection |
-| `SwiftSSLQUIC` | Mapping TLS handshake bytes, encryption levels, alerts, and traffic-secret events to RFC 9001 | CRYPTO reassembly, QUIC packets, header protection, loss recovery, congestion control, QUIC key phase |
-| `SwiftSSLCore` system adapters | Concrete entropy, realtime clock, and monotonic clock backends with typed failures and one cross-target protocol contract | Storage policy, trust acquisition, transport, or target-specific weakening of ownership/concurrency contracts |
-| `SwiftSSL` | One-import umbrella, curated primitive adapters, and protocol-backed TLS client/server composition over explicit platform and external credential/trust capabilities | Duplicate cryptographic/protocol implementation, socket ownership, private-key service ownership, or hidden fallback |
+| `SSLCore` | Owned byte storage, scoped byte borrows, checked cursors/builders, resource limits, secret-memory owner, constant-time utilities, entropy/time capability protocols, shared error primitives | Algorithms, ASN.1 meaning, sockets, Foundation data types |
+| `SSLCrypto` | Hash, MAC, KDF, AEAD, key agreement, KEM, signatures, HPKE, fixed-width field/scalar arithmetic, algorithm identifiers and policy gates | Certificates, TLS negotiation, OS entropy selection, arbitrary public mutable big integers |
+| `SSLASN1` | Strict DER TLV parser/writer, OID and primitive codecs, RFC 7468 PEM boundaries, parse budgets | Certificate validation, BER normalization, algorithm policy, file I/O |
+| `SSLX509` | Immutable certificate/CRL/OCSP models, SPKI and private-key containers, path building, RFC 5280 policy, service identity, revocation evidence validation | Network fetching, global trust, UI, silent CN fallback |
+| `SSLTLS` | TLS 1.3 handshake and record layers, main/post-handshake server/client certificate authentication with Ed25519, P-256 ECDSA, or RSA-PSS, X25519/`secp256r1`/pinned-hybrid key exchange, DTLS 1.3 framing/replay/flight state, transcript/key schedule, ticket/state/PSK binder primitives, resumption, 0-RTT policy, ECH, alerts, and correlated credential/signature/trust capability suspension | Socket I/O, event loops, DNS, persistent stores, private-key services, and QUIC packet protection |
+| `SSLQUIC` | Mapping TLS handshake bytes, encryption levels, alerts, and traffic-secret events to RFC 9001 | CRYPTO reassembly, QUIC packets, header protection, loss recovery, congestion control, QUIC key phase |
+| `SSLCore` system adapters | Concrete entropy, realtime clock, and monotonic clock backends with typed failures and one cross-target protocol contract | Storage policy, trust acquisition, transport, or target-specific weakening of ownership/concurrency contracts |
+| `SSL` | One-import umbrella, curated primitive adapters, and protocol-backed TLS client/server composition over explicit platform and external credential/trust capabilities | Duplicate cryptographic/protocol implementation, socket ownership, private-key service ownership, or hidden fallback |
 
 ## 4. Ownership and zero-copy model
 
@@ -115,8 +115,8 @@ Protocols describe semantic responsibilities; concrete algorithms and parsers re
 P-256 secret key agreement is shared by RFC 9180
 DHKEM(P-256, HKDF-SHA256) and the role-specific TLS 1.3 `secp256r1` key-share
 owners. It is selectable by Stream TLS, DTLS, and QUIC TLS but not by
-CertificateVerify. It is available through the `SwiftSSL` umbrella without
-moving its implementation out of `SwiftSSLCrypto` and `SwiftSSLTLS`.
+CertificateVerify. It is available through the `SSL` umbrella without
+moving its implementation out of `SSLCrypto` and `SSLTLS`.
 
 Algorithm input errors, policy errors, authentication failures, and resource exhaustion are different typed error families.
 
@@ -276,7 +276,7 @@ Errors are not converted to default values. Authentication failures never expose
 
 The Pure Swift implementation provides source portability, not automatic platform assurance. Platform adapters must explicitly establish entropy, timing, storage, zeroization, and synchronization semantics. A target receives only the capabilities required by the operation being constructed; the absence of a capability makes that composition unavailable instead of setting a Boolean flag or choosing a fallback.
 
-No separate `SwiftSSLPlatform` product exists. `SwiftSSLCore` provides system entropy and clock adapters with typed Native/WASI/Embedded WASI backends. Applications provide storage, trust acquisition, transport, and any deployment-specific capability conformers.
+No separate `SSLPlatform` product exists. `SSLCore` provides system entropy and clock adapters with typed Native/WASI/Embedded WASI backends. Applications provide storage, trust acquisition, transport, and any deployment-specific capability conformers.
 
 The library does not claim FIPS validation. Algorithm conformance, known-answer tests, a reproducible build, and a validated cryptographic module are separate facts.
 

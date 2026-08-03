@@ -7,11 +7,11 @@ same operations in pinned official BoringSSL commit
 
 The benchmark is enabled only when `SWIFT_SSL_ENABLE_BENCHMARKS=1`. It is not a
 test target, is not run by `xcodebuild test`, and does not add BoringSSL to a
-SwiftSSL library or runtime target.
+SSL library or runtime target.
 
 ```mermaid
 flowchart LR
-    Runner["Manual paired runner"] --> Swift["SwiftSSL public façade"]
+    Runner["Manual paired runner"] --> Swift["SSL public façade"]
     Runner --> BoringSSL["BoringSSL public ML-KEM API"]
     Swift --> Result["elapsed time + checksum"]
     BoringSSL --> Result
@@ -31,7 +31,7 @@ worker code-generation inspection, and correctness/interoperability validation.
 
 The runner owns both fresh builds and accepts source trees rather than worker
 paths. A formal run requires the pinned toolchain in the process environment
-and a clean committed SwiftSSL checkout:
+and a clean committed SSL checkout:
 
 ```bash
 TOOLCHAINS=org.swift.64202607231a \
@@ -59,9 +59,9 @@ flowchart LR
 ```
 
 The pre-timing interoperability transaction uses deterministic 64-byte key
-seeds for both parameter sets. SwiftSSL-generated public keys, ciphertexts,
+seeds for both parameter sets. SSL-generated public keys, ciphertexts,
 and shared secrets are validated by BoringSSL. A separately generated
-BoringSSL ciphertext is validated and decapsulated by SwiftSSL. A mutated
+BoringSSL ciphertext is validated and decapsulated by SSL. A mutated
 ciphertext must produce the same implicit-rejection secret in both
 implementations and must not reproduce the valid shared secret.
 
@@ -84,7 +84,7 @@ The runner repeats this check before every convergence and measured pair.
 The release decision is made independently for all six workloads:
 
 ```text
-lower95CI(median(BoringSSL elapsed / SwiftSSL elapsed)) >= 1.10
+lower95CI(median(BoringSSL elapsed / SSL elapsed)) >= 1.10
 ```
 
 Timing evidence does not establish allocation or logical-copy counts. Those
@@ -122,7 +122,7 @@ as avoided copies.
 
 ## Formal result
 
-The 2026-08-01 run used SwiftSSL commit
+The 2026-08-01 run used SSL commit
 `a96fee3d2e688fa331ff50a2582c7a97f9886f65` and passed every workload gate.
 
 | Workload | Swift median ns/op | BoringSSL median ns/op | Paired speedup | 95% bootstrap CI |
@@ -145,7 +145,7 @@ quiescence observations, calibration, convergence, all 30 samples, and the
 
 ### Formal memory result
 
-The 2026-08-01 memory run used SwiftSSL commit
+The 2026-08-01 memory run used SSL commit
 `2cfb10d9969c9ca24592b6de86649ebf9b19331c` and passed all six declared
 allocation and dynamic-copy budgets.
 

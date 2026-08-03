@@ -137,8 +137,8 @@ run_sanitizer() {
         -destination "platform=macOS,arch=$host_architecture" \
         -derivedDataPath "$derived_data_path" \
         -resultBundlePath "$result_bundle" \
-        -only-testing:SwiftSSLCoreTests \
-        -only-testing:SwiftSSLCryptoTests \
+        -only-testing:SSLCoreTests \
+        -only-testing:SSLCryptoTests \
         -parallel-testing-enabled NO \
         -jobs 2 \
         -enableAddressSanitizer "$address_enabled" \

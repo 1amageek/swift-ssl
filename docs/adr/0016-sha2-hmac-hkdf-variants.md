@@ -14,7 +14,7 @@ performance release gates remain open.
   expand, enforce the RFC 5869 255-block limit, reject overlap, and write into
   caller-owned output. Partial final blocks use a bounded temporary owner that
   is wiped and deallocated exactly once.
-- Public `SwiftSSL` façade types map lower-module primitive errors to the
+- Public `SSL` façade types map lower-module primitive errors to the
   existing typed `CryptoInputError` and `HKDFError` contracts.
 
 ## Verification

@@ -1,7 +1,7 @@
 # Unsafe sanitizer validation
 
-`run-unsafe-sanitizers.sh` runs `SwiftSSLCoreTests` and
-`SwiftSSLCryptoTests` through `xcodebuild test` in three isolated
+`run-unsafe-sanitizers.sh` runs `SSLCoreTests` and
+`SSLCryptoTests` through `xcodebuild test` in three isolated
 configurations:
 
 - Address Sanitizer;

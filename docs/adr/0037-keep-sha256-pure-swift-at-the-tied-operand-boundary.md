@@ -200,7 +200,7 @@ A Release-with-assertions AArch64-only `llc` build passed the exact checkout's
 machine verifier and FileCheck for an end-to-end IR fixture and a machine-pass
 MIR fixture. The latter covers the positive feed-forward rewrite and rejects
 mismatched-work and nonadjacent pairs. The macOS arm64 triple produced the same
-expected shape. Compiling the complete optimized production `SwiftSSLCrypto`
+expected shape. Compiling the complete optimized production `SSLCrypto`
 IR produced the intended in-place shape for all 16 hash pairs. The final object
 was byte-identical to the measured object, with SHA-256
 `e1e414aac6f597f28ced2874b6e44d4cd59b34ed7aea9c1367a02aebdf753eeb`.

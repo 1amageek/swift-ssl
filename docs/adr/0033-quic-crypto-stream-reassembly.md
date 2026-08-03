@@ -12,7 +12,7 @@ can arrive out of order and can repeat or overlap previously received bytes.
 The TLS consumer needs one contiguous borrowed prefix, while an unbounded
 reassembly map would permit attacker-controlled memory growth.
 
-The public API must preserve the existing SwiftSSL ownership model: borrowed
+The public API must preserve the existing SSL ownership model: borrowed
 input cannot outlive the call, output views cannot escape their owner, and
 malformed or resource-exhausting input must produce a typed failure without
 partial mutation. The same source and ownership contract must execute on

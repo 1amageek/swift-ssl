@@ -14,8 +14,8 @@ available.
 ## Decision
 
 Add fixed-width 32-bit-limb ECDSA verification for P-384 and P-521 in
-`SwiftSSLCrypto`. The implementation accepts borrowed uncompressed SEC1 public
-keys and fixed-width `r || s` signatures. `SwiftSSLX509.X509Certificate` owns
+`SSLCrypto`. The implementation accepts borrowed uncompressed SEC1 public
+keys and fixed-width `r || s` signatures. `SSLX509.X509Certificate` owns
 DER signature decoding and selects the curve only when the signature and SPKI
 algorithm identifiers agree.
 
@@ -39,7 +39,7 @@ flowchart LR
     DER[Certificate DER] --> X509[X509Certificate]
     X509 -->|strict r/s decode| Raw[Fixed-width r||s]
     X509 -->|SPKI curve| Select{P-256 / P-384 / P-521}
-    Select --> Crypto[SwiftSSLCrypto verifier]
+    Select --> Crypto[SSLCrypto verifier]
     Raw --> Crypto
     Crypto --> Result[typed success or signature failure]
     Crypto -. release gates pending .-> Gate[differential / sanitizer / targets / benchmark]

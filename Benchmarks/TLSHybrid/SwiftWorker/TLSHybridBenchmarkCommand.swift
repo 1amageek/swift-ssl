@@ -1,6 +1,6 @@
-import SwiftSSLCore
-import SwiftSSLCrypto
-import SwiftSSLTLS
+import SSLCore
+import SSLCrypto
+import SSLTLS
 
 #if canImport(Darwin)
   import Darwin

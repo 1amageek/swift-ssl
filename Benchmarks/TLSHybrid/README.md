@@ -1,13 +1,13 @@
 # X25519MLKEM768 TLS key-share comparison benchmark
 
-This manually invoked Native benchmark compares SwiftSSL's complete
+This manually invoked Native benchmark compares SSL's complete
 X25519MLKEM768 client/server key-share transaction with the equivalent internal
 `SSLKeyShare` transaction in pinned official BoringSSL commit
 `ae49d2681a56ca7b8609f6039a770fda2a8eb550`.
 
 It is enabled only when `SWIFT_SSL_ENABLE_BENCHMARKS=1`. The workers are not
 test targets, are not run by `xcodebuild test`, and do not add BoringSSL to any
-SwiftSSL library or runtime target.
+SSL library or runtime target.
 
 ```mermaid
 flowchart LR
@@ -52,7 +52,7 @@ flowchart LR
 The release decision is:
 
 ```text
-lower95CI(median(BoringSSL round-trip / SwiftSSL round-trip)) >= 1.10
+lower95CI(median(BoringSSL round-trip / SSL round-trip)) >= 1.10
 ```
 
 The artifact records exact client, server, and secret byte lengths plus hashes;
@@ -117,7 +117,7 @@ The run used 30 balanced randomized pairs of 4,000 operations and 10,000
 bootstrap resamples. Both interoperability directions passed before timing.
 The committed artifact is
 [`Results/20260801T150930Z-native-x25519mlkem768.json`](Results/20260801T150930Z-native-x25519mlkem768.json),
-built from SwiftSSL commit `22df4b61272a3e24596166fee2b2d6ee7f342217`
+built from SSL commit `22df4b61272a3e24596166fee2b2d6ee7f342217`
 and pinned BoringSSL commit `ae49d2681a56ca7b8609f6039a770fda2a8eb550`.
 Its SHA-256 is
 `aef1aaeb1f6ab3ed18619c93577acfb9ebf4cbf48594c6bef4c62ac26f88f347`.

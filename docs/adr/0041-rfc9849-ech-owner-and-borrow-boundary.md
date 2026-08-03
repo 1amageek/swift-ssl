@@ -13,7 +13,7 @@ incorrect transcript selection.
 
 ## Decision
 
-`SwiftSSLTLS` owns RFC 9849 ECH protocol semantics. Configuration acquisition,
+`SSLTLS` owns RFC 9849 ECH protocol semantics. Configuration acquisition,
 DNS SVCB/HTTPS processing, immutable key-set rotation, and retry-transport
 establishment remain caller responsibilities.
 

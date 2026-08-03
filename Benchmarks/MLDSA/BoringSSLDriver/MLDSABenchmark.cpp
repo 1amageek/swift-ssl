@@ -279,7 +279,7 @@ void ValidateFixture(const std::vector<uint8_t> &seed,
   if (!Traits::Verify(&parsed_public, signature.data(), signature.size(),
                       message.data(), message.size(), context.data(),
                       context.size())) {
-    throw std::runtime_error("SwiftSSL signature did not verify");
+    throw std::runtime_error("SSL signature did not verify");
   }
   std::cout << "VALIDATED\n";
 }

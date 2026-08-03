@@ -13,9 +13,9 @@ leave the X.509 responsibility incomplete.
 
 ## Decision
 
-Add `RSAPublicKey` and `RSAPSS` to `SwiftSSLCrypto`. RSA public exponentiation
+Add `RSAPublicKey` and `RSAPSS` to `SSLCrypto`. RSA public exponentiation
 uses bounded fixed-width limbs with Montgomery reduction, while
-`SwiftSSLX509` owns DER parsing of the RSA public key and the PSS parameter
+`SSLX509` owns DER parsing of the RSA public key and the PSS parameter
 sequence. SHA-256, SHA-384, and SHA-512 are accepted only when the MGF1 hash
 matches and the salt length equals the selected digest length. The default
 trailer field is interpreted as `1`.

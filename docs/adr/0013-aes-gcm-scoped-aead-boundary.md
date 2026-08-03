@@ -3,7 +3,7 @@
 ## Decision
 
 Implement AES-GCM as a Pure Swift `AuthenticatedCipher` with separate owners for
-the AES expanded key schedule and the GHASH subkey. The public `SwiftSSL`
+the AES expanded key schedule and the GHASH subkey. The public `SSL`
 façade translates the internal typed errors without exposing the implementation
 storage.
 

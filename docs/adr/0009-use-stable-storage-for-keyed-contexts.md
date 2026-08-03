@@ -11,7 +11,7 @@ A manually allocated `UnsafeMutablePointer` gives the state a stable address, bu
 
 ## Decision
 
-`HMACSHA256Context` remains the public noncopyable owner and contains one private reference to a final `HMACSHA256ContextStorage` object. The storage object owns the inner and outer SHA-256 contexts at stable addresses and is never exposed outside `SwiftSSLCrypto`.
+`HMACSHA256Context` remains the public noncopyable owner and contains one private reference to a final `HMACSHA256ContextStorage` object. The storage object owns the inner and outer SHA-256 contexts at stable addresses and is never exposed outside `SSLCrypto`.
 
 The reference is logically unique because it is created only for the noncopyable context, remains private, does not cross a `Sendable` boundary, and is never returned or stored elsewhere. All state access is synchronous. ARC owns exactly-once destruction and deallocation.
 

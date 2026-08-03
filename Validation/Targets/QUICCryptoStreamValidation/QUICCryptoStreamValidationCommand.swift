@@ -1,8 +1,8 @@
-import SwiftSSLCore
-import SwiftSSLCrypto
-import SwiftSSLQUIC
-import SwiftSSLTLS
-import SwiftSSLX509
+import SSLCore
+import SSLCrypto
+import SSLQUIC
+import SSLTLS
+import SSLX509
 
 @main
 enum QUICCryptoStreamValidationCommand {

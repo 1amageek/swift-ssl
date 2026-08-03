@@ -24,7 +24,7 @@ kernel and formal benchmark must be reevaluated.
 `llvm-264fd65923c28-sha256-paired-two-address.patch` is a reproducible compiler
 patch for LLVM commit `264fd65923c28d9060211c1177a8820b76ed3ae2`, the LLVM
 revision embedded in the pinned Swift snapshot. It changes the AArch64 machine
-peephole pass, not the SwiftSSL product source. The pass recognizes an adjacent
+peephole pass, not the SSL product source. The pass recognizes an adjacent
 `SHA256H`/`SHA256H2` pair, preserves the old first state with the target vector
 move form, and rewrites later same-block users to the preserved register. The
 public Swift API, input ownership, and WASI/Embedded backends are unchanged.
@@ -57,7 +57,7 @@ passed the exact checkout's LLVM 21.1.6 `llc`, machine verifier, and FileCheck.
 The MIR fixture covers the positive state/feed-forward rewrite and rejects
 mismatched-work and nonadjacent pairs. The macOS arm64 triple produced the same
 expected instruction shape. The patched compiler then compiled the production
-optimized `SwiftSSLCrypto` IR. Its object SHA-256 was
+optimized `SSLCrypto` IR. Its object SHA-256 was
 `e1e414aac6f597f28ced2874b6e44d4cd59b34ed7aea9c1367a02aebdf753eeb` before
 and after the final same-block-use audit, directly binding the recorded timing
 binary to the retained patch. The resulting executable matched both the pinned

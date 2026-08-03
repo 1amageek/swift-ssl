@@ -45,11 +45,11 @@ printf '%s\n' "$compiler_version" >"$evidence_directory/compiler-version.txt"
 printf '%s\n' "$wasi_sdk_configuration" >"$evidence_directory/wasi-sdk-configuration.txt"
 printf '%s\n' "$embedded_sdk_configuration" >"$evidence_directory/embedded-sdk-configuration.txt"
 
-core_sources="$(find Sources/SwiftSSLCore -name '*.swift' -type f | sort)"
-crypto_sources="$(find Sources/SwiftSSLCrypto -name '*.swift' -type f | sort)"
+core_sources="$(find Sources/SSLCore -name '*.swift' -type f | sort)"
+crypto_sources="$(find Sources/SSLCrypto -name '*.swift' -type f | sort)"
 ownership_flags='-parse-as-library -package-name swift_ssl -enable-experimental-feature NonescapableTypes -enable-experimental-feature LifetimeDependence -enable-experimental-feature InoutLifetimeDependence -enable-experimental-feature LifetimeDependenceMutableAccessors -enable-experimental-feature Lifetimes'
-core_common_flags="$ownership_flags -enable-experimental-feature Volatile -module-name SwiftSSLCore"
-crypto_common_flags="$ownership_flags -module-name SwiftSSLCrypto"
+core_common_flags="$ownership_flags -enable-experimental-feature Volatile -module-name SSLCore"
+crypto_common_flags="$ownership_flags -module-name SSLCrypto"
 
 case "${SWIFT_SSL_CODEGEN_OPTIMIZATION:-all}" in
     all)
@@ -314,7 +314,7 @@ def has_in_place_state_wipes(body):
         and sum(has_byte_count(line, 32) for line in wipes) >= 2
         and sum(has_byte_count(line, 64) for line in wipes) >= 2
         and all(pointer in derived_pointers for pointer in wipe_pointers)
-        and "alloca %T14SwiftSSLCrypto13SHA256ContextV" not in body
+        and "alloca %T14SSLCrypto13SHA256ContextV" not in body
     )
 
 
@@ -839,7 +839,7 @@ for body in function_bodies("HMACSHA256O12authenticate_5using4into"):
         set(
             re.findall(
                 r"(%(?:inner|outer)Context[-.\w]*) = alloca "
-                r"%T14SwiftSSLCrypto13SHA256ContextV",
+                r"%T14SSLCrypto13SHA256ContextV",
                 body,
             )
         )
@@ -918,7 +918,7 @@ for body in function_bodies("HKDFSHA256O6expand"):
         set(
             re.findall(
                 r"(%(?:inner|outer)Context[-.\w]*) = alloca "
-                r"%T14SwiftSSLCrypto13SHA256ContextV",
+                r"%T14SSLCrypto13SHA256ContextV",
                 body,
             )
         )
@@ -1093,7 +1093,7 @@ compile_crypto_configuration() {
     "$swiftc_path" $core_sources $optimization -wmo -emit-module -emit-ir \
         $core_common_flags "$@" \
         -o "$core_ir" \
-        -emit-module-path "$module_directory/SwiftSSLCore.swiftmodule"
+        -emit-module-path "$module_directory/SSLCore.swiftmodule"
 
     # shellcheck disable=SC2086
     "$swiftc_path" $crypto_sources $optimization -wmo -emit-ir \
@@ -1117,16 +1117,16 @@ compile_configuration() {
     "$swiftc_path" $core_sources Validation/SecureWipe/SecureWipeProductionProbe.swift \
         $optimization -wmo -emit-ir $core_common_flags "$@" -o "$whole_module_ir"
 
-    secret_other_sources="$(find Sources/SwiftSSLCore -name '*.swift' -type f ! -name 'SecretBytes.swift' | sort)"
+    secret_other_sources="$(find Sources/SSLCore -name '*.swift' -type f ! -name 'SecretBytes.swift' | sort)"
     # shellcheck disable=SC2086
     "$swiftc_path" -frontend -emit-ir $secret_other_sources \
-        -primary-file Sources/SwiftSSLCore/SecretBytes.swift \
+        -primary-file Sources/SSLCore/SecretBytes.swift \
         $optimization $core_common_flags "$@" -o "$secret_bytes_ir"
 
-    wipe_other_sources="$(find Sources/SwiftSSLCore -name '*.swift' -type f ! -name 'SecureWipe.swift' | sort)"
+    wipe_other_sources="$(find Sources/SSLCore -name '*.swift' -type f ! -name 'SecureWipe.swift' | sort)"
     # shellcheck disable=SC2086
     "$swiftc_path" -frontend -emit-ir $wipe_other_sources \
-        -primary-file Sources/SwiftSSLCore/SecureWipe.swift \
+        -primary-file Sources/SSLCore/SecureWipe.swift \
         $optimization $core_common_flags "$@" -o "$secure_wipe_ir"
 
     validate_ir "$label" "$whole_module_ir" "$secret_bytes_ir" "$secure_wipe_ir" standard

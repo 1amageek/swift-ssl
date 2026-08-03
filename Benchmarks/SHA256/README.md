@@ -9,7 +9,7 @@ ae49d2681a56ca7b8609f6039a770fda2a8eb550
 
 The directory contains separate manually invoked Native and WASI comparison
 runners. Neither runner is a test target or is run by `xcodebuild test`, and
-neither adds BoringSSL to any SwiftSSL library target or runtime path.
+neither adds BoringSSL to any SSL library target or runtime path.
 
 | Runner | Target boundary | BoringSSL backend |
 |---|---|---|
@@ -107,7 +107,7 @@ experiment changes only the AArch64 compiler backend.
 
 The patched `llc` passed its end-to-end IR fixture and positive/negative
 machine-pass MIR fixture using the exact LLVM checkout's machine verifier and
-FileCheck. A complete optimized `SwiftSSLCrypto` object built by that `llc`
+FileCheck. A complete optimized `SSLCrypto` object built by that `llc`
 matched the retained Swift worker and BoringSSL for 768 digests. Its SHA-256
 was `e1e414aac6f597f28ced2874b6e44d4cd59b34ed7aea9c1367a02aebdf753eeb`
 before and after the final pass audit. Thirty balanced exploratory pairs with

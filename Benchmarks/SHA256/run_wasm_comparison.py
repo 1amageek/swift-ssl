@@ -557,8 +557,8 @@ def build_swift_worker(
     )
     build_log = completed.stdout + completed.stderr
     required_fragments = (
-        "-module-name SwiftSSLCrypto",
-        "-module-name SwiftSSLSHA256Benchmark",
+        "-module-name SSLCrypto",
+        "-module-name SSLSHA256Benchmark",
         f"-target {TARGET_TRIPLE}",
         " -O ",
         "-whole-module-optimization",

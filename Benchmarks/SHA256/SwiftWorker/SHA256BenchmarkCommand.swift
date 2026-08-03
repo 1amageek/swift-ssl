@@ -1,5 +1,5 @@
-import SwiftSSLCore
-import SwiftSSLCrypto
+import SSLCore
+import SSLCrypto
 
 #if os(WASI)
   import WASILibc

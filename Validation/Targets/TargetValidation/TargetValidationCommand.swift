@@ -1,10 +1,10 @@
-import SwiftSSL
-import SwiftSSLASN1
-import SwiftSSLCore
-import SwiftSSLCrypto
-import SwiftSSLQUIC
-import SwiftSSLTLS
-import SwiftSSLX509
+import SSL
+import SSLASN1
+import SSLCore
+import SSLCrypto
+import SSLQUIC
+import SSLTLS
+import SSLX509
 
 @main
 enum TargetValidationCommand {
@@ -121,7 +121,7 @@ enum TargetValidationCommand {
       0xF5, 0x3A, 0x67, 0xB2, 0x12, 0x57, 0xBD, 0xDF,
     ]
     var sealed = ContiguousArray<UInt8>(repeating: 0, count: expected.count)
-    let cipher = try SwiftSSL.AESGCM(key: key.span)
+    let cipher = try SSL.AESGCM(key: key.span)
     var sealedSpan = sealed.mutableSpan
     try cipher.seal(
       plaintext: plaintext.span,
@@ -277,10 +277,10 @@ enum TargetValidationCommand {
     let preSharedKey = ContiguousArray<UInt8>(repeating: 0x55, count: 32)
     var clientHelloTranscriptHash = ContiguousArray<UInt8>(
       repeating: 0,
-      count: SwiftSSLCrypto.SHA256.digestByteCount
+      count: SSLCrypto.SHA256.digestByteCount
     )
     var clientHelloTranscriptHashSpan = clientHelloTranscriptHash.mutableSpan
-    try SwiftSSLCrypto.SHA256.hash(
+    try SSLCrypto.SHA256.hash(
       ticket.span,
       into: &clientHelloTranscriptHashSpan
     )
@@ -405,7 +405,7 @@ enum TargetValidationCommand {
       0x38, 0x2B, 0xB4, 0xD3, 0x6F, 0x5F, 0xFA, 0xD1,
     ]
     var sealed = ContiguousArray<UInt8>(repeating: 0, count: expected.count)
-    let cipher = try SwiftSSL.ChaCha20Poly1305(key: key.span)
+    let cipher = try SSL.ChaCha20Poly1305(key: key.span)
     var sealedSpan = sealed.mutableSpan
     try cipher.seal(
       plaintext: plaintext.span,
@@ -446,8 +446,8 @@ enum TargetValidationCommand {
       0x6C, 0x4B, 0x7C, 0x9D, 0x87, 0x17, 0xBB, 0xB5,
       0xEB, 0x90, 0xC0, 0x25, 0x83, 0x86, 0x20, 0x07,
     ])
-    let alice = try SwiftSSL.X25519PrivateKey(bytes: alicePrivate.span)
-    let bob = try SwiftSSL.X25519PrivateKey(bytes: bobPrivate.span)
+    let alice = try SSL.X25519PrivateKey(bytes: alicePrivate.span)
+    let bob = try SSL.X25519PrivateKey(bytes: bobPrivate.span)
     let publicKey = alice.publicKey()
     guard publicKey.span.count == expectedPublic.count else {
       throw Failure.x25519
@@ -459,7 +459,7 @@ enum TargetValidationCommand {
       }
       index += 1
     }
-    let shared = try SwiftSSL.X25519.sharedSecret(
+    let shared = try SSL.X25519.sharedSecret(
       privateKey: alice,
       peerPublicKey: bob.publicKey()
     )
@@ -477,7 +477,7 @@ enum TargetValidationCommand {
 
   private static func validateECH() throws {
     let scalar = ContiguousArray<UInt8>(repeating: 0x41, count: 32)
-    let configKey = try SwiftSSLCrypto.X25519PrivateKey(bytes: scalar.span)
+    let configKey = try SSLCrypto.X25519PrivateKey(bytes: scalar.span)
     let config = try ECHConfig(
       configID: 17,
       publicKey: configKey.publicKey().span,
@@ -508,7 +508,7 @@ enum TargetValidationCommand {
     )
     let serverConfiguration = try ECHServerConfiguration(
       config: config,
-      privateKey: SwiftSSLCrypto.X25519PrivateKey(bytes: scalar.span)
+      privateKey: SSLCrypto.X25519PrivateKey(bytes: scalar.span)
     )
     var opener = try RFC9849ECHClientHelloOpener(configuration: serverConfiguration)
     let opened = try opener.open(offer.outerClientHello.span)
@@ -525,7 +525,7 @@ enum TargetValidationCommand {
     mutated[mutated.count - 1] ^= 1
     let rejectionConfiguration = try ECHServerConfiguration(
       config: config,
-      privateKey: SwiftSSLCrypto.X25519PrivateKey(bytes: scalar.span)
+      privateKey: SSLCrypto.X25519PrivateKey(bytes: scalar.span)
     )
     var rejectingOpener = try RFC9849ECHClientHelloOpener(
       configuration: rejectionConfiguration
@@ -640,8 +640,8 @@ enum TargetValidationCommand {
   }
 
   private static func validateHPKE() throws {
-    let recipientPrivate = SwiftSSLCrypto.X25519KeyPair(
-      privateKey: try SwiftSSLCrypto.X25519PrivateKey(
+    let recipientPrivate = SSLCrypto.X25519KeyPair(
+      privateKey: try SSLCrypto.X25519PrivateKey(
         bytes: ContiguousArray<UInt8>([
           0x80, 0x57, 0x99, 0x1E, 0xEF, 0x8F, 0x1F, 0x1A,
           0xF1, 0x8F, 0x4A, 0x94, 0x91, 0xD1, 0x6A, 0x1C,
@@ -717,8 +717,8 @@ enum TargetValidationCommand {
     let recipientScalar = try hexadecimalBytes(
       "f3ce7fdae57e1a310d87f1ebbde6f328be0a99cdbcadf4d6589cf29de4b8ffd2"
     )
-    let recipient = SwiftSSLCrypto.P256KeyPair(
-      privateKey: try SwiftSSLCrypto.P256PrivateKey(
+    let recipient = SSLCrypto.P256KeyPair(
+      privateKey: try SSLCrypto.P256PrivateKey(
         bytes: recipientScalar.span
       )
     )
@@ -740,7 +740,7 @@ enum TargetValidationCommand {
         "4995788ef4b9d6132b249ce59a77281493eb39af373d236a1fe415cb0c2d7beb"
       )
     )
-    var setup = try SwiftSSLCrypto.HPKEP256.setupBaseSender(
+    var setup = try SSLCrypto.HPKEP256.setupBaseSender(
       recipientPublicKey: recipient.publicKey,
       info: info.span,
       kdf: .sha256,
@@ -750,7 +750,7 @@ enum TargetValidationCommand {
     guard copy(setup.encapsulation.span) == expectedEncapsulation else {
       throw Failure.hpke
     }
-    var recipientContext = try SwiftSSLCrypto.HPKEP256.setupBaseRecipient(
+    var recipientContext = try SSLCrypto.HPKEP256.setupBaseRecipient(
       encapsulation: setup.encapsulation.span,
       recipientKeyPair: recipient,
       info: info.span,
@@ -802,10 +802,10 @@ enum TargetValidationCommand {
       0x0E, 0x1C, 0xD6, 0xBE, 0xF8, 0xEF, 0x5B, 0x6F,
       0x56, 0xC3, 0x5C, 0x0B, 0x3E, 0xE8, 0xAF, 0x64,
     ])
-    let signingKey = try SwiftSSL.P256PublicKey(bytes: signingPublicKey.span)
-    let directSigningKey = try SwiftSSLCrypto.P256PublicKey(bytes: signingPublicKey.span)
+    let signingKey = try SSL.P256PublicKey(bytes: signingPublicKey.span)
+    let directSigningKey = try SSLCrypto.P256PublicKey(bytes: signingPublicKey.span)
     guard
-      try SwiftSSLCrypto.P256ECDSA.verify(
+      try SSLCrypto.P256ECDSA.verify(
         signature: rawSignature.span,
         messageHash: digest.span,
         using: directSigningKey
@@ -814,7 +814,7 @@ enum TargetValidationCommand {
       throw Failure.nistECDSA
     }
     guard
-      try SwiftSSL.P256ECDSA.verify(
+      try SSL.P256ECDSA.verify(
         signature: rawSignature.span,
         messageHash: digest.span,
         using: signingKey
@@ -833,15 +833,15 @@ enum TargetValidationCommand {
       "EFD48B2AACB6A8FD1140DD9CD45E81D69D2C877B56AAF991C34D0EA84EAF3716"
         + "F7CB1C942D657C41D436C7A1B6E29F65F3E900DBB9AFF4064DC4AB2F843ACDA8"
     )
-    let privateKey = try SwiftSSLCrypto.P256PrivateKey(
+    let privateKey = try SSLCrypto.P256PrivateKey(
       bytes: privateScalar.span
     )
-    let generatedSignature = try SwiftSSLCrypto.P256ECDSA.sign(
+    let generatedSignature = try SSLCrypto.P256ECDSA.sign(
       messageHash: signingDigest.span,
       using: privateKey
     )
     guard generatedSignature == expectedSignature,
-      try SwiftSSLCrypto.P256ECDSA.verify(
+      try SSLCrypto.P256ECDSA.verify(
         signature: generatedSignature.span,
         messageHash: signingDigest.span,
         using: privateKey.publicKey()
@@ -1055,19 +1055,19 @@ enum TargetValidationCommand {
       0x45, 0x4D, 0x44, 0x23, 0x64, 0x3C, 0xE8, 0x0E,
       0x2A, 0x9A, 0xC9, 0x4F, 0xA5, 0x4C, 0xA4, 0x9F,
     ])
-    var output384 = ContiguousArray<UInt8>(repeating: 0, count: SwiftSSL.SHA384.digestByteCount)
+    var output384 = ContiguousArray<UInt8>(repeating: 0, count: SSL.SHA384.digestByteCount)
     var output384Span = output384.mutableSpan
-    try SwiftSSL.SHA384.hash(input.span, into: &output384Span)
-    var output512 = ContiguousArray<UInt8>(repeating: 0, count: SwiftSSL.SHA512.digestByteCount)
+    try SSL.SHA384.hash(input.span, into: &output384Span)
+    var output512 = ContiguousArray<UInt8>(repeating: 0, count: SSL.SHA512.digestByteCount)
     var output512Span = output512.mutableSpan
-    try SwiftSSL.SHA512.hash(input.span, into: &output512Span)
+    try SSL.SHA512.hash(input.span, into: &output512Span)
     guard output384 == expected384, output512 == expected512 else { throw Failure.sha384512 }
   }
 
   private static func validateSHA3() throws {
-    var sha3 = ContiguousArray<UInt8>(repeating: 0, count: SwiftSSLCrypto.SHA3_256.digestByteCount)
+    var sha3 = ContiguousArray<UInt8>(repeating: 0, count: SSLCrypto.SHA3_256.digestByteCount)
     var sha3Span = sha3.mutableSpan
-    try SwiftSSLCrypto.SHA3_256.hash(ContiguousArray<UInt8>().span, into: &sha3Span)
+    try SSLCrypto.SHA3_256.hash(ContiguousArray<UInt8>().span, into: &sha3Span)
     let expected = ContiguousArray<UInt8>([
       0xA7, 0xFF, 0xC6, 0xF8, 0xBF, 0x1E, 0xD7, 0x66,
       0x51, 0xC1, 0x47, 0x56, 0xA0, 0x61, 0xD6, 0x62,
@@ -1078,7 +1078,7 @@ enum TargetValidationCommand {
 
     var shake = ContiguousArray<UInt8>(repeating: 0, count: 32)
     var shakeSpan = shake.mutableSpan
-    try SwiftSSLCrypto.SHAKE128.hash(
+    try SSLCrypto.SHAKE128.hash(
       ContiguousArray<UInt8>().span,
       outputByteCount: 32,
       into: &shakeSpan
@@ -1103,7 +1103,7 @@ enum TargetValidationCommand {
     var output = ContiguousArray<UInt8>(repeating: 0, count: 32)
     do {
       var outputSpan = output.mutableSpan
-      try SwiftSSL.SHA256.hash(input.span, into: &outputSpan)
+      try SSL.SHA256.hash(input.span, into: &outputSpan)
     }
     guard output == expected else {
       throw Failure.sha256
@@ -1121,18 +1121,18 @@ enum TargetValidationCommand {
     ]
     var output = ContiguousArray<UInt8>(
       repeating: 0,
-      count: SwiftSSL.HMACSHA256.tagByteCount
+      count: SSL.HMACSHA256.tagByteCount
     )
     do {
       var outputSpan = output.mutableSpan
-      try SwiftSSL.HMACSHA256.authenticate(
+      try SSL.HMACSHA256.authenticate(
         message.span,
         using: key.span,
         into: &outputSpan
       )
     }
     guard output == expected,
-      try SwiftSSL.HMACSHA256.isValidAuthenticationCode(
+      try SSL.HMACSHA256.isValidAuthenticationCode(
         expected.span,
         authenticating: message.span,
         using: key.span
@@ -1166,11 +1166,11 @@ enum TargetValidationCommand {
 
     var pseudorandomKey = ContiguousArray<UInt8>(
       repeating: 0,
-      count: SwiftSSL.HKDFSHA256.pseudorandomKeyByteCount
+      count: SSL.HKDFSHA256.pseudorandomKeyByteCount
     )
     do {
       var output = pseudorandomKey.mutableSpan
-      try SwiftSSL.HKDFSHA256.extract(
+      try SSL.HKDFSHA256.extract(
         inputKeyMaterial: inputKeyMaterial.span,
         salt: salt.span,
         into: &output
@@ -1183,7 +1183,7 @@ enum TargetValidationCommand {
     )
     do {
       var output = outputKeyMaterial.mutableSpan
-      try SwiftSSL.HKDFSHA256.expand(
+      try SSL.HKDFSHA256.expand(
         pseudorandomKey: pseudorandomKey.span,
         info: info.span,
         into: &output

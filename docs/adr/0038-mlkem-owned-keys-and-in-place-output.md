@@ -23,7 +23,7 @@ surface would split that contract.
 decapsulation. `InPlaceKeyEncapsulationMechanism` refines it with caller-owned
 `MutableSpan` output for the fixed-size ciphertext and shared secret. ML-KEM-768
 and ML-KEM-1024 are separate concrete, statically dispatched implementations.
-The `SwiftSSL` façade owns equivalent wrapper types rather than re-exporting
+The `SSL` façade owns equivalent wrapper types rather than re-exporting
 the lower module.
 
 Public keys and ciphertexts own ordinary immutable contiguous storage. Private

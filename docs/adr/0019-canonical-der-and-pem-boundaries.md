@@ -6,7 +6,7 @@ Accepted. The implementation is introduced incrementally; the remaining key and 
 
 ## Decision
 
-`SwiftSSLASN1` owns the byte-level format boundary and has no file, socket, Foundation, or platform trust-store dependency.
+`SSLASN1` owns the byte-level format boundary and has no file, socket, Foundation, or platform trust-store dependency.
 
 - `DERCursor` accepts definite-length DER only, enforces parsing budgets, rejects non-minimal tags and lengths, and requires complete consumption at the caller boundary.
 - `DERPrimitiveCodec` decodes BOOLEAN, positive INTEGER, OCTET STRING, BIT STRING, and OBJECT IDENTIFIER with canonical-value checks and typed failures.
@@ -31,4 +31,4 @@ The parser copies only the decoded DER output and the small label value. Every o
 
 ## Verification
 
-Native `SwiftSSLASN1Tests` cover nested DER, indefinite/non-minimal/truncated encodings, canonical primitive values, OID and bit-string rejection, transactional writer capacity failure, long-form lengths, PEM round trips, CRLF, malformed Base64, label mismatch, output limits, and trailing data. WASI and Embedded-WASI target validation must be rerun after format consumers are added.
+Native `SSLASN1Tests` cover nested DER, indefinite/non-minimal/truncated encodings, canonical primitive values, OID and bit-string rejection, transactional writer capacity failure, long-form lengths, PEM round trips, CRLF, malformed Base64, label mismatch, output limits, and trailing data. WASI and Embedded-WASI target validation must be rerun after format consumers are added.

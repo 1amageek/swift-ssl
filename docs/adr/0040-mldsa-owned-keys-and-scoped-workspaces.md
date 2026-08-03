@@ -21,7 +21,7 @@ signing and verification from unrelated signature schemes.
 `InPlaceContextualRandomizedDigitalSignature` refines it with caller-owned
 fixed-size signature output. `MLDSA44`, `MLDSA65`, and `MLDSA87` are statically
 dispatched FIPS 204 implementations over one internal parameterized core in
-`SwiftSSLCrypto`; `SwiftSSL` exposes its own equivalent key and error types
+`SSLCrypto`; `SSL` exposes its own equivalent key and error types
 rather than re-exporting implementation types. Distinct concrete key types
 make cross-parameter key use unrepresentable at the public API boundary.
 
@@ -130,7 +130,7 @@ ownership, or lifetime contracts.
 The formal Native timing artifact is
 `Benchmarks/MLDSA/Results/20260801T193601Z-native-mldsa.json` (SHA-256
 `50acd6db3b8ff88f85001e6485f765670c1a8b58e08b8ee73df61d17ed5f261b`).
-It measured clean SwiftSSL commit
+It measured clean SSL commit
 `06a2e5eb12c2d6159945e5f48ffb06159e747ce8` against clean official BoringSSL
 commit `ae49d2681a56ca7b8609f6039a770fda2a8eb550`. All nine 30-pair workloads
 passed the `1.10x` lower-95%-confidence-bound gate; the narrowest result was

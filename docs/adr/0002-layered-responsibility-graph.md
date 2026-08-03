@@ -12,19 +12,19 @@ Cryptographic libraries become difficult to port and audit when algorithm code, 
 Use the following acyclic dependency graph:
 
 ```text
-SwiftSSLCore
-  -> SwiftSSLCrypto
-  -> SwiftSSLASN1
-SwiftSSLCrypto + SwiftSSLASN1 + SwiftSSLCore
-  -> SwiftSSLX509
-SwiftSSLCrypto + SwiftSSLX509 + SwiftSSLCore
-  -> SwiftSSLTLS
-SwiftSSLTLS + SwiftSSLCrypto + SwiftSSLCore
-  -> SwiftSSLQUIC
-SwiftSSLCore
-  -> SwiftSSLPlatform
+SSLCore
+  -> SSLCrypto
+  -> SSLASN1
+SSLCrypto + SSLASN1 + SSLCore
+  -> SSLX509
+SSLCrypto + SSLX509 + SSLCore
+  -> SSLTLS
+SSLTLS + SSLCrypto + SSLCore
+  -> SSLQUIC
+SSLCore
+  -> SSLPlatform
 all modules
-  -> SwiftSSL facade
+  -> SSL facade
 ```
 
 Lower modules define capability protocols. Platform modules provide implementations. Protocol engines emit capability requests instead of importing platform implementations or invoking asynchronous callbacks.
@@ -36,5 +36,5 @@ Each source file has one primary type. Public interfaces are narrow protocols or
 - Core algorithm and state-machine tests run without sockets, files, DNS, or OS trust.
 - QUIC packet processing remains outside the TLS library.
 - Platform support can be added without changing TLS/X.509 meaning.
-- Cycles are prevented by keeping common capabilities and errors in `SwiftSSLCore`.
+- Cycles are prevented by keeping common capabilities and errors in `SSLCore`.
 - Convenience composition belongs only in the facade and cannot hide fallback behavior.

@@ -23,7 +23,7 @@ remain ordinary immutable bytes.
   noncopyable owners. Public keys use `OwnedBytes` and scoped `Span` borrows.
 - Keep the only raw-buffer borrow for the static base point inside a
   `withUnsafeBufferPointer` closure; no pointer or span escapes that closure.
-- Expose the same implementation through the `SwiftSSL` façade without a
+- Expose the same implementation through the `SSL` façade without a
   second arithmetic implementation or a fallback backend.
 
 ## Verification

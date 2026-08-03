@@ -156,7 +156,7 @@ class WASMMemoryRunnerContractTests(unittest.TestCase):
     def test_unique_symbol_resolution_supports_embedded_mangling(self) -> None:
         table = (
             "0000e805 l F CODE 0000407a "
-            "$e14SwiftSSLCrypto13SHA256ContextV6updateyys4Span\n"
+            "$e14SSLCrypto13SHA256ContextV6updateyys4Span\n"
         )
 
         symbol = runner.resolve_unique_symbol(
@@ -164,7 +164,7 @@ class WASMMemoryRunnerContractTests(unittest.TestCase):
             runner.UPDATE_SYMBOL_FRAGMENT,
         )
 
-        self.assertTrue(symbol.startswith("$e14SwiftSSLCrypto"))
+        self.assertTrue(symbol.startswith("$e14SSLCrypto"))
 
         with self.assertRaises(runner.MemoryMeasurementError):
             runner.resolve_unique_symbol(table + table, runner.UPDATE_SYMBOL_FRAGMENT)

@@ -14,9 +14,9 @@ plaintext before tag verification.
 
 ## Decision
 
-- `SwiftSSLCrypto.ChaCha20Poly1305` owns the parsed 256-bit key and conforms to
+- `SSLCrypto.ChaCha20Poly1305` owns the parsed 256-bit key and conforms to
   the existing `AuthenticatedCipher` protocol.
-- `SwiftSSL.ChaCha20Poly1305` is the public façade adapter; it maps only the
+- `SSL.ChaCha20Poly1305` is the public façade adapter; it maps only the
   typed `AEADError` contract and does not expose the lower implementation.
 - ChaCha20 uses the RFC 8439 96-bit nonce and counter 1 for payload blocks.
 - Poly1305 uses the counter-0 one-time key and authenticates

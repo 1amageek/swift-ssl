@@ -1,7 +1,7 @@
 # Lifetime negative-compilation validation
 
 `verify-negative-compilation.sh` compiles intentionally invalid clients together
-with the production `SwiftSSLCore` sources. A fixture passes only when the pinned
+with the production `SSLCore` sources. A fixture passes only when the pinned
 compiler rejects it with the expected ownership or lifetime diagnostic.
 Every compiler process is bounded by a 30-second process-group timeout.
 

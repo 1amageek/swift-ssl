@@ -63,18 +63,18 @@ class RunnerContractTests(unittest.TestCase):
             log = "\n".join(
                 [
                     self.swift_command(
-                        "SwiftSSLCore",
-                        response_path=response_paths["SwiftSSLCore"],
+                        "SSLCore",
+                        response_path=response_paths["SSLCore"],
                     ),
                     self.swift_command(
-                        "SwiftSSLCrypto",
-                        response_path=response_paths["SwiftSSLCrypto"],
+                        "SSLCrypto",
+                        response_path=response_paths["SSLCrypto"],
                     ),
                     self.swift_command(
-                        "SwiftSSLSHA256Benchmark",
+                        "SSLSHA256Benchmark",
                         optimization="-Onone",
                         response_path=response_paths[
-                            "SwiftSSLSHA256Benchmark"
+                            "SSLSHA256Benchmark"
                         ],
                     ),
                     self.swift_command("UnrelatedOptimizedModule"),
@@ -115,9 +115,9 @@ class RunnerContractTests(unittest.TestCase):
                     response_path=response_paths[module_name],
                 )
                 for module_name in (
-                    "SwiftSSLCore",
-                    "SwiftSSLCrypto",
-                    "SwiftSSLSHA256Benchmark",
+                    "SSLCore",
+                    "SSLCrypto",
+                    "SSLSHA256Benchmark",
                 )
             )
             completed = subprocess.CompletedProcess(
@@ -141,12 +141,12 @@ class RunnerContractTests(unittest.TestCase):
             self.assertEqual(
                 set(result["validatedSourceLists"]),
                 {
-                    "SwiftSSLCore",
-                    "SwiftSSLCrypto",
-                    "SwiftSSLSHA256Benchmark",
+                    "SSLCore",
+                    "SSLCrypto",
+                    "SSLSHA256Benchmark",
                 },
             )
-            with response_paths["SwiftSSLCore"].open(
+            with response_paths["SSLCore"].open(
                 "a",
                 encoding="utf-8",
             ) as handle:
@@ -173,9 +173,9 @@ class RunnerContractTests(unittest.TestCase):
                     response_path=response_paths[module_name],
                 )
                 for module_name in (
-                    "SwiftSSLCore",
-                    "SwiftSSLCrypto",
-                    "SwiftSSLSHA256Benchmark",
+                    "SSLCore",
+                    "SSLCrypto",
+                    "SSLSHA256Benchmark",
                 )
             ]
             commands[1] += " -vfsoverlay /tmp/untrusted-overlay.yaml"
@@ -225,9 +225,9 @@ class RunnerContractTests(unittest.TestCase):
                         compiler=str(swiftc),
                     )
                     for module_name in (
-                        "SwiftSSLCore",
-                        "SwiftSSLCrypto",
-                        "SwiftSSLSHA256Benchmark",
+                        "SSLCore",
+                        "SSLCrypto",
+                        "SSLSHA256Benchmark",
                     )
                 ),
                 stderr="",
@@ -1101,9 +1101,9 @@ class RunnerContractTests(unittest.TestCase):
             "Lifetimes",
             "Extern",
         ]
-        if module_name == "SwiftSSLCrypto":
+        if module_name == "SSLCrypto":
             feature_names.append("BuiltinModule")
-        if module_name == "SwiftSSLCore":
+        if module_name == "SSLCore":
             feature_names.append("Volatile")
         arguments = [
             compiler,
@@ -1116,7 +1116,7 @@ class RunnerContractTests(unittest.TestCase):
             "-output-file-map",
             str(module_build_root / "output-file-map.json"),
         ]
-        if module_name != "SwiftSSLSHA256Benchmark":
+        if module_name != "SSLSHA256Benchmark":
             arguments.append("-parse-as-library")
         arguments.extend(
             [
@@ -1143,13 +1143,13 @@ class RunnerContractTests(unittest.TestCase):
                 "-parseable-output",
             ]
         )
-        if module_name == "SwiftSSLSHA256Benchmark":
+        if module_name == "SSLSHA256Benchmark":
             arguments.extend(
                 [
                     "-Xfrontend",
                     "-entry-point-function-name",
                     "-Xfrontend",
-                    "SwiftSSLSHA256Benchmark_main",
+                    "SSLSHA256Benchmark_main",
                     "-parse-as-library",
                 ]
             )
@@ -1211,9 +1211,9 @@ class RunnerContractTests(unittest.TestCase):
         swift_scratch: Path,
     ) -> dict[str, Path]:
         module_directories = {
-            "SwiftSSLCore": swift_source / "Sources/SwiftSSLCore",
-            "SwiftSSLCrypto": swift_source / "Sources/SwiftSSLCrypto",
-            "SwiftSSLSHA256Benchmark": (
+            "SSLCore": swift_source / "Sources/SSLCore",
+            "SSLCrypto": swift_source / "Sources/SSLCrypto",
+            "SSLSHA256Benchmark": (
                 swift_source / "Benchmarks/SHA256/SwiftWorker"
             ),
         }

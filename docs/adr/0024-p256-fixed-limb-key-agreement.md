@@ -15,7 +15,7 @@ would obscure ownership and range guarantees.
 
 ## Decision
 
-`SwiftSSLCrypto.P256` uses eight fixed 32-bit limbs for field and scalar
+`SSLCrypto.P256` uses eight fixed 32-bit limbs for field and scalar
 values. Field multiplication uses a fixed 512-bit product followed by a
 bounded reduction modulo the P-256 prime. Jacobian points avoid an inversion
 per scalar-multiplication step; only the final affine conversion inverts the

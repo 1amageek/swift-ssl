@@ -1,4 +1,4 @@
-import SwiftSSL
+import SSL
 
 #if canImport(Darwin)
   import Darwin

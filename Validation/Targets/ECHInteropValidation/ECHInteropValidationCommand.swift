@@ -1,6 +1,6 @@
-import SwiftSSLCore
-import SwiftSSLCrypto
-import SwiftSSLTLS
+import SSLCore
+import SSLCrypto
+import SSLTLS
 
 @main
 enum ECHInteropValidationCommand {

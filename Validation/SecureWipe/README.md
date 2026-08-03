@@ -1,6 +1,6 @@
 # Secure wipe code-generation validation
 
-`verify-codegen.sh` compiles the production `SwiftSSLCore` and `SwiftSSLCrypto` sources for Native, WASI, and Embedded WASI at `-O` and `-Osize`. It fails unless generated LLVM IR retains the production volatile byte, UInt16-word, and UInt64-word stores and the exact cleanup/control-flow contracts.
+`verify-codegen.sh` compiles the production `SSLCore` and `SSLCrypto` sources for Native, WASI, and Embedded WASI at `-O` and `-Osize`. It fails unless generated LLVM IR retains the production volatile byte, UInt16-word, and UInt64-word stores and the exact cleanup/control-flow contracts.
 
 The Core gate checks whole-module output on every target and supported per-file output for `SecretBytes` and `SecureWipe`. It uses CFG path tracking for initializer failure cleanup, explicit destruction, and value-witness cleanup; a textual wipe-before-free ordering is not sufficient.
 

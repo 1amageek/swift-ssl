@@ -19,7 +19,7 @@ Embedded security contract.
 ## Decision
 
 The existing `P256PrivateKey`, `P256PublicKey`, and `P256KeyAgreement` backend
-is the single P-256 arithmetic owner. `SwiftSSLTLS` adds role-specific,
+is the single P-256 arithmetic owner. `SSLTLS` adds role-specific,
 noncopyable `TLS13P256ClientKeyExchange` and
 `TLS13P256ServerKeyExchange` values and registers RFC 8446 named group
 `0x0017` as `TLS13NamedGroup.secp256r1`.

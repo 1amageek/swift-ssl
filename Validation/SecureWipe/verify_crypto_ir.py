@@ -13,7 +13,7 @@ SSA = r"%[-.$A-Za-z0-9_]+"
 GLOBAL = r'@(?:"[^"]+"|[-.$A-Za-z0-9_]+)'
 LABEL = r'(?:"([^"]+)"|([-.$A-Za-z0-9_]+))'
 SECURE_WIPE_SYMBOLS = frozenset(
-    f"${mangling}12SwiftSSLCore10SecureWipeO5erase_9byteCountySv_SitFZ{suffix}"
+    f"${mangling}12SSLCore10SecureWipeO5erase_9byteCountySv_SitFZ{suffix}"
     for mangling in ("s", "e")
     for suffix in ("", "Tf4nnd_n")
 )
@@ -21,21 +21,21 @@ HMAC_SHA256_STORAGE_BYTE_COUNT = 240
 HMAC_SHA256_STORAGE_ALIGNMENT_MASK = 15
 SHA256_UPDATE_SYMBOLS = frozenset(
     (
-        f"${mangling}14SwiftSSLCrypto13SHA256ContextV6update"
+        f"${mangling}14SSLCrypto13SHA256ContextV6update"
         "yys4SpanVys5UInt8VGAA16CryptoInputErrorOYKF"
     )
     for mangling in ("s", "e")
 )
 CONSTANT_TIME_EQUAL_SYMBOLS = frozenset(
     (
-        f"${mangling}12SwiftSSLCore12ConstantTimeO5equal"
+        f"${mangling}12SSLCore12ConstantTimeO5equal"
         "ySbs4SpanVys5UInt8VG_AItFZ"
     )
     for mangling in ("s", "e")
 )
 SHA256_FINALIZE_IN_PLACE_SYMBOLS = frozenset(
     (
-        f"${mangling}14SwiftSSLCrypto13SHA256ContextV15finalizeInPlace"
+        f"${mangling}14SSLCrypto13SHA256ContextV15finalizeInPlace"
         "4intoys11MutableSpanVys5UInt8VGz_t"
         "AA16CryptoInputErrorOYKF"
     )
@@ -43,7 +43,7 @@ SHA256_FINALIZE_IN_PLACE_SYMBOLS = frozenset(
 )
 HMAC_FINALIZE_SYMBOLS = frozenset(
     (
-        f"${mangling}14SwiftSSLCrypto14HMACSHA256CoreO"
+        f"${mangling}14SSLCrypto14HMACSHA256CoreO"
         "26finalizeAuthenticationCode12innerContext05outerI04intoy"
         "AA06SHA256I0Vz_AIzs11MutableSpanVys5UInt8VGzt"
         "AA16CryptoInputErrorOYKFZ"
@@ -52,7 +52,7 @@ HMAC_FINALIZE_SYMBOLS = frozenset(
 )
 HMAC_ONE_SHOT_SYMBOLS = frozenset(
     (
-        f"${mangling}14SwiftSSLCrypto10HMACSHA256O"
+        f"${mangling}14SSLCrypto10HMACSHA256O"
         "12authenticate_5using4intoys4SpanVys5UInt8VG_"
         "AKs07MutableG0VyAJGztAA16CryptoInputErrorOYKFZ"
     )
@@ -60,7 +60,7 @@ HMAC_ONE_SHOT_SYMBOLS = frozenset(
 )
 HMAC_CONTEXT_VERIFY_SYMBOLS = frozenset(
     (
-        f"${mangling}14SwiftSSLCrypto17HMACSHA256ContextV"
+        f"${mangling}14SSLCrypto17HMACSHA256ContextV"
         "25isValidAuthenticationCodeySbs4SpanVys5UInt8VG"
         "AA16CryptoInputErrorOYKF"
     )
@@ -68,14 +68,14 @@ HMAC_CONTEXT_VERIFY_SYMBOLS = frozenset(
 )
 HKDF_EXPAND_SYMBOLS = frozenset(
     (
-        f"${mangling}14SwiftSSLCrypto10HKDFSHA256O"
+        f"${mangling}14SSLCrypto10HKDFSHA256O"
         "6expand15pseudorandomKey4info4intoys4SpanVys5UInt8VG_"
         "ALs07MutableI0VyAKGztAA9HKDFErrorOYKFZ"
     )
     for mangling in ("s", "e")
 )
 HMAC_STORAGE_DEINIT_SYMBOLS = frozenset(
-    f"${mangling}14SwiftSSLCrypto24HMACSHA256ContextStorageCfD"
+    f"${mangling}14SSLCrypto24HMACSHA256ContextStorageCfD"
     for mangling in ("s", "e")
 )
 
@@ -4741,10 +4741,10 @@ def run_self_tests() -> None:
         "",
         (
             "entry:",
-            '  call void @"$s12SwiftSSLCore10SecureWipeO5erase_9byteCountySv_SitFZ"(ptr %1, i64 32)',
-            '  call void @"$s12SwiftSSLCore10SecureWipeO5erase_9byteCountySv_SitFZ"(ptr %pending, i64 64)',
-            '  call void @"$s12SwiftSSLCore10SecureWipeO5erase_9byteCountySv_SitFZ"(ptr %1, i64 32)',
-            '  call void @"$s12SwiftSSLCore10SecureWipeO5erase_9byteCountySv_SitFZ"(ptr %pending, i64 64)',
+            '  call void @"$s12SSLCore10SecureWipeO5erase_9byteCountySv_SitFZ"(ptr %1, i64 32)',
+            '  call void @"$s12SSLCore10SecureWipeO5erase_9byteCountySv_SitFZ"(ptr %pending, i64 64)',
+            '  call void @"$s12SSLCore10SecureWipeO5erase_9byteCountySv_SitFZ"(ptr %1, i64 32)',
+            '  call void @"$s12SSLCore10SecureWipeO5erase_9byteCountySv_SitFZ"(ptr %pending, i64 64)',
             "  ret void",
         ),
     )
@@ -4758,7 +4758,7 @@ def run_self_tests() -> None:
             "entry:",
             "  %secret = alloca %SIMD32, align 16",
             "  call void @llvm.lifetime.start.p0(i64 32, ptr %secret)",
-            '  call void @"$s12SwiftSSLCore10SecureWipeO5erase_9byteCountySv_SitFZ"(ptr %secret, i64 32)',
+            '  call void @"$s12SSLCore10SecureWipeO5erase_9byteCountySv_SitFZ"(ptr %secret, i64 32)',
             "  store i8 1, ptr %secret",
             "  call void @llvm.lifetime.end.p0(i64 32, ptr %secret)",
             "  ret void",
@@ -4782,7 +4782,7 @@ def run_self_tests() -> None:
         ),
         (
             "entry:",
-            '  call swiftcc void @"$s12SwiftSSLCore10SecureWipeO5erase_9byteCountySv_SitFZ"(ptr %0, i32 63)',
+            '  call swiftcc void @"$s12SSLCore10SecureWipeO5erase_9byteCountySv_SitFZ"(ptr %0, i32 63)',
             "  ret void",
         ),
     )
@@ -4810,7 +4810,7 @@ def run_self_tests() -> None:
             "  %4 = sub i32 %2, %1",
             "  %5 = select i1 %3, i32 0, i32 %4",
             (
-                '  call swiftcc void @"$s12SwiftSSLCore10SecureWipeO5erase_'
+                '  call swiftcc void @"$s12SSLCore10SecureWipeO5erase_'
                 '9byteCountySv_SitFZ_noop"(ptr %0, i32 %5)'
             ),
             "  ret void",
@@ -4918,7 +4918,7 @@ def run_self_tests() -> None:
             "  %3 = icmp eq i32 %1, 0",
             "  %4 = sub i32 %2, %1",
             "  %5 = select i1 %3, i32 0, i32 %4",
-            '  call swiftcc void @"$s12SwiftSSLCore10SecureWipeO5erase_9byteCountySv_SitFZ"(ptr %0, i32 %5)',
+            '  call swiftcc void @"$s12SSLCore10SecureWipeO5erase_9byteCountySv_SitFZ"(ptr %0, i32 %5)',
             "  %6 = sub i32 %2, 64",
             "  %7 = inttoptr i32 %6 to ptr",
             "  store i8 1, ptr %7",
@@ -4951,7 +4951,7 @@ def run_self_tests() -> None:
             "  %4 = sub i32 %2, %1",
             "  %5 = select i1 %3, i32 0, i32 %4",
             (
-                '  call swiftcc void @"$s12SwiftSSLCore10SecureWipeO5erase_'
+                '  call swiftcc void @"$s12SSLCore10SecureWipeO5erase_'
                 '9byteCountySv_SitFZ"(ptr %0, i32 %5)'
             ),
             "  %6 = load ptr, ptr %slot",
@@ -5049,7 +5049,7 @@ def run_self_tests() -> None:
                     "i32 0, i32 %length"
                 ),
                 (
-                    '  call swiftcc void @"$s12SwiftSSLCore10SecureWipeO'
+                    '  call swiftcc void @"$s12SSLCore10SecureWipeO'
                     '5erase_9byteCountySv_SitFZ"(ptr %0, i32 %count)'
                 ),
                 *after_wipe,
@@ -5175,7 +5175,7 @@ def run_self_tests() -> None:
             "  %alias = load ptr, ptr %slot",
             "  %length = sub i32 %2, %1",
             (
-                '  call swiftcc void @"$s12SwiftSSLCore10SecureWipeO'
+                '  call swiftcc void @"$s12SSLCore10SecureWipeO'
                 '5erase_9byteCountySv_SitFZ"(ptr %alias, i32 %length)'
             ),
             "  ret void",
@@ -5208,7 +5208,7 @@ def run_self_tests() -> None:
                 "  %secret = alloca %SIMD32, align 16",
                 "  call void @llvm.lifetime.start.p0(i64 32, ptr %secret)",
                 (
-                    '  call void @"$s12SwiftSSLCore10SecureWipeO'
+                    '  call void @"$s12SSLCore10SecureWipeO'
                     '5erase_9byteCountySv_SitFZ"(ptr %secret, i64 32)'
                 ),
                 instruction,
@@ -5236,7 +5236,7 @@ def run_self_tests() -> None:
             "  %secret = alloca %SIMD32, align 16",
             "  call void @llvm.lifetime.start.p0(i64 31, ptr %secret)",
             (
-                '  call void @"$s12SwiftSSLCore10SecureWipeO'
+                '  call void @"$s12SSLCore10SecureWipeO'
                 '5erase_9byteCountySv_SitFZ"(ptr %secret, i64 32)'
             ),
             "  call void @llvm.lifetime.end.p0(i64 31, ptr %secret)",
@@ -5265,7 +5265,7 @@ def run_self_tests() -> None:
             "  call void @llvm.lifetime.start.p0(i64 32, ptr %secret)",
             "  call void @llvm.lifetime.end.p0(i64 32, ptr %alias)",
             (
-                '  call void @"$s12SwiftSSLCore10SecureWipeO'
+                '  call void @"$s12SSLCore10SecureWipeO'
                 '5erase_9byteCountySv_SitFZ"(ptr %secret, i64 32)'
             ),
             "  call void @llvm.lifetime.end.p0(i64 32, ptr %secret)",
@@ -5294,7 +5294,7 @@ def run_self_tests() -> None:
             "live:",
             "  call void @llvm.lifetime.start.p0(i64 32, ptr %secret)",
             (
-                '  call void @"$s12SwiftSSLCore10SecureWipeO'
+                '  call void @"$s12SSLCore10SecureWipeO'
                 '5erase_9byteCountySv_SitFZ"(ptr %secret, i64 32)'
             ),
             "  call void @llvm.lifetime.end.p0(i64 32, ptr %secret)",
@@ -5324,7 +5324,7 @@ def run_self_tests() -> None:
         lifetime_byte_count: int = 32,
         wipe_lines: tuple[str, ...] = (
             (
-                '  call void @"$s12SwiftSSLCore10SecureWipeO'
+                '  call void @"$s12SSLCore10SecureWipeO'
                 '5erase_9byteCountySv_SitFZ"(ptr %secret, i64 32)'
             ),
         ),
@@ -5510,7 +5510,7 @@ def run_self_tests() -> None:
             "nonexact-second-wipe",
             after_wipe=(
                 (
-                    '  call void @"$s12SwiftSSLCore10SecureWipeO'
+                    '  call void @"$s12SSLCore10SecureWipeO'
                     '5erase_9byteCountySv_SitFZ"'
                     "(ptr %secret, i64 %dynamicCount)"
                 ),
@@ -5520,7 +5520,7 @@ def run_self_tests() -> None:
             "operand-bundle-fake-wipe",
             wipe_lines=(
                 (
-                    '  call swiftcc void @"$s12SwiftSSLCore10SecureWipeO'
+                    '  call swiftcc void @"$s12SSLCore10SecureWipeO'
                     '5erase_9byteCountySv_SitFZ"'
                     "(ptr %other, i64 %dynamicCount) "
                     '[ "deopt"(ptr %secret, i64 32) ]'
@@ -5566,7 +5566,7 @@ def run_self_tests() -> None:
                 ),
                 "  store volatile i64 1, ptr %boundary",
                 (
-                    '  call void @"$s12SwiftSSLCore10SecureWipeO'
+                    '  call void @"$s12SSLCore10SecureWipeO'
                     '5erase_9byteCountySv_SitFZ"'
                     "(ptr %secret, i64 32)"
                 ),
@@ -5575,7 +5575,7 @@ def run_self_tests() -> None:
             lifetime_byte_count=64,
             wipe_lines=(
                 (
-                    '  call void @"$s12SwiftSSLCore10SecureWipeO'
+                    '  call void @"$s12SSLCore10SecureWipeO'
                     '5erase_9byteCountySv_SitFZ"'
                     "(ptr %secret, i64 32)"
                 ),
@@ -5584,7 +5584,7 @@ def run_self_tests() -> None:
                     "ptr %secret, i64 32"
                 ),
                 (
-                    '  call void @"$s12SwiftSSLCore10SecureWipeO'
+                    '  call void @"$s12SSLCore10SecureWipeO'
                     '5erase_9byteCountySv_SitFZ"'
                     "(ptr %second, i64 32)"
                 ),
@@ -5615,7 +5615,7 @@ def run_self_tests() -> None:
             "  %alias = getelementptr i8, ptr %secret, i64 0",
             "  call void @llvm.lifetime.start.p0(i64 32, ptr %secret)",
             (
-                '  call void @"$s12SwiftSSLCore10SecureWipeO'
+                '  call void @"$s12SSLCore10SecureWipeO'
                 '5erase_9byteCountySv_SitFZ"(ptr %secret, i64 32)'
             ),
             "  call void @llvm.lifetime.end.p0(i64 32, ptr %secret)",
@@ -5641,22 +5641,22 @@ def run_self_tests() -> None:
             "entry:",
             "  %innerState = getelementptr i8, ptr %0, i64 16",
             (
-                '  call void @"$s12SwiftSSLCore10SecureWipeO'
+                '  call void @"$s12SSLCore10SecureWipeO'
                 '5erase_9byteCountySv_SitFZ"(ptr %innerState, i64 32)'
             ),
             "  %innerBlock = getelementptr i8, ptr %0, i64 48",
             (
-                '  call void @"$s12SwiftSSLCore10SecureWipeO'
+                '  call void @"$s12SSLCore10SecureWipeO'
                 '5erase_9byteCountySv_SitFZ"(ptr %innerBlock, i64 64)'
             ),
             "  %outerState = getelementptr i8, ptr %0, i64 128",
             (
-                '  call void @"$s12SwiftSSLCore10SecureWipeO'
+                '  call void @"$s12SSLCore10SecureWipeO'
                 '5erase_9byteCountySv_SitFZ"(ptr %outerState, i64 32)'
             ),
             "  %outerBlock = getelementptr i8, ptr %0, i64 160",
             (
-                '  call void @"$s12SwiftSSLCore10SecureWipeO'
+                '  call void @"$s12SSLCore10SecureWipeO'
                 '5erase_9byteCountySv_SitFZ"(ptr %outerBlock, i64 64)'
             ),
             (
@@ -5738,7 +5738,7 @@ def run_self_tests() -> None:
             "entry:",
             "  %length = sub i32 %2, %1",
             (
-                '  call swiftcc void @"$s12SwiftSSLCore10SecureWipeO'
+                '  call swiftcc void @"$s12SSLCore10SecureWipeO'
                 '5erase_9byteCountySv_SitFZ"(ptr %0, i32 %length)'
             ),
             "  ret ptr %0",
@@ -5785,7 +5785,7 @@ def run_self_tests() -> None:
         )
 
     base_wipe = (
-        "$s12SwiftSSLCore10SecureWipeO5erase_9byteCountySv_SitFZ"
+        "$s12SSLCore10SecureWipeO5erase_9byteCountySv_SitFZ"
     )
     specialization = f"{base_wipe}Tf4nnd_n"
 
@@ -6341,7 +6341,7 @@ def run_self_tests() -> None:
             )
 
     secret_deinitializer = (
-        '$s12SwiftSSLCore11SecretBytesVfD'
+        '$s12SSLCore11SecretBytesVfD'
     )
     secret_wipe = next(iter(SECURE_WIPE_SYMBOLS))
     dirty_secret_ir = "\n".join(

@@ -43,10 +43,10 @@ scripts/swift-test-timeout.sh 120 \
   env TOOLCHAINS=org.swift.64202607231a \
   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcrun xctest \
-  .build/xcode-derived-data/Build/Products/Debug/SwiftSSLCoreTests.xctest
+  .build/xcode-derived-data/Build/Products/Debug/SSLCoreTests.xctest
 
-# Repeat the bounded xctest command for SwiftSSLASN1Tests,
-# SwiftSSLX509Tests, SwiftSSLCryptoTests, and SwiftSSLTLSModelTests.
+# Repeat the bounded xctest command for SSLASN1Tests,
+# SSLX509Tests, SSLCryptoTests, and SSLTLSModelTests.
 
 scripts/swift-test-timeout.sh 120 \
   env TOOLCHAINS=org.swift.64202607231a \

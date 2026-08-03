@@ -35,153 +35,153 @@ case let invalidSelection?:
 }
 
 var products: [Product] = [
-  .library(name: "SwiftSSL", targets: ["SwiftSSL"]),
-  .library(name: "SwiftSSLCore", targets: ["SwiftSSLCore"]),
-  .library(name: "SwiftSSLCrypto", targets: ["SwiftSSLCrypto"]),
-  .library(name: "SwiftSSLASN1", targets: ["SwiftSSLASN1"]),
-  .library(name: "SwiftSSLX509", targets: ["SwiftSSLX509"]),
-  .library(name: "SwiftSSLTLS", targets: ["SwiftSSLTLS"]),
-  .library(name: "SwiftSSLQUIC", targets: ["SwiftSSLQUIC"]),
+  .library(name: "SSL", targets: ["SSL"]),
+  .library(name: "SSLCore", targets: ["SSLCore"]),
+  .library(name: "SSLCrypto", targets: ["SSLCrypto"]),
+  .library(name: "SSLASN1", targets: ["SSLASN1"]),
+  .library(name: "SSLX509", targets: ["SSLX509"]),
+  .library(name: "SSLTLS", targets: ["SSLTLS"]),
+  .library(name: "SSLQUIC", targets: ["SSLQUIC"]),
   .executable(
     name: "swift-ssl-target-validation",
-    targets: ["SwiftSSLTargetValidation"]
+    targets: ["SSLTargetValidation"]
   ),
   .executable(
     name: "swift-ssl-hybrid-target-validation",
-    targets: ["SwiftSSLHybridTargetValidation"]
+    targets: ["SSLHybridTargetValidation"]
   ),
   .executable(
     name: "swift-ssl-facade-validation",
-    targets: ["SwiftSSLFacadeValidation"]
+    targets: ["SSLFacadeValidation"]
   ),
   .executable(
     name: "swift-ssl-quic-crypto-stream-validation",
-    targets: ["SwiftSSLQUICCryptoStreamValidation"]
+    targets: ["SSLQUICCryptoStreamValidation"]
   ),
   .executable(
     name: "swift-ssl-nist-verification-validation",
-    targets: ["SwiftSSLNISTVerificationValidation"]
+    targets: ["SSLNISTVerificationValidation"]
   ),
 ]
 
 var targets: [Target] = [
   .target(
-    name: "SwiftSSLCore",
+    name: "SSLCore",
     swiftSettings: ownershipSettings + [
       .enableExperimentalFeature("Volatile")
     ]
   ),
   .target(
-    name: "SwiftSSLCrypto",
-    dependencies: ["SwiftSSLCore"],
+    name: "SSLCrypto",
+    dependencies: ["SSLCore"],
     swiftSettings: cryptoSettings
   ),
   .target(
-    name: "SwiftSSLASN1",
-    dependencies: ["SwiftSSLCore"],
+    name: "SSLASN1",
+    dependencies: ["SSLCore"],
     swiftSettings: ownershipSettings
   ),
   .target(
-    name: "SwiftSSLX509",
-    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLASN1"],
+    name: "SSLX509",
+    dependencies: ["SSLCore", "SSLCrypto", "SSLASN1"],
     swiftSettings: ownershipSettings
   ),
   .target(
-    name: "SwiftSSLTLS",
-    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLASN1", "SwiftSSLX509"],
+    name: "SSLTLS",
+    dependencies: ["SSLCore", "SSLCrypto", "SSLASN1", "SSLX509"],
     swiftSettings: ownershipSettings
   ),
   .target(
-    name: "SwiftSSLQUIC",
-    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLTLS"],
+    name: "SSLQUIC",
+    dependencies: ["SSLCore", "SSLCrypto", "SSLTLS"],
     swiftSettings: ownershipSettings
   ),
   .target(
-    name: "SwiftSSL",
+    name: "SSL",
     dependencies: [
-      "SwiftSSLCore",
-      "SwiftSSLCrypto",
-      "SwiftSSLASN1",
-      "SwiftSSLX509",
-      "SwiftSSLTLS",
-      "SwiftSSLQUIC",
+      "SSLCore",
+      "SSLCrypto",
+      "SSLASN1",
+      "SSLX509",
+      "SSLTLS",
+      "SSLQUIC",
     ],
     swiftSettings: ownershipSettings
   ),
   .executableTarget(
-    name: "SwiftSSLTargetValidation",
+    name: "SSLTargetValidation",
     dependencies: [
-      "SwiftSSL",
-      "SwiftSSLCore",
-      "SwiftSSLCrypto",
-      "SwiftSSLASN1",
-      "SwiftSSLX509",
-      "SwiftSSLTLS",
-      "SwiftSSLQUIC",
+      "SSL",
+      "SSLCore",
+      "SSLCrypto",
+      "SSLASN1",
+      "SSLX509",
+      "SSLTLS",
+      "SSLQUIC",
     ],
     path: "Validation/Targets/TargetValidation",
     swiftSettings: ownershipSettings
   ),
   .executableTarget(
-    name: "SwiftSSLHybridTargetValidation",
+    name: "SSLHybridTargetValidation",
     dependencies: [
-      "SwiftSSLCore",
-      "SwiftSSLCrypto",
-      "SwiftSSLTLS",
+      "SSLCore",
+      "SSLCrypto",
+      "SSLTLS",
     ],
     path: "Validation/Targets/HybridTargetValidation",
     swiftSettings: ownershipSettings
   ),
   .executableTarget(
-    name: "SwiftSSLFacadeValidation",
-    dependencies: ["SwiftSSL"],
+    name: "SSLFacadeValidation",
+    dependencies: ["SSL"],
     path: "Validation/Targets/FacadeValidation",
     swiftSettings: ownershipSettings
   ),
   .executableTarget(
-    name: "SwiftSSLQUICCryptoStreamValidation",
+    name: "SSLQUICCryptoStreamValidation",
     dependencies: [
-      "SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLQUIC", "SwiftSSLTLS",
-      "SwiftSSLX509",
+      "SSLCore", "SSLCrypto", "SSLQUIC", "SSLTLS",
+      "SSLX509",
     ],
     path: "Validation/Targets/QUICCryptoStreamValidation",
     swiftSettings: ownershipSettings
   ),
   .executableTarget(
-    name: "SwiftSSLNISTVerificationValidation",
+    name: "SSLNISTVerificationValidation",
     dependencies: [
-      "SwiftSSLCore",
-      "SwiftSSLCrypto",
+      "SSLCore",
+      "SSLCrypto",
     ],
     path: "Validation/Targets/NISTVerificationValidation",
     swiftSettings: nistValidationSettings
   ),
   .testTarget(
-    name: "SwiftSSLCoreTests",
-    dependencies: ["SwiftSSLCore"],
+    name: "SSLCoreTests",
+    dependencies: ["SSLCore"],
     swiftSettings: ownershipSettings
   ),
   .testTarget(
-    name: "SwiftSSLCryptoTests",
-    dependencies: ["SwiftSSLCore", "SwiftSSLCrypto"],
+    name: "SSLCryptoTests",
+    dependencies: ["SSLCore", "SSLCrypto"],
     swiftSettings: ownershipSettings
   ),
   .testTarget(
-    name: "SwiftSSLX509Tests",
+    name: "SSLX509Tests",
     dependencies: [
-      "SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLASN1", "SwiftSSLX509",
+      "SSLCore", "SSLCrypto", "SSLASN1", "SSLX509",
     ],
     swiftSettings: ownershipSettings
   ),
   .testTarget(
-    name: "SwiftSSLASN1Tests",
-    dependencies: ["SwiftSSLCore", "SwiftSSLASN1"],
+    name: "SSLASN1Tests",
+    dependencies: ["SSLCore", "SSLASN1"],
     swiftSettings: ownershipSettings
   ),
   .testTarget(
-    name: "SwiftSSLTLSModelTests",
+    name: "SSLTLSModelTests",
     dependencies: [
-      "SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLX509", "SwiftSSLTLS", "SwiftSSLQUIC",
+      "SSLCore", "SSLCrypto", "SSLX509", "SSLTLS", "SSLQUIC",
     ],
     swiftSettings: ownershipSettings
   ),
@@ -191,13 +191,13 @@ if ProcessInfo.processInfo.environment["SWIFT_SSL_ENABLE_ECH_INTEROP_VALIDATION"
   products.append(
     .executable(
       name: "swift-ssl-ech-interop-validation",
-      targets: ["SwiftSSLECHInteropValidation"]
+      targets: ["SSLECHInteropValidation"]
     )
   )
   targets.append(
     .executableTarget(
-      name: "SwiftSSLECHInteropValidation",
-      dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLTLS"],
+      name: "SSLECHInteropValidation",
+      dependencies: ["SSLCore", "SSLCrypto", "SSLTLS"],
       path: "Validation/Targets/ECHInteropValidation",
       swiftSettings: ownershipSettings
     )
@@ -208,13 +208,13 @@ if ProcessInfo.processInfo.environment["SWIFT_SSL_ENABLE_BENCHMARKS"] == "1" {
   products.append(
     .executable(
       name: "swift-ssl-sha256-benchmark",
-      targets: ["SwiftSSLSHA256Benchmark"]
+      targets: ["SSLSHA256Benchmark"]
     )
   )
   targets.append(
     .executableTarget(
-      name: "SwiftSSLSHA256Benchmark",
-      dependencies: ["SwiftSSLCore", "SwiftSSLCrypto"],
+      name: "SSLSHA256Benchmark",
+      dependencies: ["SSLCore", "SSLCrypto"],
       path: "Benchmarks/SHA256/SwiftWorker",
       swiftSettings: ownershipSettings
     )
@@ -222,13 +222,13 @@ if ProcessInfo.processInfo.environment["SWIFT_SSL_ENABLE_BENCHMARKS"] == "1" {
   products.append(
     .executable(
       name: "swift-ssl-mlkem-benchmark",
-      targets: ["SwiftSSLMLKEMBenchmark"]
+      targets: ["SSLMLKEMBenchmark"]
     )
   )
   targets.append(
     .executableTarget(
-      name: "SwiftSSLMLKEMBenchmark",
-      dependencies: ["SwiftSSL"],
+      name: "SSLMLKEMBenchmark",
+      dependencies: ["SSL"],
       path: "Benchmarks/MLKEM/SwiftWorker",
       swiftSettings: ownershipSettings
     )
@@ -236,13 +236,13 @@ if ProcessInfo.processInfo.environment["SWIFT_SSL_ENABLE_BENCHMARKS"] == "1" {
   products.append(
     .executable(
       name: "swift-ssl-tls-hybrid-benchmark",
-      targets: ["SwiftSSLTLSHybridBenchmark"]
+      targets: ["SSLTLSHybridBenchmark"]
     )
   )
   targets.append(
     .executableTarget(
-      name: "SwiftSSLTLSHybridBenchmark",
-      dependencies: ["SwiftSSLCore", "SwiftSSLCrypto", "SwiftSSLTLS"],
+      name: "SSLTLSHybridBenchmark",
+      dependencies: ["SSLCore", "SSLCrypto", "SSLTLS"],
       path: "Benchmarks/TLSHybrid/SwiftWorker",
       swiftSettings: ownershipSettings
     )
@@ -250,13 +250,13 @@ if ProcessInfo.processInfo.environment["SWIFT_SSL_ENABLE_BENCHMARKS"] == "1" {
   products.append(
     .executable(
       name: "swift-ssl-mldsa-benchmark",
-      targets: ["SwiftSSLMLDSABenchmark"]
+      targets: ["SSLMLDSABenchmark"]
     )
   )
   targets.append(
     .executableTarget(
-      name: "SwiftSSLMLDSABenchmark",
-      dependencies: ["SwiftSSL"],
+      name: "SSLMLDSABenchmark",
+      dependencies: ["SSL"],
       path: "Benchmarks/MLDSA/SwiftWorker",
       swiftSettings: ownershipSettings
     )
@@ -264,13 +264,13 @@ if ProcessInfo.processInfo.environment["SWIFT_SSL_ENABLE_BENCHMARKS"] == "1" {
   products.append(
     .executable(
       name: "swift-ssl-hpke-benchmark",
-      targets: ["SwiftSSLHPKEBenchmark"]
+      targets: ["SSLHPKEBenchmark"]
     )
   )
   targets.append(
     .executableTarget(
-      name: "SwiftSSLHPKEBenchmark",
-      dependencies: ["SwiftSSLCore", "SwiftSSLCrypto"],
+      name: "SSLHPKEBenchmark",
+      dependencies: ["SSLCore", "SSLCrypto"],
       path: "Benchmarks/HPKE/SwiftWorker",
       swiftSettings: ownershipSettings
     )

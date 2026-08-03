@@ -1,5 +1,5 @@
-import SwiftSSLCore
-import SwiftSSLCrypto
+import SSLCore
+import SSLCrypto
 
 @main
 enum NISTVerificationValidationCommand {

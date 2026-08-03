@@ -66,8 +66,8 @@ done
 artifact_directory="$(mktemp -d "${TMPDIR:-/tmp}/swift-ssl-lifetimes.XXXXXX")"
 trap 'rm -rf "$artifact_directory"' EXIT HUP INT TERM
 
-core_sources="$(find Sources/SwiftSSLCore -name '*.swift' -type f | sort)"
-common_flags='-O -wmo -parse-as-library -package-name swift_ssl -enable-experimental-feature NonescapableTypes -enable-experimental-feature LifetimeDependence -enable-experimental-feature InoutLifetimeDependence -enable-experimental-feature LifetimeDependenceMutableAccessors -enable-experimental-feature Lifetimes -enable-experimental-feature Volatile -emit-ir -module-name SwiftSSLLifetimeNegativeValidation'
+core_sources="$(find Sources/SSLCore -name '*.swift' -type f | sort)"
+common_flags='-O -wmo -parse-as-library -package-name swift_ssl -enable-experimental-feature NonescapableTypes -enable-experimental-feature LifetimeDependence -enable-experimental-feature InoutLifetimeDependence -enable-experimental-feature LifetimeDependenceMutableAccessors -enable-experimental-feature Lifetimes -enable-experimental-feature Volatile -emit-ir -module-name SSLLifetimeNegativeValidation'
 
 compile_fixture() {
     target_label="$1"

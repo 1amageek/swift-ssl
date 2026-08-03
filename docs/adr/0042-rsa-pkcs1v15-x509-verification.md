@@ -21,7 +21,7 @@ parameters as `NULL` or absent.
 
 ## Decision
 
-- `SwiftSSLCrypto.RSAPKCS1v15` is verification-only and accepts a validated
+- `SSLCrypto.RSAPKCS1v15` is verification-only and accepts a validated
   `RSAPublicKey`, a caller-supplied message digest, and a closed SHA-2 hash
   identifier.
 - The verifier reuses the bounded 2,048 through 4,096-bit fixed-width
@@ -36,7 +36,7 @@ parameters as `NULL` or absent.
   equal to the modulus remain typed `CryptoInputError` failures. A
   well-sized, canonical integer with a mismatching encoded message returns
   `false`.
-- `SwiftSSLX509.X509Certificate` owns signature-OID selection, RSA SPKI
+- `SSLX509.X509Certificate` owns signature-OID selection, RSA SPKI
   decoding, algorithm-parameter policy, TBS hashing, and the mapping from a
   cryptographic mismatch to `X509CertificateError`.
 - RSA PKCS #1 v1.5 signing, private-key construction, RSA key transport,

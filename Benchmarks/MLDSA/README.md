@@ -1,17 +1,17 @@
 # FIPS 204 ML-DSA comparison benchmark
 
-This manually invoked Native benchmark compares the public SwiftSSL
+This manually invoked Native benchmark compares the public SSL
 ML-DSA-44, ML-DSA-65, and ML-DSA-87 key-generation, randomized signing, and
 verification paths with the same operations in pinned official BoringSSL commit
 `ae49d2681a56ca7b8609f6039a770fda2a8eb550`.
 
 The benchmark is enabled only when `SWIFT_SSL_ENABLE_BENCHMARKS=1`. It is not a
 test target, is not run by `xcodebuild test`, and does not add BoringSSL to any
-SwiftSSL library or runtime product.
+SSL library or runtime product.
 
 ```mermaid
 flowchart LR
-    Runner["manual paired runner"] --> Swift["SwiftSSL public facade"]
+    Runner["manual paired runner"] --> Swift["SSL public facade"]
     Runner --> BoringSSL["BoringSSL public ML-DSA API"]
     Swift --> Evidence["validated output + elapsed time"]
     BoringSSL --> Evidence
@@ -26,7 +26,7 @@ the compiler cannot remove the work.
 
 ## Formal timing runner
 
-A formal run requires the pinned toolchain, a clean committed SwiftSSL
+A formal run requires the pinned toolchain, a clean committed SSL
 checkout, and a clean official BoringSSL checkout at the pinned commit:
 
 ```bash
@@ -50,7 +50,7 @@ flowchart LR
 ```
 
 The interoperability transaction validates Swift-generated signatures with
-BoringSSL and BoringSSL-generated signatures with SwiftSSL. Both
+BoringSSL and BoringSSL-generated signatures with SSL. Both
 implementations must reject a mutated signature. Exact public-key and signature
 lengths are validated before timing.
 
@@ -69,7 +69,7 @@ Each parameter set's key generation, signing, and verification independently
 passes only when:
 
 ```text
-lower95CI(median(BoringSSL elapsed / SwiftSSL elapsed)) >= 1.10
+lower95CI(median(BoringSSL elapsed / SSL elapsed)) >= 1.10
 ```
 
 ## Allocation and bulk-copy runner
@@ -135,7 +135,7 @@ gate changed only those descriptive budget literals before the passing rerun.
 
 The formal Native timing artifact
 [`20260801T193601Z-native-mldsa.json`](Results/20260801T193601Z-native-mldsa.json)
-was measured from clean SwiftSSL source commit
+was measured from clean SSL source commit
 `06a2e5eb12c2d6159945e5f48ffb06159e747ce8` and clean BoringSSL commit
 `ae49d2681a56ca7b8609f6039a770fda2a8eb550`. Its SHA-256 is
 `50acd6db3b8ff88f85001e6485f765670c1a8b58e08b8ee73df61d17ed5f261b`.

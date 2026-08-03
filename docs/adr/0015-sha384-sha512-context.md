@@ -12,7 +12,7 @@ compression and differential corpus remain release gates.
   `MutableSpan` contract as SHA-256.
 - `SHA384Context` reuses the SHA-512 compressor with the FIPS 180-4 SHA-384
   initial state and emits the first 48 bytes of the finalized digest.
-- `SwiftSSL` exposes separate `SHA384` and `SHA512` façade types and contexts;
+- `SSL` exposes separate `SHA384` and `SHA512` façade types and contexts;
   lower-module types are not re-exported wholesale.
 - A context rejects an incorrectly sized output before mutating it. Clone is an
   independent snapshot and can be finalized separately.

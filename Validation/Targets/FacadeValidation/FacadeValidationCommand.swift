@@ -1,4 +1,4 @@
-import SwiftSSL
+import SSL
 
 @main
 enum FacadeValidationCommand {

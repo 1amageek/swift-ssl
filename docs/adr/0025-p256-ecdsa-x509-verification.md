@@ -13,8 +13,8 @@ profile.
 
 ## Decision
 
-`SwiftSSLCrypto.P256ECDSA` verifies fixed-width `r || s` signatures over a
-caller-provided digest. `SwiftSSLX509.X509Certificate.verifySignature()` owns
+`SSLCrypto.P256ECDSA` verifies fixed-width `r || s` signatures over a
+caller-provided digest. `SSLX509.X509Certificate.verifySignature()` owns
 the protocol-specific boundary: it accepts only the three ECDSA-with-SHA2
 algorithm identifiers, requires absent algorithm parameters, requires a
 prime256v1 SPKI, strictly decodes the DER sequence of two positive integers,

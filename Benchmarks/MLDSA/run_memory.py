@@ -399,7 +399,7 @@ def main() -> int:
         if not worker.is_file():
             raise MeasurementError(f"missing benchmark worker: {worker}")
 
-        probe = run_root / "libSwiftSSLMLDSAAllocationProbe.dylib"
+        probe = run_root / "libSSLMLDSAAllocationProbe.dylib"
         contract = run_root / "allocation-probe-contract"
         probe_source = snapshot / "Benchmarks/MLDSA/AllocationProbe/MLDSAAllocationProbe.c"
         contract_source = snapshot / "Benchmarks/MLDSA/AllocationProbe/AllocationProbeContract.c"

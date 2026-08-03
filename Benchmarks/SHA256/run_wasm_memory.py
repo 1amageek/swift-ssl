@@ -29,9 +29,9 @@ COMPARISON_RUNNER_SPEC.loader.exec_module(comparison_runner)
 
 ITERATION_COUNTS = (1, 10, 100)
 REPETITIONS = 3
-RUN_SYMBOL_FRAGMENT = "SwiftSSLSHA256Benchmark06SHA256C7CommandO3run"
-UPDATE_SYMBOL_FRAGMENT = "SwiftSSLCrypto13SHA256ContextV6update"
-FINALIZE_SYMBOL_FRAGMENT = "SwiftSSLCrypto13SHA256ContextV15finalizeInPlace"
+RUN_SYMBOL_FRAGMENT = "SSLSHA256Benchmark06SHA256C7CommandO3run"
+UPDATE_SYMBOL_FRAGMENT = "SSLCrypto13SHA256ContextV6update"
+FINALIZE_SYMBOL_FRAGMENT = "SSLCrypto13SHA256ContextV15finalizeInPlace"
 FIXED_COPY_HELPER_PATTERN = re.compile(r"^__swift_memcpy([0-9]+)_")
 LIBC_ALLOCATION_NAMES = frozenset(
     ("malloc", "calloc", "realloc", "aligned_alloc")

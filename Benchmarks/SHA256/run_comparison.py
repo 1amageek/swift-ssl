@@ -590,9 +590,9 @@ def require_swift_build_contract(
         commands_by_module.setdefault(module_name, []).append(tuple(arguments))
 
     required_modules = (
-        "SwiftSSLCore",
-        "SwiftSSLCrypto",
-        "SwiftSSLSHA256Benchmark",
+        "SSLCore",
+        "SSLCrypto",
+        "SSLSHA256Benchmark",
     )
     forbidden_flags = (
         "-Onone",
@@ -605,9 +605,9 @@ def require_swift_build_contract(
     swift_source_root = swift_source.resolve()
     swift_scratch_root = swift_scratch.resolve()
     module_source_directories = {
-        "SwiftSSLCore": swift_source_root / "Sources/SwiftSSLCore",
-        "SwiftSSLCrypto": swift_source_root / "Sources/SwiftSSLCrypto",
-        "SwiftSSLSHA256Benchmark": (
+        "SSLCore": swift_source_root / "Sources/SSLCore",
+        "SSLCrypto": swift_source_root / "Sources/SSLCrypto",
+        "SSLSHA256Benchmark": (
             swift_source_root / "Benchmarks/SHA256/SwiftWorker"
         ),
     }
@@ -639,7 +639,7 @@ def require_swift_build_contract(
     )
     platform_library_root = platform_developer_root / "usr/lib"
     enabled_features = {
-        "SwiftSSLCore": (
+        "SSLCore": (
             "NonescapableTypes",
             "LifetimeDependence",
             "InoutLifetimeDependence",
@@ -648,7 +648,7 @@ def require_swift_build_contract(
             "Extern",
             "Volatile",
         ),
-        "SwiftSSLCrypto": (
+        "SSLCrypto": (
             "NonescapableTypes",
             "LifetimeDependence",
             "InoutLifetimeDependence",
@@ -657,7 +657,7 @@ def require_swift_build_contract(
             "Extern",
             "BuiltinModule",
         ),
-        "SwiftSSLSHA256Benchmark": (
+        "SSLSHA256Benchmark": (
             "NonescapableTypes",
             "LifetimeDependence",
             "InoutLifetimeDependence",
@@ -818,7 +818,7 @@ def require_swift_build_contract(
                 "-output-file-map",
                 str(module_build_root / "output-file-map.json"),
             ]
-            if module_name != "SwiftSSLSHA256Benchmark":
+            if module_name != "SSLSHA256Benchmark":
                 expected_arguments.append("-parse-as-library")
             expected_arguments.extend(
                 [
@@ -845,13 +845,13 @@ def require_swift_build_contract(
                     "-parseable-output",
                 ]
             )
-            if module_name == "SwiftSSLSHA256Benchmark":
+            if module_name == "SSLSHA256Benchmark":
                 expected_arguments.extend(
                     [
                         "-Xfrontend",
                         "-entry-point-function-name",
                         "-Xfrontend",
-                        "SwiftSSLSHA256Benchmark_main",
+                        "SSLSHA256Benchmark_main",
                         "-parse-as-library",
                     ]
                 )
@@ -2182,7 +2182,7 @@ def analyze_swift_worker_codegen(
         path,
         toolchain=toolchain,
         required_symbol_fragments=(
-            "SwiftSSLSHA256Benchmark",
+            "SSLSHA256Benchmark",
             "SHA256C7CommandO3run",
         ),
         label="Swift benchmark run",
@@ -2309,7 +2309,7 @@ def analyze_sha256_multiblock_codegen(
         path,
         toolchain=toolchain,
         required_symbol_fragments=(
-            "SwiftSSLCrypto17SHA256ARM64Kernel",
+            "SSLCrypto17SHA256ARM64Kernel",
             "compressMultipleBlocks",
         ),
         label="SHA-256 ARM64 multi-block kernel",
@@ -2437,7 +2437,7 @@ def analyze_sha256_multiblock_codegen(
         path,
         toolchain=toolchain,
         required_symbol_fragments=(
-            "SwiftSSLCrypto13SHA256ContextV6update",
+            "SSLCrypto13SHA256ContextV6update",
             "CryptoInputError",
         ),
         label="SHA-256 context update",
@@ -2519,7 +2519,7 @@ def analyze_sha256_multiblock_codegen(
         path,
         toolchain=toolchain,
         required_symbol_fragments=(
-            "SwiftSSLCrypto13SHA256ContextV15finalizeInPlace",
+            "SSLCrypto13SHA256ContextV15finalizeInPlace",
             "CryptoInputError",
         ),
         label="SHA-256 context finalize",
@@ -3475,7 +3475,7 @@ def create_formal_source_snapshots(
     )
     return {
         "mode": "read-only git archives",
-        "swiftSSL": swift_snapshot,
+        "ssl": swift_snapshot,
         "boringSSL": boringssl_snapshot,
     }
 
@@ -3484,7 +3484,7 @@ def verify_formal_source_snapshots_unchanged(
     snapshots: dict[str, Any],
 ) -> dict[str, Any]:
     results: dict[str, Any] = {}
-    for key in ("swiftSSL", "boringSSL"):
+    for key in ("ssl", "boringSSL"):
         snapshot = snapshots[key]
         archive_path = Path(snapshot["archive"]["path"])
         source_path = Path(snapshot["sourcePath"])
@@ -3744,7 +3744,7 @@ def build_workers(
         "buildRoot": str(build_root),
         "freshBuildRoot": True,
         "sourcePaths": {
-            "swiftSSL": str(swift_source),
+            "ssl": str(swift_source),
             "boringSSL": str(boringssl_source),
         },
         "swift": {
@@ -4649,7 +4649,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
             )
 
         artifact["provenance"] = {
-            "swiftSSLAtStart": swift_repository,
+            "sslAtStart": swift_repository,
             "boringSSLAtStart": boringssl_repository,
             "toolchain": toolchain,
             "host": host_metadata,
@@ -4674,7 +4674,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
             )
             artifact["sourceSnapshots"] = source_snapshots
             build_swift_source = Path(
-                source_snapshots["swiftSSL"]["sourcePath"]
+                source_snapshots["ssl"]["sourcePath"]
             )
             build_boringssl_source = Path(
                 source_snapshots["boringSSL"]["sourcePath"]
@@ -4811,7 +4811,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
                 "host failed final quiescence validation: "
                 + "; ".join(final_quiescence_reasons)
             )
-        artifact["provenance"]["swiftSSLAtEnd"] = swift_repository_at_end
+        artifact["provenance"]["sslAtEnd"] = swift_repository_at_end
         artifact["provenance"]["boringSSLAtEnd"] = boringssl_repository_at_end
         artifact["provenance"]["swiftWorkerAtEnd"] = swift_worker_at_end
         artifact["provenance"]["boringSSLWorkerAtEnd"] = boringssl_worker_at_end

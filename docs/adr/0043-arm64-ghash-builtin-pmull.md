@@ -21,7 +21,7 @@ can remain inside standard-library fixed-width SIMD storage.
 
 ## Decision
 
-- Enable `BuiltinModule` for the `SwiftSSLCrypto` target through the SwiftPM
+- Enable `BuiltinModule` for the `SSLCrypto` target through the SwiftPM
   experimental-feature setting. Do not add an unsafe compiler flag.
 - Import `Builtin` only in the Darwin ARM64 GHASH source branch.
 - Keep the intrinsic inside the private `carrylessMultiply64` helper. Its safe

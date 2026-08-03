@@ -14,4 +14,4 @@ The parser does not verify signatures, interpret extension OIDs, build a path, c
 
 ## Verification
 
-Native `SwiftSSLX509Tests` parse a deterministic v1 certificate fixture, verify certificate/TBS/signature ranges, compare duplicated signature algorithm identifiers, retain X25519 SPKI key ranges, and validate time syntax. Negative extension, signature, and policy tests are required as each consumer is added.
+Native `SSLX509Tests` parse a deterministic v1 certificate fixture, verify certificate/TBS/signature ranges, compare duplicated signature algorithm identifiers, retain X25519 SPKI key ranges, and validate time syntax. Negative extension, signature, and policy tests are required as each consumer is added.

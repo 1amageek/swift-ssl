@@ -447,9 +447,9 @@ def build_workers(
 
     swift_log = swift_build.stdout + "\n" + swift_build.stderr
     for module in (
-        "SwiftSSLCore",
-        "SwiftSSLCrypto",
-        "SwiftSSLHPKEBenchmark",
+        "SSLCore",
+        "SSLCrypto",
+        "SSLHPKEBenchmark",
     ):
         lines = [line for line in swift_log.splitlines() if f"-module-name {module}" in line]
         if not lines or not any(
@@ -503,9 +503,9 @@ def build_workers(
             "stdoutSHA256": hashlib.sha256(swift_build.stdout.encode()).hexdigest(),
             "stderr": swift_build.stderr,
             "validatedModules": [
-                "SwiftSSLCore",
-                "SwiftSSLCrypto",
-                "SwiftSSLHPKEBenchmark",
+                "SSLCore",
+                "SSLCrypto",
+                "SSLHPKEBenchmark",
             ],
             "passed": True,
         },
@@ -702,7 +702,7 @@ def main() -> int:
     if normalized_origin != EXPECTED_BORINGSSL_ORIGIN:
         raise BenchmarkError("BoringSSL origin does not match the official baseline")
     if arguments.formal and not swift_metadata["isClean"]:
-        raise BenchmarkError("formal comparison requires a clean SwiftSSL checkout")
+        raise BenchmarkError("formal comparison requires a clean SSL checkout")
     if arguments.formal and os.environ.get("TOOLCHAINS") != EXPECTED_SWIFT_TOOLCHAIN:
         raise BenchmarkError(
             f"formal comparison requires TOOLCHAINS={EXPECTED_SWIFT_TOOLCHAIN}"
@@ -745,7 +745,7 @@ def main() -> int:
         swift_source = snapshots_root / "swift-ssl"
         selected_boringssl_source = snapshots_root / "boringssl"
         snapshots = {
-            "swiftSSL": support.make_snapshot(
+            "ssl": support.make_snapshot(
                 REPOSITORY_ROOT,
                 swift_metadata["commit"],
                 swift_source,
@@ -853,7 +853,7 @@ def main() -> int:
     final_swift_metadata = support.git_metadata(REPOSITORY_ROOT)
     final_boringssl_metadata = support.git_metadata(boringssl_source)
     if final_swift_metadata != swift_metadata:
-        raise BenchmarkError("SwiftSSL repository identity changed during comparison")
+        raise BenchmarkError("SSL repository identity changed during comparison")
     if final_boringssl_metadata != boringssl_metadata:
         raise BenchmarkError("BoringSSL repository identity changed during comparison")
     if support.file_sha256(swift_worker) != worker_evidence["swift"]["sha256"]:
@@ -890,7 +890,7 @@ def main() -> int:
             environment["toolIdentities"]
         ),
         "sources": {
-            "swiftSSL": swift_metadata,
+            "ssl": swift_metadata,
             "boringSSL": boringssl_metadata,
             "snapshots": snapshots,
         },

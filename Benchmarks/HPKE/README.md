@@ -1,12 +1,12 @@
 # RFC 9180 HPKE comparison benchmark
 
-This manually invoked benchmark compares SwiftSSL with one pinned official
+This manually invoked benchmark compares SSL with one pinned official
 BoringSSL commit for the RFC 9180 suite
 `DHKEM(X25519, HKDF-SHA256)/HKDF-SHA256/AES-128-GCM`.
 
 The workers are enabled only when `SWIFT_SSL_ENABLE_BENCHMARKS=1`. They are not
 test targets, are not run by `xcodebuild test`, and do not add BoringSSL to any
-SwiftSSL library or runtime target.
+SSL library or runtime target.
 
 ```mermaid
 flowchart LR
@@ -83,7 +83,7 @@ The formal baseline is:
 For every fixed workload:
 
 ```text
-speedup = BoringSSL nanoseconds / SwiftSSL nanoseconds
+speedup = BoringSSL nanoseconds / SSL nanoseconds
 pass = lower95CI(median paired speedup) >= 1.10
 ```
 
@@ -131,7 +131,7 @@ The committed raw artifact is
 
 ## Current formal timing result
 
-The valid formal run completed on 2026-08-02 from clean SwiftSSL commit
+The valid formal run completed on 2026-08-02 from clean SSL commit
 `a30e5fb788a13f4f717e4050cd460cc13445c895` and the pinned BoringSSL commit.
 Complete output equality passed, and all four lower confidence bounds exceed
 the required `1.10x` target.

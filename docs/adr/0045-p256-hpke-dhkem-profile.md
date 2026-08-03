@@ -34,7 +34,7 @@ points, encapsulations, output lengths, entropy failures, and authentication
 failures remain typed failures with transactional caller output.
 
 This decision does not add P-256 to TLS key-share negotiation, TLS
-CertificateVerify signing, or the public `SwiftSSL` façade. Those remain
+CertificateVerify signing, or the public `SSL` façade. Those remain
 governed by ADR 0036. The callable DHKEM implementation is not production
 qualified until its differential, sanitizer, target, constant-time codegen,
 allocation/copy, interoperability, and performance gates pass. In particular,
