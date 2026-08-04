@@ -63,10 +63,6 @@ var products: [Product] = [
     targets: ["SSLFacadeValidation"]
   ),
   .executable(
-    name: "swift-ssl-quic-crypto-stream-validation",
-    targets: ["SSLQUICCryptoStreamValidation"]
-  ),
-  .executable(
     name: "swift-ssl-nist-verification-validation",
     targets: ["SSLNISTVerificationValidation"]
   ),
@@ -203,15 +199,6 @@ var targets: [Target] = [
     name: "SSLFacadeValidation",
     dependencies: ["SSL"],
     path: "Validation/Targets/FacadeValidation",
-    swiftSettings: ownershipSettings
-  ),
-  .executableTarget(
-    name: "SSLQUICCryptoStreamValidation",
-    dependencies: [
-      "SSLCore", "SSLCrypto", "SSLQUIC", "SSLTLS",
-      "SSLX509",
-    ],
-    path: "Validation/Targets/QUICCryptoStreamValidation",
     swiftSettings: ownershipSettings
   ),
   .executableTarget(

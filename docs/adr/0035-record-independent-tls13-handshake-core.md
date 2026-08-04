@@ -11,8 +11,8 @@ does not use the TLS record layer: CRYPTO frames carry TLS handshake messages
 at encryption levels owned by QUIC. Reusing the record engine would introduce
 synthetic record headers, duplicate AEAD work, and the wrong ownership model.
 
-The QUIC adapter already owns bounded offset reassembly and scoped, zero-copy
-message framing. It needs a transport-neutral state machine that owns only the
+The `swift-quic` adapter owns bounded offset reassembly and complete-message
+framing. It needs a transport-neutral state machine that owns only the
 TLS transcript, authentication decisions, Finished verification, resumption,
 and key schedule.
 
@@ -30,11 +30,11 @@ protocols and emit `TLS13HandshakeCoreOutput` values containing:
 
 The core never frames, seals, opens, retransmits, or reassembles bytes.
 
-`QUICTLSClientHandshake` and `QUICTLSServerHandshake` compose the core with one
-bounded `QUICTLSHandshakeStream` per input level. A message remains borrowed
-from the reassembly ring while the core consumes it. The stream advances only
-after a successful semantic transition. The adapter maps client/server secret
-names to local read/write directions and preserves effect order.
+`QUICTLSClientHandshake` and `QUICTLSServerHandshake` compose the core and
+consume one complete, header-inclusive message per call. The transport owns
+the reassembly buffer and keeps the borrow valid for the call. The adapter maps
+client/server secret names to local read/write directions and preserves effect
+order.
 
 `TLS13ClientHandshake` and `TLS13ServerHandshake` are Stream record adapters
 over the same core. They parse inbound record boundaries as checked ranges,

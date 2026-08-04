@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Superseded by [ADR 0036](0036-quic-transport-ownership.md).
 
 ## Context
 
@@ -20,7 +20,9 @@ Native, WASI, and Embedded WASI.
 
 ## Decision
 
-`QUICCryptoStreamReassembler` owns one explicitly identified encryption level.
+The former `QUICCryptoStreamReassembler` owned one explicitly identified
+encryption level. This decision was replaced when the implementation moved
+the responsibility to the `swift-quic` transport package.
 It copies each newly accepted input byte once into a fixed-capacity sliding
 ring and tracks occupancy with a bit set. Received bytes are also written into
 a mirrored second half of the same contiguous allocation. This mirror permits

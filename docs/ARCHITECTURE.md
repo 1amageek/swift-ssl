@@ -80,8 +80,8 @@ record protection.
 SRTP/SCTP, and media. `swift-libp2p` is the top-level composition and peer-policy
 owner. No dependency from `swift-ssl` to these packages is permitted.
 
-This is the target dependency direction. Current offset-qualified input and
-reassembly in `SSLQUIC` are migration debt, not an exception to the boundary.
+This is the implemented dependency direction. `SSLQUIC` receives only complete
+messages and has no offset-qualified input or reassembly state.
 The cross-package source of truth is
 [Secure Transport Architecture](../../SECURE_TRANSPORT_ARCHITECTURE.md).
 
@@ -96,7 +96,7 @@ The cross-package source of truth is
 | `SSLX509` | Immutable certificate/CRL/OCSP models, SPKI and private-key containers, path building, RFC 5280 policy, service identity, revocation evidence validation | Network fetching, global trust, UI, silent CN fallback |
 | `SSLTLS` | TLS 1.3 handshake and record layers, main/post-handshake server/client certificate authentication with Ed25519, P-256 ECDSA, or RSA-PSS, X25519/`secp256r1`/pinned-hybrid key exchange, DTLS 1.3 framing/replay/flight state, transcript/key schedule, ticket/state/PSK binder primitives, resumption, 0-RTT policy, ECH, alerts, and correlated credential/signature/trust capability suspension | Socket I/O, event loops, DNS, persistent stores, private-key services, and QUIC packet protection |
 | `SSLDTLS` | Complete sans-I/O DTLS 1.2 WebRTC mechanism: wire codecs, handshake FSM, ECDHE/signature/certificate seams, cookie/address validation, bounded fragmentation, anti-replay, flights/retransmission state, SRTP negotiation/export, and AES-GCM record protection | Transport I/O, WebRTC SDP/fingerprint policy, ICE, SRTP media packet processing, SCTP, and application lifecycle |
-| `SSLQUIC` | Mapping ordered TLS handshake bytes, encryption levels, alerts, and traffic-secret events to RFC 9001 | CRYPTO offsets/reassembly, QUIC packets, header protection, loss recovery, congestion control, QUIC key phase; the current reassembler is migration debt |
+| `SSLQUIC` | Mapping complete, ordered TLS handshake messages, encryption levels, alerts, and traffic-secret events to RFC 9001 | CRYPTO offsets/reassembly, QUIC packets, header protection, loss recovery, congestion control, QUIC key phase |
 | `SSLCore` system adapters | Concrete entropy, realtime clock, and monotonic clock backends with typed failures and one cross-target protocol contract | Storage policy, trust acquisition, transport, or target-specific weakening of ownership/concurrency contracts |
 | `SSL` | One-import umbrella, curated primitive adapters, and protocol-backed TLS client/server composition over explicit platform and external credential/trust capabilities | Duplicate cryptographic/protocol implementation, socket ownership, private-key service ownership, or hidden fallback |
 

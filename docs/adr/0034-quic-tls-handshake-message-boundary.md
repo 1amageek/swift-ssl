@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Superseded by [ADR 0036](0036-quic-transport-ownership.md).
 
 ## Context
 
@@ -29,12 +29,10 @@ typed-throws convenience. It reads only the four-byte handshake header and
 returns either the exact first-message byte count or the exact minimum bytes
 still needed.
 
-`QUICTLSHandshakeStreaming` defines the QUIC-facing receive, status, scoped
-message borrow, and explicit discard operations. `QUICTLSHandshakeStream`
-implements the protocol by composing one `QUICCryptoStreamReassembler` with
-one concrete `TLS13HandshakeMessageFramer`. Failed construction uses a static
-factory so the noncopyable reassembly owner is initialized and consumed exactly
-once on Swift 6.4.
+The former `QUICTLSHandshakeStreaming` and `QUICTLSHandshakeStream` composed
+transport reassembly and TLS framing inside `swift-ssl`. The final design
+removes those types: `swift-quic` reassembles CRYPTO bytes and emits complete
+TLS handshake messages, while `SSLQUIC` consumes one complete message per call.
 
 Message borrowing does not advance the stream. The consumer calls
 `discardNextMessage` only after accepting the result. A consumer operation that
@@ -63,10 +61,8 @@ memory access would not remove the one required input ownership copy.
 
 | Component | Owns | Does not own |
 |---|---|---|
-| `QUICCryptoStreamReassembler` | Offset ordering, bounded storage, overlap policy | TLS message syntax, TLS state |
-| `TLSHandshakeMessageFraming` | Handshake header boundary and size policy | Byte ownership, stream offsets, TLS state |
-| `QUICTLSHandshakeStream` | Composition and accepted-message advancement | TLS semantic parsing, handshake transitions, packet protection |
-| Future QUIC TLS engine adapter | TLS state transitions and ordered effects | QUIC packets, congestion control, socket I/O |
+| `swift-quic` CRYPTO reassembly | Offset ordering, bounded storage, overlap policy, TLS message boundaries | TLS semantic parsing and handshake state |
+| `SSLQUIC` | TLS semantic transitions and ordered effects for one complete message | QUIC packets, offsets, reassembly, congestion control, socket I/O |
 
 ## Target ownership matrix
 

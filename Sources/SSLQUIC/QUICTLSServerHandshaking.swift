@@ -13,19 +13,15 @@ public protocol QUICTLSServerHandshaking: ~Copyable, Sendable {
         _ configuration: TLS13CertificateCompressionConfiguration
     ) throws(QUICTLSHandshakeError)
 
-    mutating func receiveCrypto(
-        level: QUICTLSHandshakeInputLevel,
-        offset: UInt64,
-        bytes: Span<UInt8>
-    ) throws(QUICTLSHandshakeError)
-
-    mutating func processNextMessage(
+    mutating func processHandshakeMessage(
+        _ message: Span<UInt8>,
         at level: QUICTLSHandshakeInputLevel
-    ) throws(QUICTLSHandshakeError) -> QUICTLSStepOutput?
+    ) throws(QUICTLSHandshakeError) -> QUICTLSStepOutput
 
-    mutating func processNextMessageStep(
+    mutating func processHandshakeMessageStep(
+        _ message: Span<UInt8>,
         at level: QUICTLSHandshakeInputLevel
-    ) throws(QUICTLSHandshakeError) -> QUICTLSHandshakeTransition?
+    ) throws(QUICTLSHandshakeError) -> QUICTLSHandshakeTransition
 
     mutating func resume(
         _ response: TLS13CapabilityResponse

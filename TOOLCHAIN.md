@@ -102,17 +102,6 @@ scripts/swift-test-timeout.sh 120 \
   --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm \
   swift-ssl-facade-validation
 
-swift build -c release \
-  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
-  -Xlinker "${EMBEDDED_UNICODE_TABLES}" \
-  --product swift-ssl-quic-crypto-stream-validation
-
-scripts/swift-test-timeout.sh 120 \
-  swift run --skip-build -c release \
-  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
-  swift-ssl-quic-crypto-stream-validation
-```
-
 The long-running NIST verification program is separate from normal tests and
 selects one bounded success or mutation case at manifest-evaluation time:
 
