@@ -2,6 +2,11 @@ import SSLCore
 import SSLCrypto
 import SSLTLS
 
+/// Package-internal projection from canonical `SSLTLS` effects to QUIC effects.
+///
+/// The adapter owns no transcript, key schedule, record protection, or
+/// handshake state. It only maps the already-produced `SSLTLS` output and
+/// preserves its byte/secret ordering for the QUIC transport owner.
 package enum QUICTLSCoreOutputAdapter {
     package static func adapt(
         _ coreOutput: consuming TLS13HandshakeCoreOutput,
