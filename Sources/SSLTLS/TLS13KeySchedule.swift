@@ -132,12 +132,13 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
   /// `Derive-Secret`, which hashes a transcript before expanding.
   static func updateTrafficSecret(
     secret: borrowing SecretBytes,
-    cipherSuite: TLSCipherSuite
+    cipherSuite: TLSCipherSuite,
+    label: String = "traffic upd"
   ) throws(TLS13KeyScheduleError) -> SecretBytes {
     let hashByteCount = Self.hashByteCount(for: cipherSuite)
     return try Self.expandLabel(
       secret: secret,
-      label: "traffic upd",
+      label: label,
       context: emptyBytes.span,
       outputByteCount: hashByteCount,
       cipherSuite: cipherSuite

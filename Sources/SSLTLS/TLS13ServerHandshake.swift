@@ -688,6 +688,24 @@ public struct TLS13ServerHandshake: TLS13ServerHandshaking, ~Copyable, Sendable 
     return try TLS13HandshakeWire.makeOutput(bytes: record)
   }
 
+  /// Emits an encrypted TLS 1.3 close_notify alert.
+  public mutating func sendCloseNotify()
+    throws(TLS13HandshakeEngineError) -> TLS13HandshakeOutput
+  {
+    guard isEstablished, var protector = applicationWrite.take() else {
+      throw .invalidState
+    }
+    let record: OwnedBytes
+    do {
+      record = try TLS13HandshakeWire.closeNotify(with: &protector)
+    } catch let error {
+      applicationWrite = consume protector
+      throw error
+    }
+    applicationWrite = consume protector
+    return try TLS13HandshakeWire.makeOutput(bytes: record)
+  }
+
   public mutating func receiveApplicationRecord(
     _ input: Span<UInt8>
   ) throws(TLS13HandshakeEngineError) -> OwnedBytes {
@@ -1111,3 +1129,4 @@ public struct TLS13ServerHandshake: TLS13ServerHandshaking, ~Copyable, Sendable 
     return input.extracting(range.offset..<range.endOffset)
   }
 }
+import SSLTypes

@@ -8,6 +8,7 @@ public enum CryptoInputError: Error, Sendable, Equatable {
   case inputTooLong(limit: UInt64)
   case invalidPeerKey
   case invalidSignature
+  case invalidRange
 
   init(_ error: SSLCrypto.CryptoInputError) {
     switch error {
@@ -25,6 +26,8 @@ public enum CryptoInputError: Error, Sendable, Equatable {
       self = .invalidPeerKey
     case .invalidSignature:
       self = .invalidSignature
+    case .invalidRange:
+      self = .invalidRange
     }
   }
 }

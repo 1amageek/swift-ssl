@@ -38,7 +38,7 @@ public struct TLS13ServerHandshakeCore:
   private let applicationProtocolSelector:
     (any TLS13ApplicationProtocolSelecting)?
   private let clientAuthentication: TLS13ClientAuthenticationConfiguration?
-  private let localTransportParameters: OwnedBytes?
+  private var localTransportParameters: OwnedBytes?
   private let resumptionIdentity: OwnedBytes?
   private let resumptionPSK: SecretBytes?
   private let resumptionIssuedAt: VerificationInstant?
@@ -901,6 +901,17 @@ public struct TLS13ServerHandshakeCore:
     peerTransportParameters
   }
 
+  /// Replaces the QUIC transport parameters before the server emits its first
+  /// flight. The transport supplies the value; the handshake owns the bytes.
+  public mutating func configureTransportParameters(
+    _ parameters: Span<UInt8>
+  ) throws(TLS13HandshakeEngineError) {
+    guard case .awaitingClientHello = phase else {
+      throw .invalidState
+    }
+    localTransportParameters = OwnedBytes(copying: parameters)
+  }
+
   public var srtpProtectionProfile: DTLSSRTPProtectionProfile? {
     guard isEstablished else { return nil }
     return negotiatedSRTPProtectionProfile
@@ -1628,6 +1639,34 @@ public struct TLS13ServerHandshakeCore:
       switch endpoint {
       case .client: try secrets.updateClientTrafficSecret()
       case .server: try secrets.updateServerTrafficSecret()
+      }
+      let exported = try secrets.exportTrafficSecret(for: endpoint)
+      applicationSecrets = consume secrets
+      return exported
+    } catch let error as TLS13KeyScheduleError {
+      applicationSecrets = consume secrets
+      phase = .failed
+      throw .keySchedule(error)
+    } catch {
+      applicationSecrets = consume secrets
+      phase = .failed
+      throw .malformedInput
+    }
+  }
+
+  /// Advances a QUIC 1-RTT traffic secret using RFC 9001's `quic ku` label.
+  public mutating func updateQUICApplicationTrafficSecret(
+    for endpoint: TLSRole
+  ) throws(TLS13HandshakeEngineError) -> TLS13TrafficSecret {
+    guard case .established = phase,
+      var secrets = applicationSecrets.take()
+    else {
+      throw .invalidState
+    }
+    do {
+      switch endpoint {
+      case .client: try secrets.updateQUICClientTrafficSecret()
+      case .server: try secrets.updateQUICServerTrafficSecret()
       }
       let exported = try secrets.exportTrafficSecret(for: endpoint)
       applicationSecrets = consume secrets
@@ -3561,3 +3600,4 @@ private func verifyCoreResumption(
     throw .preSharedKey(.derivationFailed)
   }
 }
+import SSLTypes

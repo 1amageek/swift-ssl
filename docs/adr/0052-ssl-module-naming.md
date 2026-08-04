@@ -19,6 +19,7 @@ same prefix:
 
 | Responsibility | Module |
 |---|---|
+| Shared TLS vocabulary (including cipher-suite IDs and ALPN) | `SSLTypes` |
 | Safe byte ownership, clocks, and entropy | `SSLCore` |
 | Cryptographic algorithms and key owners | `SSLCrypto` |
 | DER and PEM codecs | `SSLASN1` |
@@ -30,12 +31,14 @@ same prefix:
 ```mermaid
 flowchart TD
     Facade["SSL facade"] --> Core["SSLCore"]
+    Facade --> Types["SSLTypes"]
     Facade --> Crypto["SSLCrypto"]
     Facade --> ASN1["SSLASN1"]
     Facade --> X509["SSLX509"]
     Facade --> TLS["SSLTLS"]
     Facade --> QUIC["SSLQUIC"]
     Crypto --> Core
+    Core --> Types
     ASN1 --> Core
     X509 --> Core
     X509 --> Crypto

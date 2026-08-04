@@ -32,3 +32,4 @@ public struct TLS13CredentialSelectionRequest: Sendable, Hashable {
     self.verificationInstant = verificationInstant
   }
 }
+import SSLTypes

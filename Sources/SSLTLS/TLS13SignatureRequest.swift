@@ -22,3 +22,4 @@ public struct TLS13SignatureRequest: Sendable, Hashable {
     self.message = message
   }
 }
+import SSLTypes

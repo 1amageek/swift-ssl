@@ -1,6 +1,6 @@
 import SSLCore
 
-public struct SHA256Context: ~Copyable, HashContext {
+public struct SHA256Context: ~Copyable, HashContext, Sendable {
   public static let digestByteCount = 32
 
   private static let blockByteCount = 64

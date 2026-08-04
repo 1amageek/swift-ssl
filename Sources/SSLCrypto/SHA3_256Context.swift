@@ -1,6 +1,6 @@
 import SSLCore
 
-public struct SHA3_256Context: ~Copyable, HashContext {
+public struct SHA3_256Context: ~Copyable, HashContext, Sendable {
   public static let digestByteCount = 32
 
   private var core: KeccakCore

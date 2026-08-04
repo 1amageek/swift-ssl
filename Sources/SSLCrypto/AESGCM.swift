@@ -40,6 +40,43 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
     hashBasis = Self.makeHashBasis(high: hashPair.0, low: hashPair.1)
   }
 
+  /// Seals a message without exposing the move-only cipher owner to callers.
+  /// The key and all message spans are borrowed for this call only; the
+  /// temporary cipher is destroyed, and its key schedule is wiped, on return.
+  public static func seal(
+    key: Span<UInt8>,
+    plaintext: Span<UInt8>,
+    authenticatedData: Span<UInt8>,
+    nonce: Span<UInt8>,
+    into output: inout MutableSpan<UInt8>
+  ) throws(AEADError) {
+    let cipher = try Self(key: key)
+    try cipher.seal(
+      plaintext: plaintext,
+      authenticatedData: authenticatedData,
+      nonce: nonce,
+      into: &output
+    )
+  }
+
+  /// Opens a message without exposing the move-only cipher owner to callers.
+  /// The temporary owner is destroyed after the scoped operation.
+  public static func open(
+    key: Span<UInt8>,
+    ciphertextAndTag: Span<UInt8>,
+    authenticatedData: Span<UInt8>,
+    nonce: Span<UInt8>,
+    into output: inout MutableSpan<UInt8>
+  ) throws(AEADError) {
+    let cipher = try Self(key: key)
+    try cipher.open(
+      ciphertextAndTag: ciphertextAndTag,
+      authenticatedData: authenticatedData,
+      nonce: nonce,
+      into: &output
+    )
+  }
+
   public func seal(
     plaintext: Span<UInt8>,
     authenticatedData: Span<UInt8>,

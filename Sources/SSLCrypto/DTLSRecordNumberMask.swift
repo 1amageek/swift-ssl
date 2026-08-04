@@ -20,4 +20,11 @@ package enum DTLSRecordNumberMask {
     }
     return output
   }
+
+  package static func chaCha20(
+    key: Span<UInt8>,
+    sample: Span<UInt8>
+  ) throws(AEADError) -> ContiguousArray<UInt8> {
+    try ChaCha20Poly1305.recordNumberMask(key: key, sample: sample)
+  }
 }

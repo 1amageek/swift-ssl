@@ -147,6 +147,26 @@ public struct TLS13ApplicationSecrets: ~Copyable, Sendable {
     serverTrafficSecret = consume next
   }
 
+  /// Advances QUIC application traffic secrets with RFC 9001's `quic ku`
+  /// label. This is intentionally separate from TLS 1.3's `traffic upd` label.
+  public mutating func updateQUICClientTrafficSecret() throws(TLS13KeyScheduleError) {
+    let next = try TLS13KeySchedule.updateTrafficSecret(
+      secret: clientTrafficSecret,
+      cipherSuite: cipherSuite,
+      label: "quic ku"
+    )
+    clientTrafficSecret = consume next
+  }
+
+  public mutating func updateQUICServerTrafficSecret() throws(TLS13KeyScheduleError) {
+    let next = try TLS13KeySchedule.updateTrafficSecret(
+      secret: serverTrafficSecret,
+      cipherSuite: cipherSuite,
+      label: "quic ku"
+    )
+    serverTrafficSecret = consume next
+  }
+
   package borrowing func makeClientFinishedVerifyData(
     transcriptHash: Span<UInt8>
   ) throws(TLS13KeyScheduleError) -> OwnedBytes {
@@ -186,3 +206,4 @@ public struct TLS13ApplicationSecrets: ~Copyable, Sendable {
     return OwnedBytes(consuming: output)
   }
 }
+import SSLTypes

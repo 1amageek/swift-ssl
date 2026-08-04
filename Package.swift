@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.4
 
 import Foundation
 import PackageDescription
@@ -41,6 +41,14 @@ var products: [Product] = [
   .library(name: "SSLASN1", targets: ["SSLASN1"]),
   .library(name: "SSLX509", targets: ["SSLX509"]),
   .library(name: "SSLTLS", targets: ["SSLTLS"]),
+  .library(name: "SSLDTLS", targets: ["SSLDTLS"]),
+  .library(name: "SSLDTLSMechanism", targets: ["SSLDTLSMechanism"]),
+  .library(name: "TLSWire", targets: ["TLSWireCore"]),
+  .library(name: "DTLSWire", targets: ["DTLSWireCore"]),
+  .library(name: "DTLSHandshake", targets: ["DTLSHandshakeCore"]),
+  .library(name: "DTLSRecord", targets: ["DTLSRecordCore"]),
+  .library(name: "P2PCoreBytes", targets: ["P2PCoreBytes"]),
+  .library(name: "P2PCoreCrypto", targets: ["P2PCoreCrypto"]),
   .library(name: "SSLQUIC", targets: ["SSLQUIC"]),
   .executable(
     name: "swift-ssl-target-validation",
@@ -65,15 +73,67 @@ var products: [Product] = [
 ]
 
 var targets: [Target] = [
+  // Shared byte/crypto capability contracts are hosted by swift-ssl so the
+  // DTLS mechanism and P2P adapters have one module identity and no package
+  // dependency cycle.
+  .target(
+    name: "P2PCoreBytes",
+    path: "Sources/P2PCoreBytes",
+    swiftSettings: ownershipSettings
+  ),
+  .target(
+    name: "P2PCoreCrypto",
+    dependencies: ["P2PCoreBytes"],
+    path: "Sources/P2PCoreCrypto",
+    swiftSettings: ownershipSettings
+  ),
+  .target(
+    name: "TLSWireCore",
+    dependencies: ["P2PCoreBytes"],
+    path: "Sources/TLSWireCore",
+    swiftSettings: ownershipSettings
+  ),
+  .target(
+    name: "DTLSWireCore",
+    dependencies: ["P2PCoreBytes", "TLSWireCore"],
+    path: "Sources/DTLSWireCore",
+    swiftSettings: ownershipSettings
+  ),
+  .target(
+    name: "DTLSHandshakeCore",
+    dependencies: ["P2PCoreBytes", "P2PCoreCrypto", "TLSWireCore", "DTLSWireCore"],
+    path: "Sources/DTLSHandshakeCore",
+    swiftSettings: ownershipSettings
+  ),
+  .target(
+    name: "DTLSRecordCore",
+    dependencies: ["P2PCoreBytes", "P2PCoreCrypto"],
+    path: "Sources/DTLSRecordCore",
+    swiftSettings: ownershipSettings
+  ),
+  .target(
+    name: "SSLDTLSMechanism",
+    dependencies: [
+      "P2PCoreBytes", "P2PCoreCrypto", "TLSWireCore", "DTLSWireCore",
+      "DTLSHandshakeCore", "DTLSRecordCore",
+    ],
+    path: "Sources/DTLSEngineCore",
+    swiftSettings: ownershipSettings
+  ),
+  .target(
+    name: "SSLTypes",
+    swiftSettings: ownershipSettings
+  ),
   .target(
     name: "SSLCore",
+    dependencies: ["SSLTypes"],
     swiftSettings: ownershipSettings + [
       .enableExperimentalFeature("Volatile")
     ]
   ),
   .target(
     name: "SSLCrypto",
-    dependencies: ["SSLCore"],
+    dependencies: ["SSLCore", "SSLTypes"],
     swiftSettings: cryptoSettings
   ),
   .target(
@@ -88,22 +148,29 @@ var targets: [Target] = [
   ),
   .target(
     name: "SSLTLS",
-    dependencies: ["SSLCore", "SSLCrypto", "SSLASN1", "SSLX509"],
+    dependencies: ["SSLTypes", "SSLCore", "SSLCrypto", "SSLASN1", "SSLX509"],
+    swiftSettings: ownershipSettings
+  ),
+  .target(
+    name: "SSLDTLS",
+    dependencies: ["SSLCore", "SSLCrypto", "SSLDTLSMechanism"],
     swiftSettings: ownershipSettings
   ),
   .target(
     name: "SSLQUIC",
-    dependencies: ["SSLCore", "SSLCrypto", "SSLTLS"],
+    dependencies: ["SSLTypes", "SSLCore", "SSLCrypto", "SSLTLS"],
     swiftSettings: ownershipSettings
   ),
   .target(
     name: "SSL",
     dependencies: [
       "SSLCore",
+      "SSLTypes",
       "SSLCrypto",
       "SSLASN1",
       "SSLX509",
       "SSLTLS",
+      "SSLDTLS",
       "SSLQUIC",
     ],
     swiftSettings: ownershipSettings
@@ -162,6 +229,11 @@ var targets: [Target] = [
     swiftSettings: ownershipSettings
   ),
   .testTarget(
+    name: "SSLTypesTests",
+    dependencies: ["SSLTypes"],
+    swiftSettings: ownershipSettings
+  ),
+  .testTarget(
     name: "SSLCryptoTests",
     dependencies: ["SSLCore", "SSLCrypto"],
     swiftSettings: ownershipSettings
@@ -183,6 +255,11 @@ var targets: [Target] = [
     dependencies: [
       "SSLCore", "SSLCrypto", "SSLX509", "SSLTLS", "SSLQUIC",
     ],
+    swiftSettings: ownershipSettings
+  ),
+  .testTarget(
+    name: "SSLDTLSTests",
+    dependencies: ["SSLCore", "SSLDTLS"],
     swiftSettings: ownershipSettings
   ),
 ]
@@ -280,11 +357,11 @@ if ProcessInfo.processInfo.environment["SWIFT_SSL_ENABLE_BENCHMARKS"] == "1" {
 let package = Package(
   name: "swift-ssl",
   platforms: [
-    .macOS(.v15),
-    .iOS(.v18),
-    .tvOS(.v18),
-    .watchOS(.v11),
-    .visionOS(.v2),
+    .macOS(.v26),
+    .iOS(.v26),
+    .tvOS(.v26),
+    .watchOS(.v26),
+    .visionOS(.v26),
   ],
   products: products,
   targets: targets

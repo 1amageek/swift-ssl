@@ -54,8 +54,9 @@ public enum P521ECDSA: DigestSignatureVerifier {
 
 public struct P384PublicKey: Sendable, Equatable {
   public static let uncompressedByteCount = 97
-  private let storage: OwnedBytes
-  fileprivate let point: WeierstrassECDSA.Point
+  public static let compressedByteCount = 49
+  let storage: OwnedBytes
+  let point: WeierstrassECDSA.Point
 
   public init(bytes: Span<UInt8>) throws(CryptoInputError) {
     guard bytes.count == Self.uncompressedByteCount else {
@@ -68,7 +69,22 @@ public struct P384PublicKey: Sendable, Equatable {
     self.point = point
   }
 
+  public init(compressedBytes: Span<UInt8>) throws(CryptoInputError) {
+    guard compressedBytes.count == Self.compressedByteCount else {
+      throw .invalidLength(expected: Self.compressedByteCount, actual: compressedBytes.count)
+    }
+    guard let point = WeierstrassECDSA.Point.decodeCompressed(compressedBytes, curve: .p384),
+      let encoded = point.encoded(curve: .p384)
+    else { throw .invalidPeerKey }
+    storage = OwnedBytes(consuming: encoded)
+    self.point = point
+  }
+
   public var span: Span<UInt8> { storage.span }
+
+  public borrowing func compressedBytes() -> ContiguousArray<UInt8> {
+    point.encodedCompressed(curve: .p384) ?? []
+  }
 
   fileprivate borrowing func withBorrowedPoint<Result: ~Copyable, Failure: Error>(
     _ body: (WeierstrassECDSA.Point) throws(Failure) -> Result
@@ -79,8 +95,9 @@ public struct P384PublicKey: Sendable, Equatable {
 
 public struct P521PublicKey: Sendable, Equatable {
   public static let uncompressedByteCount = 133
-  private let storage: OwnedBytes
-  fileprivate let point: WeierstrassECDSA.Point
+  public static let compressedByteCount = 67
+  let storage: OwnedBytes
+  let point: WeierstrassECDSA.Point
 
   public init(bytes: Span<UInt8>) throws(CryptoInputError) {
     guard bytes.count == Self.uncompressedByteCount else {
@@ -93,7 +110,22 @@ public struct P521PublicKey: Sendable, Equatable {
     self.point = point
   }
 
+  public init(compressedBytes: Span<UInt8>) throws(CryptoInputError) {
+    guard compressedBytes.count == Self.compressedByteCount else {
+      throw .invalidLength(expected: Self.compressedByteCount, actual: compressedBytes.count)
+    }
+    guard let point = WeierstrassECDSA.Point.decodeCompressed(compressedBytes, curve: .p521),
+      let encoded = point.encoded(curve: .p521)
+    else { throw .invalidPeerKey }
+    storage = OwnedBytes(consuming: encoded)
+    self.point = point
+  }
+
   public var span: Span<UInt8> { storage.span }
+
+  public borrowing func compressedBytes() -> ContiguousArray<UInt8> {
+    point.encodedCompressed(curve: .p521) ?? []
+  }
 
   fileprivate borrowing func withBorrowedPoint<Result: ~Copyable, Failure: Error>(
     _ body: (WeierstrassECDSA.Point) throws(Failure) -> Result
@@ -107,22 +139,33 @@ enum WeierstrassECDSA {
     case p384
     case p521
 
+    // These constants are shared by the arithmetic fast paths. Keeping the
+    // modulus identity explicit lets moduloMultiply select a reduction law
+    // without carrying a curve tag through every value operation.
+    static let p384Prime = FixedUInt(
+      hex:
+        "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFFFF0000000000000000FFFFFFFF",
+      byteCount: 48
+    )
+    static let p521Prime = FixedUInt(
+      hex:
+        "01FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+      byteCount: 66
+    )
+
     var byteCount: Int { self == .p384 ? 48 : 66 }
     var bitCount: Int { self == .p384 ? 384 : 521 }
-    var signatureByteCount: Int { byteCount * 2 }
+  var signatureByteCount: Int { byteCount * 2 }
+    var uncompressedByteCount: Int { 1 + byteCount * 2 }
+    var compressedByteCount: Int { 1 + byteCount }
+    var unusedTopBits: UInt8 { self == .p521 ? 7 : 0 }
 
     var prime: FixedUInt {
       switch self {
       case .p384:
-        return FixedUInt(
-          hex:
-            "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFFFF0000000000000000FFFFFFFF",
-          byteCount: 48)
+        return Self.p384Prime
       case .p521:
-        return FixedUInt(
-          hex:
-            "01FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
-          byteCount: 66)
+        return Self.p521Prime
       }
     }
 
@@ -187,7 +230,7 @@ enum WeierstrassECDSA {
     }
   }
 
-  fileprivate static func verify(
+  static func verify(
     signature: Span<UInt8>,
     messageHash: Span<UInt8>,
     publicPoint: Point,
@@ -223,7 +266,7 @@ enum WeierstrassECDSA {
   }
 
   struct FixedUInt: Equatable, Comparable {
-    let words: ContiguousArray<UInt32>
+    var words: ContiguousArray<UInt32>
 
     init(byteCount: Int) {
       words = ContiguousArray(repeating: 0, count: (byteCount + 3) / 4)
@@ -299,6 +342,14 @@ enum WeierstrassECDSA {
       return result == 0
     }
 
+    mutating func wipe() {
+      var index = 0
+      while index < words.count {
+        words[index] = 0
+        index += 1
+      }
+    }
+
     func encoded(byteCount: Int) -> ContiguousArray<UInt8> {
       var result = ContiguousArray<UInt8>(repeating: 0, count: byteCount)
       var index = 0
@@ -333,6 +384,15 @@ enum WeierstrassECDSA {
     }
 
     func moduloMultiply(_ other: FixedUInt, modulus: FixedUInt) -> FixedUInt {
+      if modulus == Curve.p384Prime {
+        return p384PrimeMultiply(other)
+      }
+      if modulus == Curve.p521Prime {
+        return p521PrimeMultiply(other)
+      }
+
+      // The order moduli do not have a pseudo-Mersenne reduction law. Keep
+      // the constant-time reference reduction for those scalar operations.
       var product = ContiguousArray<UInt64>(repeating: 0, count: words.count * 2)
       var i = 0
       while i < words.count {
@@ -387,6 +447,190 @@ enum WeierstrassECDSA {
         bit -= 1
       }
       return FixedUInt(truncating: remainder, count: words.count)
+    }
+
+    /// Multiplies two 384-bit values and reduces with
+    /// p = 2^384 - 2^128 - 2^96 + 2^32 - 1. The signed accumulator is
+    /// bounded by a few dozen limbs and is normalized only once, avoiding the
+    /// per-bit temporary FixedUInt allocations of the reference path.
+    private func p384PrimeMultiply(_ other: FixedUInt) -> FixedUInt {
+      var product = ContiguousArray<Int64>(repeating: 0, count: 24)
+      var i = 0
+      while i < 12 {
+        var carry: UInt64 = 0
+        var j = 0
+        while j < 12 {
+          let value = UInt64(words[i]) * UInt64(other.words[j])
+            + UInt64(product[i + j]) + carry
+          product[i + j] = Int64(value & 0xFFFF_FFFF)
+          carry = value >> 32
+          j += 1
+        }
+        var index = i + 12
+        while carry != 0 {
+          let value = UInt64(product[index]) + carry
+          product[index] = Int64(value & 0xFFFF_FFFF)
+          carry = value >> 32
+          index += 1
+        }
+        i += 1
+      }
+
+      // 2^384 = 2^128 + 2^96 - 2^32 + 1 (mod p).
+      i = 23
+      while i >= 12 {
+        let high = product[i]
+        product[i] = 0
+        let low = i - 12
+        product[low] += high
+        product[low + 4] += high
+        product[low + 3] += high
+        product[low + 1] -= high
+        i -= 1
+      }
+
+      var normalized = ContiguousArray<UInt32>(repeating: 0, count: 12)
+      var carry: Int64 = 0
+      i = 0
+      while i < 12 {
+        let value = product[i] + carry
+        if value >= 0 {
+          normalized[i] = UInt32(truncatingIfNeeded: value)
+          carry = value >> 32
+        } else {
+          let borrow = (-value + 0xFFFF_FFFF) >> 32
+          normalized[i] = UInt32(truncatingIfNeeded: value + (borrow << 32))
+          carry = -borrow
+        }
+        i += 1
+      }
+
+      // A final carry represents carry * 2^384; fold it with the same law.
+      // At most two passes are required for a 768-bit product, but the small
+      // fixed bound also protects this internal routine from accidental loops.
+      var pass = 0
+      while carry != 0 && pass < 3 {
+        normalized[0] = UInt32(truncatingIfNeeded: Int64(normalized[0]) + carry)
+        normalized[4] = UInt32(truncatingIfNeeded: Int64(normalized[4]) + carry)
+        normalized[3] = UInt32(truncatingIfNeeded: Int64(normalized[3]) + carry)
+        normalized[1] = UInt32(truncatingIfNeeded: Int64(normalized[1]) - carry)
+
+        var nextCarry: Int64 = 0
+        i = 0
+        while i < 12 {
+          let value = Int64(normalized[i]) + nextCarry
+          if value >= 0 {
+            normalized[i] = UInt32(truncatingIfNeeded: value)
+            nextCarry = value >> 32
+          } else {
+            let borrow = (-value + 0xFFFF_FFFF) >> 32
+            normalized[i] = UInt32(truncatingIfNeeded: value + (borrow << 32))
+            nextCarry = -borrow
+          }
+          i += 1
+        }
+        carry = nextCarry
+        pass += 1
+      }
+
+      var result = FixedUInt(words: normalized)
+      while result >= Curve.p384Prime {
+        result = result - Curve.p384Prime
+      }
+      return result
+    }
+
+    /// Multiplies two 521-bit values and reduces with p = 2^521 - 1.
+    /// High limbs are folded a word at a time, so the reduction is linear in
+    /// the limb count rather than in the number of product bits.
+    private func p521PrimeMultiply(_ other: FixedUInt) -> FixedUInt {
+      var product = ContiguousArray<UInt64>(repeating: 0, count: 34)
+      var i = 0
+      while i < 17 {
+        var carry: UInt64 = 0
+        var j = 0
+        while j < 17 {
+          let value = UInt64(words[i]) * UInt64(other.words[j])
+            + product[i + j] + carry
+          product[i + j] = value & 0xFFFF_FFFF
+          carry = value >> 32
+          j += 1
+        }
+        var index = i + 17
+        while carry != 0 {
+          let value = product[index] + carry
+          product[index] = value & 0xFFFF_FFFF
+          carry = value >> 32
+          index += 1
+        }
+        i += 1
+      }
+
+      // Each high 32-bit word at index i contributes at index i-17 shifted
+      // by 23 bits because 32 * 17 - 521 = 23.
+      i = 33
+      while i >= 17 {
+        let high = product[i]
+        product[i] = 0
+        let target = i - 17
+        product[target] += (high << 23) & 0xFFFF_FFFF
+        product[target + 1] += high >> 9
+
+        var carry: UInt64 = 0
+        var index = target
+        while index <= target + 1 {
+          let value = product[index] + carry
+          product[index] = value & 0xFFFF_FFFF
+          carry = value >> 32
+          index += 1
+        }
+        while carry != 0 {
+          let value = product[index] + carry
+          product[index] = value & 0xFFFF_FFFF
+          carry = value >> 32
+          index += 1
+        }
+        i -= 1
+      }
+
+      // The top nine bits of limb 16 represent 2^521 and fold back to limb 0.
+      let highBits = product[16] >> 9
+      product[16] &= 0x1FF
+      product[0] += highBits
+      var carry: UInt64 = 0
+      i = 0
+      while i < 17 {
+        let value = product[i] + carry
+        product[i] = value & 0xFFFF_FFFF
+        carry = value >> 32
+        i += 1
+      }
+      if carry != 0 { product[17] += carry }
+
+      // The carry above can create one more high word; fold it once more.
+      if product[17] != 0 {
+        let high = product[17]
+        product[17] = 0
+        product[0] += (high << 23) & 0xFFFF_FFFF
+        product[1] += high >> 9
+        carry = 0
+        i = 0
+        while i < 17 {
+          let value = product[i] + carry
+          product[i] = value & 0xFFFF_FFFF
+          carry = value >> 32
+          i += 1
+        }
+        product[16] = (product[16] & 0x1FF) + carry
+      }
+
+      var result = FixedUInt(
+        words: ContiguousArray(product[0..<17].map { UInt32(truncatingIfNeeded: $0) })
+      )
+      while result >= Curve.p521Prime {
+        result = result - Curve.p521Prime
+      }
+      return result
     }
 
     func power(
@@ -447,7 +691,7 @@ enum WeierstrassECDSA {
       return false
     }
 
-    fileprivate init(truncating words: ContiguousArray<UInt64>, count: Int) {
+    init(truncating words: ContiguousArray<UInt64>, count: Int) {
       var result = ContiguousArray<UInt32>(repeating: 0, count: count)
       var index = 0
       while index < count {
@@ -474,6 +718,37 @@ enum WeierstrassECDSA {
       let y = FixedUInt(
         bytes: bytes.extracting((1 + curve.byteCount)..<bytes.count), byteCount: curve.byteCount)
       guard x < curve.prime, y < curve.prime else { return nil }
+      let point = Point(x: x, y: y, z: FixedUInt.one(byteCount: curve.byteCount))
+      return point.isOnCurve(curve) ? point : nil
+    }
+
+    static func decodeCompressed(_ bytes: Span<UInt8>, curve: Curve) -> Point? {
+      guard bytes.count == curve.compressedByteCount,
+        bytes[0] == 0x02 || bytes[0] == 0x03
+      else { return nil }
+      let x = FixedUInt(
+        bytes: bytes.extracting(1..<bytes.count), byteCount: curve.byteCount
+      )
+      guard x < curve.prime else { return nil }
+      let xSquared = x.moduloMultiply(x, modulus: curve.prime)
+      let rhs = xSquared.moduloMultiply(x, modulus: curve.prime)
+        .moduloSubtract(
+          x.moduloAdd(x, modulus: curve.prime).moduloAdd(x, modulus: curve.prime),
+          modulus: curve.prime
+        )
+        .moduloAdd(curve.curveB, modulus: curve.prime)
+      let exponent = curve.prime.addingSmall(1)
+      let squareRoot = rhs.power(
+        exponent.dividedBySmall(4),
+        modulus: curve.prime,
+        bitCount: curve.bitCount
+      )
+      guard squareRoot.moduloMultiply(squareRoot, modulus: curve.prime) == rhs else {
+        return nil
+      }
+      let encoded = squareRoot.encoded(byteCount: curve.byteCount)
+      let parity = encoded[encoded.count - 1] & 1
+      let y = parity == (bytes[0] & 1) ? squareRoot : curve.prime - squareRoot
       let point = Point(x: x, y: y, z: FixedUInt.one(byteCount: curve.byteCount))
       return point.isOnCurve(curve) ? point : nil
     }
@@ -516,6 +791,19 @@ enum WeierstrassECDSA {
       while index < curve.byteCount {
         result[1 + index] = x[index]
         result[1 + curve.byteCount + index] = y[index]
+        index += 1
+      }
+      return result
+    }
+
+    func encodedCompressed(curve: Curve) -> ContiguousArray<UInt8>? {
+      guard let affine = affine(curve: curve) else { return nil }
+      var result = ContiguousArray<UInt8>(repeating: 0, count: curve.compressedByteCount)
+      let encodedX = affine.x.encoded(byteCount: curve.byteCount)
+      result[0] = affine.y.encoded(byteCount: curve.byteCount).last! & 1 == 0 ? 0x02 : 0x03
+      var index = 0
+      while index < curve.byteCount {
+        result[index + 1] = encodedX[index]
         index += 1
       }
       return result
@@ -592,6 +880,41 @@ enum WeierstrassECDSA {
       return result
     }
 
+    /// Secret-scalar multiplication with a fixed four-bit schedule.
+    ///
+    /// The table is scanned linearly for every nibble. The scalar controls
+    /// only arithmetic masks and never an address or loop bound. Complete
+    /// Jacobian addition handles zero, equal, inverse, and infinity cases
+    /// without a secret-dependent branch.
+    static func scalarMultiplySecret(
+      _ point: Point,
+      scalar: FixedUInt,
+      curve: Curve
+    ) -> Point {
+      var table = ContiguousArray<Point>(repeating: Point.infinity(curve), count: 16)
+      table[1] = point
+      var index = 2
+      while index < table.count {
+        table[index] = table[index - 1].adding(point, curve: curve)
+        index += 1
+      }
+
+      var result = Point.infinity(curve)
+      var nibble = (curve.bitCount + 3) / 4 - 1
+      while nibble >= 0 {
+        var doubling = 0
+        while doubling < 4 {
+          result = result.doubledComplete(curve: curve)
+          doubling += 1
+        }
+        let digit = scalar.nibble(at: nibble)
+        let selected = selectPointFromTable(table: table, digit: digit, curve: curve)
+        result = result.addingComplete(selected, curve: curve)
+        nibble -= 1
+      }
+      return result
+    }
+
     static func infinity(_ curve: Curve) -> Point {
       Point(
         x: FixedUInt(byteCount: curve.byteCount), y: FixedUInt(byteCount: curve.byteCount),
@@ -614,7 +937,7 @@ extension WeierstrassECDSA.FixedUInt {
     return Self(words: result)
   }
 
-  fileprivate func subtractingSmall(_ value: UInt32) -> Self {
+  func subtractingSmall(_ value: UInt32) -> Self {
     var result = words
     var borrow = UInt64(value)
     var index = 0
@@ -631,4 +954,144 @@ extension WeierstrassECDSA.FixedUInt {
     }
     return Self(words: result)
   }
+
+  func dividedBySmall(_ divisor: UInt32) -> Self {
+    precondition(divisor != 0)
+    var result = ContiguousArray<UInt32>(repeating: 0, count: words.count)
+    var remainder: UInt64 = 0
+    var index = words.count
+    while index > 0 {
+      index -= 1
+      let value = (remainder << 32) | UInt64(words[index])
+      result[index] = UInt32(value / UInt64(divisor))
+      remainder = value % UInt64(divisor)
+    }
+    return Self(words: result)
+  }
+
+  func nibble(at index: Int) -> UInt8 {
+    precondition(index >= 0)
+    let bit = index * 4
+    let word = bit >> 5
+    let shift = bit & 31
+    guard word < words.count else { return 0 }
+    return UInt8(truncatingIfNeeded: words[word] >> UInt32(shift)) & 0x0F
+  }
+
+  var zeroMask: UInt32 {
+    var value: UInt32 = 0
+    for word in words { value |= word }
+    let nonzero = (value | (0 &- value)) >> 31
+    return 0 &- (nonzero ^ 1)
+  }
+
+  static func select(mask: UInt32, _ selected: Self, _ alternative: Self) -> Self {
+    var result = ContiguousArray<UInt32>(repeating: 0, count: selected.words.count)
+    var index = 0
+    while index < result.count {
+      result[index] = (selected.words[index] & mask)
+        | (alternative.words[index] & ~mask)
+      index += 1
+    }
+    return Self(words: result)
+  }
+}
+
+extension WeierstrassECDSA.Point {
+  func doubledComplete(curve: WeierstrassECDSA.Curve) -> Self {
+    let p = curve.prime
+    let ySquared = y.moduloMultiply(y, modulus: p)
+    let s = x.moduloMultiply(ySquared, modulus: p)
+      .moduloMultiply(WeierstrassECDSA.FixedUInt(byteCount: curve.byteCount).addingSmall(4), modulus: p)
+    let zSquared = z.moduloMultiply(z, modulus: p)
+    let m = x.moduloSubtract(zSquared, modulus: p)
+      .moduloMultiply(x.moduloAdd(zSquared, modulus: p), modulus: p)
+      .moduloMultiply(WeierstrassECDSA.FixedUInt(byteCount: curve.byteCount).addingSmall(3), modulus: p)
+    let x3 = m.moduloMultiply(m, modulus: p).moduloSubtract(s, modulus: p)
+      .moduloSubtract(s, modulus: p)
+    let y4 = ySquared.moduloMultiply(ySquared, modulus: p)
+    let y3 = m.moduloMultiply(s.moduloSubtract(x3, modulus: p), modulus: p)
+      .moduloSubtract(
+        y4.moduloMultiply(WeierstrassECDSA.FixedUInt(byteCount: curve.byteCount).addingSmall(8), modulus: p),
+        modulus: p
+      )
+    let z3 = y.moduloMultiply(z, modulus: p)
+      .moduloMultiply(WeierstrassECDSA.FixedUInt(byteCount: curve.byteCount).addingSmall(2), modulus: p)
+    let generic = Self(x: x3, y: y3, z: z3)
+    let exceptional = Self.infinity(curve)
+    return Self.select(mask: z.zeroMask | y.zeroMask, exceptional, generic)
+  }
+
+  func addingComplete(_ other: Self, curve: WeierstrassECDSA.Curve) -> Self {
+    let p = curve.prime
+    let z1Squared = z.moduloMultiply(z, modulus: p)
+    let z2Squared = other.z.moduloMultiply(other.z, modulus: p)
+    let u1 = x.moduloMultiply(z2Squared, modulus: p)
+    let u2 = other.x.moduloMultiply(z1Squared, modulus: p)
+    let s1 = y.moduloMultiply(other.z, modulus: p).moduloMultiply(z2Squared, modulus: p)
+    let s2 = other.y.moduloMultiply(z, modulus: p).moduloMultiply(z1Squared, modulus: p)
+    let h = u2.moduloSubtract(u1, modulus: p)
+    let h2 = h.moduloAdd(h, modulus: p)
+    let i = h2.moduloMultiply(h2, modulus: p)
+    let j = h.moduloMultiply(i, modulus: p)
+    let rDifference = s2.moduloSubtract(s1, modulus: p)
+    let r = rDifference.moduloAdd(rDifference, modulus: p)
+    let v = u1.moduloMultiply(i, modulus: p)
+    let zSum = z.moduloAdd(other.z, modulus: p)
+    let z3 = zSum.moduloMultiply(zSum, modulus: p)
+      .moduloSubtract(z1Squared, modulus: p)
+      .moduloSubtract(z2Squared, modulus: p)
+      .moduloMultiply(h, modulus: p)
+    let generic = Self(
+      x: r.moduloMultiply(r, modulus: p).moduloSubtract(j, modulus: p)
+        .moduloSubtract(v, modulus: p).moduloSubtract(v, modulus: p),
+      y: r.moduloMultiply(
+        v.moduloSubtract(
+          r.moduloMultiply(r, modulus: p).moduloSubtract(j, modulus: p)
+            .moduloSubtract(v, modulus: p).moduloSubtract(v, modulus: p),
+          modulus: p
+        ), modulus: p
+      ).moduloSubtract(
+        s1.moduloMultiply(j, modulus: p)
+          .moduloMultiply(WeierstrassECDSA.FixedUInt(byteCount: curve.byteCount).addingSmall(2), modulus: p),
+        modulus: p
+      ),
+      z: z3
+    )
+    let hZero = h.zeroMask
+    let rZero = r.zeroMask
+    let equalMask = hZero & rZero
+    let inverseMask = hZero & ~rZero
+    var result = generic
+    result = Self.select(mask: equalMask, doubledComplete(curve: curve), result)
+    result = Self.select(mask: inverseMask, .infinity(curve), result)
+    result = Self.select(mask: other.z.zeroMask, self, result)
+    result = Self.select(mask: z.zeroMask, other, result)
+    return result
+  }
+
+  static func select(mask: UInt32, _ selected: Self, _ alternative: Self) -> Self {
+    Self(
+      x: WeierstrassECDSA.FixedUInt.select(mask: mask, selected.x, alternative.x),
+      y: WeierstrassECDSA.FixedUInt.select(mask: mask, selected.y, alternative.y),
+      z: WeierstrassECDSA.FixedUInt.select(mask: mask, selected.z, alternative.z)
+    )
+  }
+}
+
+private func selectPointFromTable(
+  table: ContiguousArray<WeierstrassECDSA.Point>,
+  digit: UInt8,
+  curve: WeierstrassECDSA.Curve
+) -> WeierstrassECDSA.Point {
+  var result = WeierstrassECDSA.Point.infinity(curve)
+  var index = 0
+  while index < table.count {
+    let difference = UInt32(index ^ Int(digit))
+    let nonzero = (difference | (0 &- difference)) >> 31
+    let mask = 0 &- (nonzero ^ 1)
+    result = WeierstrassECDSA.Point.select(mask: mask, table[index], result)
+    index += 1
+  }
+  return result
 }

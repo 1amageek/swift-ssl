@@ -3,3 +3,4 @@ public protocol TLS13ApplicationTrafficSecretManaging: ~Copyable, Sendable {
         for endpoint: TLSRole
     ) throws(TLS13HandshakeEngineError) -> TLS13TrafficSecret
 }
+import SSLTypes

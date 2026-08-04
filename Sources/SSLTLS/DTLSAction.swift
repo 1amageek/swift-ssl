@@ -20,3 +20,4 @@ public enum DTLSAction: TLSBatchAction, Hashable {
         }
     }
 }
+import SSLTypes

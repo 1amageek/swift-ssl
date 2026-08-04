@@ -1,6 +1,7 @@
 import SSLCore
 import SSLCrypto
 import SSLTLS
+import SSLTypes
 
 /// QUIC server handshake driver composed from per-level CRYPTO streams and the
 /// record-independent TLS 1.3 server core.
@@ -552,6 +553,18 @@ public struct QUICTLSServerHandshake: QUICTLSServerHandshaking, ~Copyable, Senda
     core.receivedTransportParameters
   }
 
+  /// Configures the local QUIC transport parameters before the first server
+  /// flight is produced.
+  public mutating func configureTransportParameters(
+    _ parameters: Span<UInt8>
+  ) throws(QUICTLSHandshakeError) {
+    do {
+      try core.configureTransportParameters(parameters)
+    } catch let error {
+      throw .handshake(error)
+    }
+  }
+
   public var authenticatedClientIdentity: TLS13ValidatedClientCertificate? {
     core.authenticatedClientIdentity
   }
@@ -582,6 +595,43 @@ public struct QUICTLSServerHandshake: QUICTLSServerHandshaking, ~Copyable, Senda
       }
     } catch let error {
       throw .stream(error)
+    }
+  }
+
+  /// Processes one complete TLS handshake message supplied by the transport
+  /// owner. QUIC CRYPTO offsets and reassembly stay outside this mechanism
+  /// package; callers must pass a complete, header-inclusive message.
+  public mutating func processHandshakeMessage(
+    _ message: Span<UInt8>,
+    at level: QUICTLSHandshakeInputLevel
+  ) throws(QUICTLSHandshakeError) -> QUICTLSStepOutput {
+    let epoch: TLS13HandshakeEpoch = level == .initial ? .initial : .handshake
+    let output: TLS13HandshakeCoreOutput
+    do {
+      output = try core.receiveHandshakeMessage(message, at: epoch)
+    } catch let error {
+      throw .handshake(error)
+    }
+    return try QUICTLSCoreOutputAdapter.adapt(output, role: .server)
+  }
+
+  /// Stepwise variant that preserves swift-ssl capability suspension.
+  public mutating func processHandshakeMessageStep(
+    _ message: Span<UInt8>,
+    at level: QUICTLSHandshakeInputLevel
+  ) throws(QUICTLSHandshakeError) -> QUICTLSHandshakeTransition {
+    let epoch: TLS13HandshakeEpoch = level == .initial ? .initial : .handshake
+    let transition: TLS13HandshakeCoreTransition
+    do {
+      transition = try core.receiveHandshakeMessageStep(message, at: epoch)
+    } catch let error {
+      throw .handshake(error)
+    }
+    switch consume transition {
+    case .output(let output):
+      return .output(try QUICTLSCoreOutputAdapter.adapt(output, role: .server))
+    case .suspended(let request):
+      return .suspended(request)
     }
   }
 
@@ -684,7 +734,7 @@ public struct QUICTLSServerHandshake: QUICTLSServerHandshaking, ~Copyable, Senda
     let endpoint: TLSRole = direction == .read ? .client : .server
     let trafficSecret: TLS13TrafficSecret
     do {
-      trafficSecret = try core.updateApplicationTrafficSecret(for: endpoint)
+      trafficSecret = try core.updateQUICApplicationTrafficSecret(for: endpoint)
     } catch let error {
       throw .handshake(error)
     }

@@ -90,7 +90,11 @@ public struct P256PrivateKey: InPlacePublicKeyDerivation, ~Copyable, Sendable {
     point.writeUncompressedAssumingFinite(into: &destination)
   }
 
-  borrowing func withBorrowedBytes<Result: ~Copyable, Failure: Error>(
+  /// Borrows the private scalar for the duration of `body`.
+  ///
+  /// The span is scoped to the call and cannot escape. The key remains the
+  /// sole owner of the allocation and wipes it exactly once on destruction.
+  public borrowing func withBorrowedBytes<Result: ~Copyable, Failure: Error>(
     _ body: (Span<UInt8>) throws(Failure) -> Result
   ) throws(Failure) -> Result {
     try storage.withBorrowedBytes(body)

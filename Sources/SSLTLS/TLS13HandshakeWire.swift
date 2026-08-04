@@ -172,6 +172,19 @@ enum TLS13HandshakeWire {
     return OwnedBytes(consuming: output)
   }
 
+  static func closeNotify(
+    with protector: inout TLS13RecordProtector
+  ) throws(TLS13HandshakeEngineError) -> OwnedBytes {
+    var alert = ContiguousArray<UInt8>()
+    alert.append(1) // warning level; TLS 1.3 requires close_notify to be warning.
+    alert.append(TLSAlert.closeNotify.rawValue)
+    return try seal(
+      content: alert.span,
+      contentType: .alert,
+      with: &protector
+    )
+  }
+
   static func open(
     record: Span<UInt8>,
     expectedContentType: TLS13ContentType = .handshake,
@@ -345,3 +358,4 @@ func wipe(_ bytes: inout ContiguousArray<UInt8>) {
     SecureWipe.erase(UnsafeMutableRawPointer(baseAddress), byteCount: buffer.count)
   }
 }
+import SSLTypes

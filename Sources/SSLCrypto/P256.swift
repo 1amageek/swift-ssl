@@ -290,6 +290,7 @@ private struct P256RFC6979State: ~Copyable {
 
 public struct P256PublicKey: Sendable, Equatable {
   public static let uncompressedByteCount = 65
+  public static let compressedByteCount = 33
   private let storage: OwnedBytes
   private let point: P256Point
   private let precomputation: P256Point.SecretCombMultiplicationTable
@@ -302,6 +303,19 @@ public struct P256PublicKey: Sendable, Equatable {
       throw .invalidPeerKey
     }
     self.storage = OwnedBytes(copying: bytes)
+    self.point = point
+    self.precomputation = P256Point.SecretCombMultiplicationTable(point: point)
+  }
+
+  /// Creates a public key from SEC1 compressed point encoding.
+  public init(compressedBytes: Span<UInt8>) throws(CryptoInputError) {
+    guard compressedBytes.count == Self.compressedByteCount else {
+      throw .invalidLength(expected: Self.compressedByteCount, actual: compressedBytes.count)
+    }
+    guard let point = P256Point.decodeCompressed(compressedBytes) else {
+      throw .invalidPeerKey
+    }
+    self.storage = OwnedBytes(copying: point.encodedUncompressed.span)
     self.point = point
     self.precomputation = P256Point.SecretCombMultiplicationTable(point: point)
   }
@@ -320,6 +334,11 @@ public struct P256PublicKey: Sendable, Equatable {
     borrowing get {
       storage.span
     }
+  }
+
+  /// Returns the SEC1 compressed point representation.
+  public borrowing func compressedBytes() -> ContiguousArray<UInt8> {
+    point.encodedCompressed
   }
 
   /// Shares the immutable encoded-key owner without materializing its bytes.
@@ -831,6 +850,20 @@ struct P256Point {
     return point.isOnCurve ? point : nil
   }
 
+  static func decodeCompressed(_ bytes: Span<UInt8>) -> P256Point? {
+    guard bytes.count == 33, bytes[0] == 0x02 || bytes[0] == 0x03 else { return nil }
+    let xWords = P256Words.decode(bytes.extracting(1..<33))
+    guard P256Words.compare(xWords, P256Field.modulus) < 0 else { return nil }
+    let x = P256Field(words: xWords)
+    let rhs = x.squared() * x - x.tripled() + P256Field.curveB
+    guard var y = rhs.squareRoot() else { return nil }
+    if y.isOdd != (bytes[0] == 0x03) {
+      y = -y
+    }
+    let point = P256Point(x: x, y: y, z: .one)
+    return point.isOnCurve ? point : nil
+  }
+
   var isOnCurve: Bool {
     guard !isInfinity else { return false }
     let left = y.squared()
@@ -845,6 +878,15 @@ struct P256Point {
     bytes.append(0x04)
     bytes.append(contentsOf: affine.x.encoded)
     bytes.append(contentsOf: affine.y.encoded)
+    return bytes
+  }
+
+  var encodedCompressed: ContiguousArray<UInt8> {
+    guard let affine = affine() else { return [] }
+    var bytes = ContiguousArray<UInt8>()
+    bytes.reserveCapacity(33)
+    bytes.append(affine.y.isOdd ? 0x03 : 0x02)
+    bytes.append(contentsOf: affine.x.encoded)
     return bytes
   }
 

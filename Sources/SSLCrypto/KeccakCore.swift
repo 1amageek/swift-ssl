@@ -7,7 +7,7 @@ import SSLCore
 /// must invoke `erase()` before releasing the context. The rate is always a
 /// whole number of lanes, and every lane load/store uses little-endian byte
 /// order from FIPS 202.
-package struct KeccakCore: ~Copyable {
+package struct KeccakCore: ~Copyable, @unchecked Sendable {
   private static let roundConstants: [UInt64] = [
     0x0000_0000_0000_0001, 0x0000_0000_0000_8082,
     0x8000_0000_0000_808A, 0x8000_0000_8000_8000,

@@ -12,6 +12,16 @@ final class SHA3Tests: XCTestCase {
       copy(sha3_256.span), bytes("a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a")
     )
 
+    var sha3_384 = ContiguousArray<UInt8>(repeating: 0, count: SHA3_384.digestByteCount)
+    var sha3_384Output = sha3_384.mutableSpan
+    try SHA3_384.hash(ContiguousArray<UInt8>().span, into: &sha3_384Output)
+    XCTAssertEqual(
+      copy(sha3_384.span),
+      bytes(
+        "0c63a75b845e4f7d01107d852e4c2485c51a50aaaa94fc61995e71bbee983a2ac3713831264adb47fb6bd1e058d5f004"
+      )
+    )
+
     var sha3_512 = ContiguousArray<UInt8>(repeating: 0, count: SHA3_512.digestByteCount)
     var sha3_512Output = sha3_512.mutableSpan
     try SHA3_512.hash(ContiguousArray<UInt8>().span, into: &sha3_512Output)

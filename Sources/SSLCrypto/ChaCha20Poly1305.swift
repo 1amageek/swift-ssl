@@ -69,6 +69,40 @@ public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher, Sendable {
     }
   }
 
+  /// Seals a message with a scoped move-only cipher owner.
+  public static func seal(
+    key: Span<UInt8>,
+    plaintext: Span<UInt8>,
+    authenticatedData: Span<UInt8>,
+    nonce: Span<UInt8>,
+    into output: inout MutableSpan<UInt8>
+  ) throws(AEADError) {
+    let cipher = try Self(key: key)
+    try cipher.seal(
+      plaintext: plaintext,
+      authenticatedData: authenticatedData,
+      nonce: nonce,
+      into: &output
+    )
+  }
+
+  /// Opens a message with a scoped move-only cipher owner.
+  public static func open(
+    key: Span<UInt8>,
+    ciphertextAndTag: Span<UInt8>,
+    authenticatedData: Span<UInt8>,
+    nonce: Span<UInt8>,
+    into output: inout MutableSpan<UInt8>
+  ) throws(AEADError) {
+    let cipher = try Self(key: key)
+    try cipher.open(
+      ciphertextAndTag: ciphertextAndTag,
+      authenticatedData: authenticatedData,
+      nonce: nonce,
+      into: &output
+    )
+  }
+
   public func seal(
     plaintext: Span<UInt8>,
     authenticatedData: Span<UInt8>,

@@ -142,6 +142,14 @@ public enum MLKEM768: InPlaceEncodedPublicKeyEncapsulationMechanism {
     try generateKeyPair(using: SystemEntropySource())
   }
 
+  /// Generates a key pair from the 64-byte FIPS 203 `d || z` seed.
+  public static func generateKeyPair(seed: Span<UInt8>) throws(KEMError) -> KEMKeyPair<PublicKey, PrivateKey> {
+    guard seed.count == 64 else {
+      throw .invalidPrivateKeyLength(expected: 64, actual: seed.count)
+    }
+    return try keyPair(d: seed.extracting(0..<32), z: seed.extracting(32..<64))
+  }
+
   public static func encapsulate(
     to publicKey: borrowing PublicKey,
     using entropy: borrowing any EntropySource
@@ -346,7 +354,7 @@ public enum MLKEM768: InPlaceEncodedPublicKeyEncapsulationMechanism {
     )
   }
 
-  static func encapsulate(
+  public static func encapsulate(
     to publicKey: borrowing PublicKey,
     message: Span<UInt8>,
     into encapsulation: inout MutableSpan<UInt8>,

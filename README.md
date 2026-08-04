@@ -1,7 +1,8 @@
 # swift-ssl
 
 `swift-ssl` is a Pure Swift implementation of modern cryptography, PKI, TLS 1.3,
-DTLS 1.3, and the TLS integration required by QUIC. It targets Native, WASI, and
+DTLS 1.3, and the scoped DTLS 1.2 WebRTC profile required by WebRTC transports.
+It targets Native, WASI, and
 Embedded Swift without reproducing the OpenSSL/BoringSSL C API or legacy protocol
 surface.
 
@@ -13,52 +14,100 @@ surface.
 
 ```mermaid
 flowchart LR
+    Types[SSLTypes] --> Core[SSLCore]
     Core[SSLCore] --> Crypto[SSLCrypto]
     Core --> ASN1[SSLASN1]
     Crypto --> X509[SSLX509]
     ASN1 --> X509
     Crypto --> TLS[SSLTLS]
     X509 --> TLS
+    Core --> DTLS[SSLDTLS]
+    Crypto --> DTLS
     TLS --> QUIC[SSLQUIC]
     Core --> SSL[SSL]
     Crypto --> SSL
     ASN1 --> SSL
     X509 --> SSL
     TLS --> SSL
+    DTLS --> SSL
     QUIC --> SSL
 ```
 
 | Product | Responsibility |
 |---|---|
+| Internal target `SSLTypes` | Dependency-light TLS vocabulary values (role, version, cipher-suite ID, ALPN, encryption level, and server name); it does not own secrets or protocol state |
 | `SSLCore` | Owned and borrowed bytes, secret memory, entropy, clocks, and typed errors |
 | `SSLCrypto` | Hashes, AEAD, key agreement, signatures, KEMs, and HPKE |
 | `SSLASN1` | Strict DER and PEM parsing and encoding |
 | `SSLX509` | Certificates, key containers, path validation, and revocation inputs |
 | `SSLTLS` | Transport-independent TLS 1.3 and DTLS 1.3 state machines |
-| `SSLQUIC` | QUIC CRYPTO-stream and TLS secret integration |
+| `SSLDTLS` | Complete sans-I/O DTLS 1.2 WebRTC mechanism: wire codecs, handshake state, ECDHE/signature seams, cookies, fragmentation, replay, flights, retransmission state, SRTP negotiation/export, and AES-GCM records |
+| `TLSWire` / `DTLSWire` | Pure TLS 1.3 / DTLS 1.2 wire codecs with no I/O or cryptographic policy |
+| `DTLSHandshake` / `DTLSRecord` | DTLS 1.2 handshake and record-layer contracts used by the `SSLDTLS` engine |
+| `P2PCoreBytes` / `P2PCoreCrypto` | Embedded-safe shared byte and crypto capability contracts; implementation is owned by this package so consumers do not fork them |
+| `SSLQUIC` | QUIC TLS handshake-byte, alert, and traffic-secret mapping; CRYPTO offsets/reassembly belong to `swift-quic` in the target architecture |
 | `SSL` | Umbrella façade for application-facing composition |
 
 Applications that only need cryptographic primitives should depend directly on
 `SSLCore` and `SSLCrypto` instead of the umbrella product.
 
+## Ecosystem boundary
+
+`swift-ssl` is the canonical mechanism implementation underneath the public
+TLS-family session APIs in `swift-tls-sessions`:
+
+```text
+swift-libp2p -> swift-tls-sessions/TLS -> swift-ssl
+swift-webrtc -> swift-tls-sessions/DTLS -> swift-ssl
+swift-quic   -> swift-tls-sessions/QUICTLS -> swift-ssl
+```
+
+`swift-tls-sessions` owns stable Stream TLS, DTLS, and QUIC TLS session contracts.
+`swift-ssl` owns the cryptographic, PKI, handshake, record, and key-schedule
+mechanisms that implement those contracts. Transport packages own I/O and
+transport framing. See the workspace
+[Secure Transport Architecture](../SECURE_TRANSPORT_ARCHITECTURE.md).
+
+`SSLTypes` is intentionally an internal package target until its vocabulary is
+proven across multiple stable consumers. ALPN
+and cipher-suite identifiers are defined here; protocol modules only add
+boundary adapters. The secret owner remains `SSLCore.TLSTrafficSecret`; extracting a separate
+`swift-tls-types` package before the vocabulary is used by multiple stable
+consumers would freeze ownership and lifetime contracts too early.
+
+`swift-ssl` is the only TLS/DTLS mechanism owner. `swift-tls-sessions` is a
+session-contract and policy facade: it supplies identity, trust, timer, and
+transport-facing adapters but does not duplicate wire, transcript, key schedule,
+handshake, replay, flight, or record code. QUIC CRYPTO offsets/reassembly remain
+owned by `swift-quic`.
+
 ## Supported profile
 
 - AES-128/192/256-GCM and ChaCha20-Poly1305
 - SHA-256/384/512, SHA3-256/512, SHAKE128/256, HMAC, HKDF, and PBKDF2-HMAC-SHA256
-- X25519 and P-256 key agreement
-- Ed25519 and P-256 ECDSA signing
-- P-384/P-521 ECDSA verification
+- X25519, P-256, P-384, and P-521 key agreement
+- Ed25519 and P-256/P-384/P-521 ECDSA signing
 - RSA-PSS signing and verification, and RSA PKCS #1 v1.5 SHA-2 verification
 - ML-KEM-768/1024, ML-DSA-44/65/87, and X25519MLKEM768 for TLS
 - HPKE with X25519 or P-256 DHKEM
 - Strict DER, PEM, SPKI, PKCS #8, modern encrypted PKCS #8, and a narrow PKCS #12 profile
 - X.509 parsing and bounded path validation
 - TLS 1.3, DTLS 1.3, and the TLS integration required by QUIC
+- DTLS 1.2 WebRTC `use_srtp`, `extended_master_secret`, and `renegotiation_info`
+  negotiation; ECDHE-ECDSA authentication; cookie/address validation; bounded
+  fragmentation/reassembly; anti-replay; flight retransmission; AES-GCM records;
+  and RFC 5705/5764 SRTP exporter
 
 SSL, TLS 1.0-1.2, DTLS 1.0-1.2, renegotiation, CBC cipher suites, obsolete
 ciphers and hashes, legacy finite-field DH, and the OpenSSL/BoringSSL C API are
 outside the project scope. Algorithms retained only for certificate verification
 require explicit policy enablement.
+
+The workspace target architecture reserves one deliberate exception: the narrow
+DTLS 1.2 WebRTC interoperability profile is implemented completely in `SSLDTLS`
+and exposed to `swift-tls-sessions` through a typed facade. It is not a general
+TLS 1.2 fallback backend. Browser/native interop and security review remain
+release evidence gates, not alternate production implementations.
 
 ## Installation
 

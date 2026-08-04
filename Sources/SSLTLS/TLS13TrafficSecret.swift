@@ -5,7 +5,7 @@ import SSLCrypto
 public struct TLS13TrafficSecret: ~Copyable, Sendable {
     public let endpoint: TLSRole
     public let cipherSuite: TLSCipherSuite
-    private let secret: SecretBytes
+    private let owner: TLSTrafficSecret
 
     package init(
         endpoint: TLSRole,
@@ -14,16 +14,21 @@ public struct TLS13TrafficSecret: ~Copyable, Sendable {
     ) {
         self.endpoint = endpoint
         self.cipherSuite = cipherSuite
-        self.secret = secret
+        self.owner = TLSTrafficSecret(
+            endpoint: endpoint,
+            algorithmIdentifier: cipherSuite.rawValue,
+            secret: consume secret
+        )
     }
 
     public borrowing func withBorrowedSecret<Result: ~Copyable, Failure: Error>(
         _ body: (Span<UInt8>) throws(Failure) -> Result
     ) throws(Failure) -> Result {
-        try secret.withBorrowedBytes(body)
+        try owner.withBorrowedSecret(body)
     }
 
     package consuming func takeSecret() -> SecretBytes {
-        secret
+        owner.takeSecret()
     }
 }
+import SSLTypes

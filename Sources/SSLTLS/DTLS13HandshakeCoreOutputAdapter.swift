@@ -436,3 +436,4 @@ enum DTLS13HandshakeCoreOutputAdapter {
     }
   }
 }
+import SSLTypes

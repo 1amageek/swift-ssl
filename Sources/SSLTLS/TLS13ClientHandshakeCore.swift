@@ -38,7 +38,7 @@ public struct TLS13ClientHandshakeCore:
   private let usesExternalClientCredential: Bool
   private var selectedExternalClientCredential: TLS13CredentialDescriptor?
   private let applicationProtocols: ContiguousArray<TLS13ApplicationProtocol>
-  private let localTransportParameters: OwnedBytes?
+  private var localTransportParameters: OwnedBytes?
   private var validatedServerPublicKey: TLS13CertificateVerificationKey?
   private let echMaximumNameLength: UInt8?
   private let echOuterRandom: OwnedBytes?
@@ -513,6 +513,18 @@ public struct TLS13ClientHandshakeCore:
 
   public var receivedTransportParameters: OwnedBytes? {
     peerTransportParameters
+  }
+
+  /// Replaces the QUIC transport parameters before the client emits
+  /// ClientHello. QUIC owns the configuration value, while this core owns the
+  /// encoded bytes once the session is constructed.
+  public mutating func configureTransportParameters(
+    _ parameters: Span<UInt8>
+  ) throws(TLS13HandshakeEngineError) {
+    guard case .idle = phase else {
+      throw .invalidState
+    }
+    localTransportParameters = OwnedBytes(copying: parameters)
   }
 
   public var srtpProtectionProfile: DTLSSRTPProtectionProfile? {
@@ -1428,6 +1440,34 @@ public struct TLS13ClientHandshakeCore:
       switch endpoint {
       case .client: try secrets.updateClientTrafficSecret()
       case .server: try secrets.updateServerTrafficSecret()
+      }
+      let exported = try secrets.exportTrafficSecret(for: endpoint)
+      applicationSecrets = consume secrets
+      return exported
+    } catch let error as TLS13KeyScheduleError {
+      applicationSecrets = consume secrets
+      phase = .failed
+      throw .keySchedule(error)
+    } catch {
+      applicationSecrets = consume secrets
+      phase = .failed
+      throw .malformedInput
+    }
+  }
+
+  /// Advances a QUIC 1-RTT traffic secret using RFC 9001's `quic ku` label.
+  public mutating func updateQUICApplicationTrafficSecret(
+    for endpoint: TLSRole
+  ) throws(TLS13HandshakeEngineError) -> TLS13TrafficSecret {
+    guard case .established = phase,
+      var secrets = applicationSecrets.take()
+    else {
+      throw .invalidState
+    }
+    do {
+      switch endpoint {
+      case .client: try secrets.updateQUICClientTrafficSecret()
+      case .server: try secrets.updateQUICServerTrafficSecret()
       }
       let exported = try secrets.exportTrafficSecret(for: endpoint)
       applicationSecrets = consume secrets
@@ -2930,3 +2970,4 @@ private func makeBinder(
   )
   return try TLS13PSKBinder(value: binder.span)
 }
+import SSLTypes

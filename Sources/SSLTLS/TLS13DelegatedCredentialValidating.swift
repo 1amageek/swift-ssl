@@ -13,3 +13,4 @@ public protocol TLS13DelegatedCredentialValidating: Sendable {
     at instant: VerificationInstant
   ) throws(TLS13DelegatedCredentialError) -> SubjectPublicKeyInfo
 }
+import SSLTypes

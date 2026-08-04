@@ -3,7 +3,7 @@ import SSLCore
 /// Incremental SHA-512 context. The scalar compressor is shared by SHA-512
 /// and the SHA-384 truncated variant; target-specific acceleration is a later
 /// backend decision and does not change this state contract.
-public struct SHA512Context: ~Copyable, HashContext, HMACSHA2Context {
+public struct SHA512Context: ~Copyable, HashContext, HMACSHA2Context, Sendable {
   public static let digestByteCount = 64
   fileprivate static let blockByteCount = 128
   fileprivate static let maximumInputByteCount = UInt64.max >> 3
@@ -259,7 +259,7 @@ extension UInt64 {
   }
 }
 
-public struct SHA384Context: ~Copyable, HashContext, HMACSHA2Context {
+public struct SHA384Context: ~Copyable, HashContext, HMACSHA2Context, Sendable {
   public static let digestByteCount = 48
   private var inner: SHA512Context
 

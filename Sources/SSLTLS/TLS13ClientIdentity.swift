@@ -1,4 +1,5 @@
 import SSLCore
+import SSLTypes
 import SSLCrypto
 import SSLX509
 

@@ -17,14 +17,18 @@ The current package graph is:
 
 ```mermaid
 flowchart TD
+    Types["SSLTypes\nvocabulary"]
     Core["SSLCore\nbytes, ownership, limits, capabilities"]
     Crypto["SSLCrypto\nSHA-2/3, HMAC/HKDF, AEAD, X25519, P-256, ML-KEM, DRBG, and primitive contracts"]
     ASN1["SSLASN1\nstrict DER foundation"]
     X509["SSLX509\ncertificate-byte models"]
     TLS["SSLTLS\nTLS 1.3 engines, records, and actions"]
+    DTLS["SSLDTLS\nDTLS 1.2 WebRTC profile and records"]
     QUIC["SSLQUIC\nordered QUIC TLS output models"]
     Facade["SSL\numbrella and application composition"]
 
+    Types --> Core
+    Types --> TLS
     Core --> Crypto
     Core --> ASN1
     Crypto --> X509
@@ -33,6 +37,8 @@ flowchart TD
     Crypto --> TLS
     X509 --> TLS
     Core --> TLS
+    Core --> DTLS
+    Crypto --> DTLS
     TLS --> QUIC
     Crypto --> QUIC
     Core --> QUIC
@@ -40,6 +46,7 @@ flowchart TD
     ASN1 --> Facade
     X509 --> Facade
     TLS --> Facade
+    DTLS --> Facade
     QUIC --> Facade
 ```
 
@@ -47,16 +54,49 @@ Dependencies between responsibility modules flow downward only. `SSL` is the pac
 
 Entropy and clock interfaces and their system implementations live in `SSLCore`. They are composed by purpose—entropy for cryptographic operations, wall time for certificate verification, and monotonic time for DTLS—rather than through one all-capabilities container. Native uses the host POSIX clock backend; WASI and Embedded WASI use WASI clock syscalls. Application storage, trust acquisition, and transport remain injected capabilities.
 
+### 2.1 Workspace ecosystem boundary
+
+The package graph above describes `swift-ssl` internals. Across the networking
+workspace, public secure sessions have a separate owner:
+
+```mermaid
+flowchart TD
+    LibP2P["swift-libp2p"] -->|Stream TLS| SwiftTLS["swift-tls-sessions\npublic session contracts"]
+    LibP2P --> WebRTC["swift-webrtc"]
+    LibP2P --> QUICPackage["swift-quic"]
+    WebRTC -->|DTLS session| SwiftTLS
+    QUICPackage -->|QUIC TLS session| SwiftTLS
+    SwiftTLS --> SwiftSSL["swift-ssl\ncanonical mechanisms"]
+```
+
+`swift-tls-sessions` owns the stable Stream TLS, DTLS, and QUIC TLS configuration,
+lifecycle, typed effect, error, and capability-suspension contracts. It maps
+those public operations onto the deterministic mechanisms in `SSLTLS` and
+`SSLQUIC`; it must not reproduce their transcript, key schedule, wire codec, or
+record protection.
+
+`swift-quic` owns CRYPTO offsets/reassembly and all QUIC packet behavior.
+`swift-webrtc` owns ICE, DTLS role/fingerprint/session binding, timer delivery,
+SRTP/SCTP, and media. `swift-libp2p` is the top-level composition and peer-policy
+owner. No dependency from `swift-ssl` to these packages is permitted.
+
+This is the target dependency direction. Current offset-qualified input and
+reassembly in `SSLQUIC` are migration debt, not an exception to the boundary.
+The cross-package source of truth is
+[Secure Transport Architecture](../../SECURE_TRANSPORT_ARCHITECTURE.md).
+
 ## 3. Module responsibilities
 
 | Module | Owns | Must not own |
 |---|---|---|
-| `SSLCore` | Owned byte storage, scoped byte borrows, checked cursors/builders, resource limits, secret-memory owner, constant-time utilities, entropy/time capability protocols, shared error primitives | Algorithms, ASN.1 meaning, sockets, Foundation data types |
-| `SSLCrypto` | Hash, MAC, KDF, AEAD, key agreement, KEM, signatures, HPKE, fixed-width field/scalar arithmetic, algorithm identifiers and policy gates | Certificates, TLS negotiation, OS entropy selection, arbitrary public mutable big integers |
+| `SSLTypes` | Implementation-independent TLS vocabulary: role, version, cipher-suite identifiers, encryption level, ALPN, and opaque server-name values | Secret ownership, parsing, cryptographic algorithms, policy decisions, transport I/O |
+| `SSLCore` | Owned byte storage, scoped byte borrows, checked cursors/builders, resource limits, `TLSTrafficSecret` ownership/wipe/borrow, constant-time utilities, entropy/time capability protocols, shared error primitives | Algorithms, ASN.1 meaning, sockets, Foundation data types |
+| `SSLCrypto` | Hash, MAC, KDF, AEAD, key agreement, KEM, signatures, HPKE, fixed-width field/scalar arithmetic, and algorithm policy gates | Certificate policy, TLS negotiation, vocabulary identifiers, OS entropy selection, arbitrary public mutable big integers |
 | `SSLASN1` | Strict DER TLV parser/writer, OID and primitive codecs, RFC 7468 PEM boundaries, parse budgets | Certificate validation, BER normalization, algorithm policy, file I/O |
 | `SSLX509` | Immutable certificate/CRL/OCSP models, SPKI and private-key containers, path building, RFC 5280 policy, service identity, revocation evidence validation | Network fetching, global trust, UI, silent CN fallback |
 | `SSLTLS` | TLS 1.3 handshake and record layers, main/post-handshake server/client certificate authentication with Ed25519, P-256 ECDSA, or RSA-PSS, X25519/`secp256r1`/pinned-hybrid key exchange, DTLS 1.3 framing/replay/flight state, transcript/key schedule, ticket/state/PSK binder primitives, resumption, 0-RTT policy, ECH, alerts, and correlated credential/signature/trust capability suspension | Socket I/O, event loops, DNS, persistent stores, private-key services, and QUIC packet protection |
-| `SSLQUIC` | Mapping TLS handshake bytes, encryption levels, alerts, and traffic-secret events to RFC 9001 | CRYPTO reassembly, QUIC packets, header protection, loss recovery, congestion control, QUIC key phase |
+| `SSLDTLS` | Complete sans-I/O DTLS 1.2 WebRTC mechanism: wire codecs, handshake FSM, ECDHE/signature/certificate seams, cookie/address validation, bounded fragmentation, anti-replay, flights/retransmission state, SRTP negotiation/export, and AES-GCM record protection | Transport I/O, WebRTC SDP/fingerprint policy, ICE, SRTP media packet processing, SCTP, and application lifecycle |
+| `SSLQUIC` | Mapping ordered TLS handshake bytes, encryption levels, alerts, and traffic-secret events to RFC 9001 | CRYPTO offsets/reassembly, QUIC packets, header protection, loss recovery, congestion control, QUIC key phase; the current reassembler is migration debt |
 | `SSLCore` system adapters | Concrete entropy, realtime clock, and monotonic clock backends with typed failures and one cross-target protocol contract | Storage policy, trust acquisition, transport, or target-specific weakening of ownership/concurrency contracts |
 | `SSL` | One-import umbrella, curated primitive adapters, and protocol-backed TLS client/server composition over explicit platform and external credential/trust capabilities | Duplicate cryptographic/protocol implementation, socket ownership, private-key service ownership, or hidden fallback |
 
@@ -70,7 +110,7 @@ flowchart LR
     Engine["single-owner state machine"] --> Batch["one owned output backing"]
     Batch --> R1["action range"]
     Batch --> R2["action range"]
-    Secret["noncopyable secret owner"] -->|"scoped borrow"| Primitive["constant-time primitive"]
+    Secret["SSLCore.TLSTrafficSecret\nnoncopyable owner"] -->|"scoped borrow"| Primitive["constant-time primitive"]
     Secret -->|"wipe, then exactly-once free"| End["deallocation"]
 ```
 
@@ -110,7 +150,7 @@ Protocols describe semantic responsibilities; concrete algorithms and parsers re
 | `KeyAgreement` | Validates peer public input and returns a noncopyable shared secret. |
 | `KeyEncapsulationMechanism` | Key generation, encapsulation, and decapsulation with `KEMError`; correctly sized ML-KEM ciphertexts use implicit rejection rather than a validity-revealing error. |
 | `DigitalSignature` / `SignatureVerifier` | Message signing refines message verification and requires distinct noncopyable private and owned public key types; Ed25519 implements both capabilities. |
-| `DigestSignatureVerifier` | Verifies a caller-selected digest without requiring a signing API; P-384/P-521 ECDSA remain certificate-compatibility capabilities, while P-256 also exposes a separate deterministic signing operation. |
+| `DigestSignatureVerifier` | Verifies a caller-selected digest without requiring a signing API; P-256/P-384/P-521 expose fixed-width verification and deterministic RFC 6979 signing through separate private-key owners. |
 
 P-256 secret key agreement is shared by RFC 9180
 DHKEM(P-256, HKDF-SHA256) and the role-specific TLS 1.3 `secp256r1` key-share
@@ -216,6 +256,13 @@ The profile owns TLS 1.3 records, transcript/key schedule, main- and post-handsh
 ### 6.2 DTLS profile
 
 The profile adds epochs, record sequence numbers, record-number protection, replay windows, handshake fragmentation/reassembly, flights, ACKs, retransmission state, connection IDs, post-handshake client authentication, DTLS KeyUpdate, and DTLS-SRTP negotiation/export. The transport owns datagram I/O, path MTU decisions, media transport, and timer delivery.
+
+DTLS retransmission is the one deliberate retained-wire exception in the
+ownership model. `SSLTLS` owns the bounded retransmission flight because the
+engine must reproduce the exact handshake bytes and epoch metadata after a
+timer event. The flight is an immutable owner with a checked byte range; no
+borrowed transport pointer is retained. The transport only schedules the timer
+and sends a scoped borrow of the retained flight.
 
 Invalid or replayed datagrams produce an explicit disposition/diagnostic value where the protocol requires discard. A discard is not represented as successful application data.
 

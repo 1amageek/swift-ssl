@@ -24,7 +24,24 @@ final class AESGCMTests: XCTestCase {
         blockCipher.encrypt(plaintext.span, into: &outputSpan)
       }
       XCTAssertEqual(hex(output), expectedHex)
+
+      var decrypted = ContiguousArray<UInt8>(repeating: 0, count: 16)
+      decrypted.withUnsafeMutableBufferPointer { buffer in
+        var outputSpan = MutableSpan(_unsafeElements: buffer)
+        blockCipher.decrypt(bytes(expectedHex).span, into: &outputSpan)
+      }
+      XCTAssertEqual(hex(decrypted), "00112233445566778899aabbccddeeff")
     }
+
+    let decryptKey = bytes("000102030405060708090a0b0c0d0e0f")
+    let decryptInput = bytes("69c4e0d86a7b0430d8cdb78070b4c55a")
+    var decryptOutput = ContiguousArray<UInt8>(repeating: 0, count: 16)
+    let decryptCipher = AESBlockCipher(key: decryptKey.span)
+    decryptOutput.withUnsafeMutableBufferPointer { buffer in
+      var outputSpan = MutableSpan(_unsafeElements: buffer)
+      decryptCipher.decrypt(decryptInput.span, into: &outputSpan)
+    }
+    XCTAssertEqual(hex(decryptOutput), "00112233445566778899aabbccddeeff")
   }
 
   func testNISTAES128EmptyMessage() throws {
