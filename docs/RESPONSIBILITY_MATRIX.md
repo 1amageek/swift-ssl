@@ -3,7 +3,7 @@
 This matrix is the completeness ledger for replacing BoringSSL. Completeness means that no modern responsibility is unowned; it does not mean source or ABI compatibility.
 
 The matrix records `swift-ssl` mechanism ownership. Public Stream TLS, DTLS, and
-QUIC TLS session contracts belong to `swift-tls-sessions`; `swift-tls-sessions` delegates their
+QUIC TLS session contracts belong to `swift-tls`; `swift-tls` delegates their
 cryptographic and protocol transitions to this package. QUIC CRYPTO
 offsets/reassembly belong to `swift-quic`, and WebRTC security generation,
 fingerprints, ICE, SRTP, and SCTP belong to `swift-webrtc`. See
@@ -88,7 +88,7 @@ Status values are `required`, `policy-gated`, `experimental`, `later`, and `excl
 | Key logging | Debug-only policy | Explicit diagnostic capability, unavailable by default, secrets never reach general logs |
 | SSL/TLS 1.0-1.2 | Excluded | No downgrade or compatibility backend |
 | DTLS 1.0 | Excluded | No old record/handshake profile |
-| DTLS 1.2 WebRTC profile | Implemented as a scoped sans-I/O mechanism | `SSLDTLS` owns `use_srtp`, `extended_master_secret`, `renegotiation_info`, ECDHE-ECDSA handshake, cookie/address validation, bounded fragments, anti-replay, flights/retransmission state, AES-GCM records, and the RFC 5705/5764 SRTP exporter; `swift-tls-sessions` supplies identity and transport/timer adapters; no general TLS 1.2 fallback |
+| DTLS 1.2 WebRTC profile | Implemented as a scoped sans-I/O mechanism | `SSLDTLS` owns `use_srtp`, `extended_master_secret`, `renegotiation_info`, ECDHE-ECDSA handshake, cookie/address validation, bounded fragments, anti-replay, flights/retransmission state, AES-GCM records, and the RFC 5705/5764 SRTP exporter; `swift-tls` supplies identity and transport/timer adapters; no general TLS 1.2 fallback |
 | Renegotiation, False Start, NPN, Channel ID | Excluded | Historical features outside the modern profile |
 
 ## 5. Explicit legacy algorithm exclusions

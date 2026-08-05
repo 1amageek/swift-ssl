@@ -16,13 +16,13 @@ nonce, and authenticated data as `Span<UInt8>` and returns an `OwnedBytes`
 result. `SecretBytes` remains the unique key owner and wipes the key when the
 owner is released.
 
-`swift-tls-sessions` uses a small typed adapter that converts its existing
+`swift-tls` uses a small typed adapter that converts its existing
 compatibility arrays at the package boundary. The adapter does not implement a
 second AEAD and does not silently fall back to another provider.
 
 ```mermaid
 flowchart LR
-    S[swift-tls-sessions DTLS facade\nconfiguration / effects]
+    S[swift-tls DTLS facade\nconfiguration / effects]
     A[typed session adapter]
     D[SSLDTLS\nDTLS 1.2 AES-GCM + extensions]
     C[SSLCrypto AESGCM]

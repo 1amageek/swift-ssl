@@ -54,15 +54,15 @@ Applications that only need cryptographic primitives should depend directly on
 ## Ecosystem boundary
 
 `swift-ssl` is the canonical mechanism implementation underneath the public
-TLS-family session APIs in `swift-tls-sessions`:
+TLS-family session APIs in `swift-tls`:
 
 ```text
-swift-libp2p -> swift-tls-sessions/TLS -> swift-ssl
-swift-webrtc -> swift-tls-sessions/DTLS -> swift-ssl
-swift-quic   -> swift-tls-sessions/QUICTLS -> swift-ssl
+swift-libp2p -> swift-tls/TLS -> swift-ssl
+swift-webrtc -> swift-tls/DTLS -> swift-ssl
+swift-quic   -> swift-tls/QUICTLS -> swift-ssl
 ```
 
-`swift-tls-sessions` owns stable Stream TLS, DTLS, and QUIC TLS session contracts.
+`swift-tls` owns stable Stream TLS, DTLS, and QUIC TLS session contracts.
 `swift-ssl` owns the cryptographic, PKI, handshake, record, and key-schedule
 mechanisms that implement those contracts. Transport packages own I/O and
 transport framing. See the workspace
@@ -73,7 +73,7 @@ stack. It owns only implementation-independent values and opaque byte-backed
 names. The secret owner remains `SSLCore.TLSTrafficSecret`; ownership-backed
 borrows and output sinks are deliberately not exported by `swift-tls-types`.
 
-`swift-ssl` is the only TLS/DTLS mechanism owner. `swift-tls-sessions` is a
+`swift-ssl` is the only TLS/DTLS mechanism owner. `swift-tls` is a
 session-contract and policy facade: it supplies identity, trust, timer, and
 transport-facing adapters but does not duplicate wire, transcript, key schedule,
 handshake, replay, flight, or record code. QUIC CRYPTO offsets/reassembly remain
@@ -103,7 +103,7 @@ require explicit policy enablement.
 
 The workspace target architecture reserves one deliberate exception: the narrow
 DTLS 1.2 WebRTC interoperability profile is implemented completely in `SSLDTLS`
-and exposed to `swift-tls-sessions` through a typed facade. It is not a general
+and exposed to `swift-tls` through a typed facade. It is not a general
 TLS 1.2 fallback backend. Browser/native interop and security review remain
 release evidence gates, not alternate production implementations.
 

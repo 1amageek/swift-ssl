@@ -11,7 +11,7 @@ The public dependency direction is intentionally layered:
 ```mermaid
 flowchart BT
     Types["swift-tls-types / TLSTypes\nshared vocabulary"] --> SSL["swift-ssl\nmechanisms and ownership"]
-    SSL --> Sessions["swift-tls-sessions\nsession contracts"]
+    SSL --> Sessions["swift-tls\nsession contracts"]
 ```
 
 The vocabulary is consumed by protocol, certificate, and transport-facing
@@ -38,7 +38,7 @@ Those guarantees are implemented by `swift-ssl` and remain in `SSLCore`.
 3. `swift-ssl` depends on `swift-tls-types`; `SSLCore` owns all
    ownership-backed byte and secret contracts, including wipe and borrow
    lifetimes. The former internal `SSLTypes` target is removed.
-4. `swift-tls-sessions` is the public session-contract layer above `swift-ssl`.
+4. `swift-tls` is the public session-contract layer above `swift-ssl`.
    It may consume `TLSTypes`, but `swift-ssl` never depends on sessions or
    transport packages.
 5. DTLS retransmission flights remain engine-owned immutable buffers. The
@@ -55,7 +55,7 @@ swift-tls-types (TLSTypes)
         ↓
 swift-ssl (SSLCore / SSLCrypto / SSLTLS / SSLDTLS / SSLQUIC)
         ↓
-swift-tls-sessions (TLS / DTLS / QUIC TLS sessions)
+swift-tls (TLS / DTLS / QUIC TLS sessions)
 ```
 
 Consumers can import `TLSTypes` without linking cryptographic mechanisms.

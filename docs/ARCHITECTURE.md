@@ -61,7 +61,7 @@ workspace, public secure sessions have a separate owner:
 
 ```mermaid
 flowchart TD
-    LibP2P["swift-libp2p"] -->|Stream TLS| SwiftTLS["swift-tls-sessions\npublic session contracts"]
+    LibP2P["swift-libp2p"] -->|Stream TLS| SwiftTLS["swift-tls\npublic session contracts"]
     LibP2P --> WebRTC["swift-webrtc"]
     LibP2P --> QUICPackage["swift-quic"]
     WebRTC -->|DTLS session| SwiftTLS
@@ -69,7 +69,7 @@ flowchart TD
     SwiftTLS --> SwiftSSL["swift-ssl\ncanonical mechanisms"]
 ```
 
-`swift-tls-sessions` owns the stable Stream TLS, DTLS, and QUIC TLS configuration,
+`swift-tls` owns the stable Stream TLS, DTLS, and QUIC TLS configuration,
 lifecycle, typed effect, error, and capability-suspension contracts. It maps
 those public operations onto the deterministic mechanisms in `SSLTLS` and
 `SSLQUIC`; it must not reproduce their transcript, key schedule, wire codec, or
