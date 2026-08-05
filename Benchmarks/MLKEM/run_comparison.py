@@ -31,8 +31,8 @@ EXPECTED_XCODE_BUILD = "27A5209h"
 EXPECTED_MACOS_SDK_VERSION = "27.0"
 EXPECTED_MACOS_SDK_BUILD = "26A5368f"
 EXPECTED_ARCHITECTURE = "arm64"
-SWIFT_BUILD_TRIPLE = "arm64-apple-macosx15.0"
-DEPLOYMENT_TARGET = "15.0"
+SWIFT_BUILD_TRIPLE = "arm64-apple-macosx26.0"
+DEPLOYMENT_TARGET = "26.0"
 TARGET_SPEEDUP = 1.10
 MINIMUM_SAMPLE_COUNT = 30
 MINIMUM_SAMPLE_NANOSECONDS = 200_000_000
@@ -312,6 +312,14 @@ def make_snapshot(repository: Path, commit: str, destination: Path) -> dict[str,
         cwd=destination.parent,
         timeout_seconds=120,
     )
+    # SwiftPM resolves branch-based dependencies through Package.resolved. The
+    # file is intentionally ignored by the repository, but a read-only source
+    # snapshot still needs a writable resolution input before permissions are
+    # tightened below. Preserve the caller's resolved graph without treating it
+    # as source identity; the archive hash remains the Git commit hash.
+    resolved_dependencies = repository / "Package.resolved"
+    if resolved_dependencies.is_file():
+        shutil.copy2(resolved_dependencies, destination / "Package.resolved")
     archive_digest = file_sha256(archive)
     for path in sorted(destination.rglob("*"), reverse=True):
         if path.is_symlink():
@@ -319,12 +327,21 @@ def make_snapshot(repository: Path, commit: str, destination: Path) -> dict[str,
         path.chmod(0o555 if path.is_dir() else 0o444)
     destination.chmod(0o555)
     archive.chmod(0o444)
+    resolution = destination / "Package.resolved"
     return {
         "commit": commit,
         "archivePath": str(archive),
         "archiveSHA256": archive_digest,
         "treeSHA256": tree_sha256(destination),
         "path": str(destination),
+        "resolvedDependencies": (
+            {
+                "path": str(resolution),
+                "sha256": file_sha256(resolution),
+            }
+            if resolution.is_file()
+            else None
+        ),
     }
 
 
