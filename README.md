@@ -163,15 +163,16 @@ Benchmarks are isolated under `Benchmarks/` and are not part of the normal test
 command. They are evidence for workload-specific optimization decisions, not a
 substitute for the protocol, failure-path, or target validation below.
 
-The SHA-256 comparison against pinned BoringSSL is retained as a historical,
-independent measurement. Its `1.10x` ratio is explicitly outside the completion
-and release gate for the Pure Swift responsibility migration. This project also
-does not promise BoringSSL API, ABI, source, or internal implementation
-equivalence.
+The SHA-256 comparison against pinned BoringSSL is an independent optimization
+measurement. Its `1.10x` ratio is explicitly outside the completion and release
+gate for the Pure Swift responsibility migration. This project also does not
+promise BoringSSL API, ABI, source, or internal implementation equivalence.
 
 | Workload group | BoringSSL time / Swift time | Gate |
 |---|---:|---|
 | Native SHA-256, 64 B / 1 KiB / 16 KiB | `1.0939x` / `0.8612x` / `0.8399x` | Historical measurement; not a gate |
+| Native SHA-256, source-optimized 64 B / 1 KiB / 16 KiB | `1.1564x` / `0.8594x` / `0.8385x` | Exploratory; 64 B pass, long-input gate fail |
+| Native SHA-256 batch, two independent 64 B / 1 KiB / 16 KiB messages | `1.2072x` / `1.2569x` / `1.2869x` | Exploratory; all 95% CI lower bounds pass `1.10x` |
 | WASI and Embedded WASI SHA-256, 1 MiB variants | `1.3311x`–`1.3389x` | Historical exploratory measurement |
 | Native X25519MLKEM768 TLS round trip | `1.1093x` | Pass |
 | Native X25519MLKEM768 TLS round trip, post-session changes (exploratory) | `1.1652x` (`1.1639x`–`1.1661x` 95% CI) | Exploratory pass |
@@ -179,9 +180,12 @@ equivalence.
 | Native ML-DSA-44/65/87 operations | `1.1534x`–`2.7822x` | Pass |
 | Native HPKE X25519 workloads | `1.1064x`–`1.1644x` | Pass |
 
-The Native SHA-256 result is retained for reproducibility. It does not block
-the current completion status, and portable WASI results are not used to claim
-Native BoringSSL performance parity.
+The Native one-message and independent-message batch contracts are reported
+separately. The two-way Pure Swift ARM64 batch path exceeds `1.10x` at all three
+message lengths by the lower bound of a 30-pair bootstrap confidence interval;
+it does not imply that the one-message path meets the same gate. Portable WASI
+results are not used to claim Native BoringSSL performance parity. See the
+detailed [SHA-256 report](Benchmarks/SHA256/README.md).
 
 Committed timing and memory artifacts:
 

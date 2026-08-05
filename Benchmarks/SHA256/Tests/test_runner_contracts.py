@@ -528,6 +528,39 @@ class RunnerContractTests(unittest.TestCase):
             [(0x100, 0x104)],
         )
 
+    def test_backedge_detection_accepts_symbolized_function_entry(self) -> None:
+        symbol = "_$s9SSLCrypto17SHA256ARM64KernelO22compressMultipleBlocksyyFZ"
+        self.assertEqual(
+            runner.find_backedges(
+                [
+                    (0x100, "nop", ""),
+                    (0x104, f"b.ne {symbol}", ""),
+                ],
+                function_start=0x100,
+                function_symbol=symbol,
+            ),
+            [(0x100, 0x104)],
+        )
+
+    def test_symbolized_function_entry_is_not_an_external_transfer(self) -> None:
+        symbol = "_$s9SSLCrypto17SHA256ARM64KernelO22compressMultipleBlocksyyFZ"
+        self.assertFalse(
+            runner.is_external_branch_transfer(
+                instruction=f"b.ne {symbol}",
+                function_start=0x100,
+                function_end=0x200,
+                function_symbol=symbol,
+            )
+        )
+
+    def test_callee_saved_simd_restore_is_classified(self) -> None:
+        self.assertTrue(
+            runner.is_callee_saved_simd_restore("ldp d9, d8, [sp, #0x10]")
+        )
+        self.assertFalse(
+            runner.is_callee_saved_simd_restore("ldp q9, q8, [sp, #0x10]")
+        )
+
     def test_multiblock_gate_rejects_vector_reload_inside_loop(self) -> None:
         kernel = self.synthetic_kernel(extra_loop_instruction="ldr q2, [x9]")
         context = self.synthetic_context_update()
@@ -779,6 +812,31 @@ class RunnerContractTests(unittest.TestCase):
                     timeout_seconds=1,
                 )
 
+    def test_pair_worker_parses_both_digests(self) -> None:
+        first_digest = "01" * 32
+        second_digest = "fe" * 32
+        completed = subprocess.CompletedProcess(
+            args=["worker"],
+            returncode=0,
+            stdout=(
+                f"PAIR_RESULT,17,9,{first_digest},{second_digest}\n"
+            ),
+            stderr="",
+        )
+        with mock.patch.object(runner, "run_command", return_value=completed):
+            result = runner.run_worker(
+                Path("/synthetic/worker"),
+                byte_count=64,
+                iterations=1,
+                warmup_iterations=0,
+                timeout_seconds=1,
+                independent_pair=True,
+            )
+
+        self.assertEqual(result["digestHexes"], [first_digest, second_digest])
+        self.assertEqual(result["digestHex"], first_digest + second_digest)
+        self.assertEqual(result["command"][1], "--pair")
+
     def test_validation_output_rejects_surrounding_whitespace(self) -> None:
         completed = subprocess.CompletedProcess(
             args=["worker"],
@@ -793,6 +851,45 @@ class RunnerContractTests(unittest.TestCase):
                     byte_count=64,
                     timeout_seconds=1,
                 )
+
+    def test_pair_validation_parses_both_digests(self) -> None:
+        first_digest = "11" * 32
+        second_digest = "22" * 32
+        output = "\n".join(
+            f"PAIR_DIGEST,{index},{first_digest},{second_digest}"
+            for index in range(runner.VALIDATION_ITERATION_COUNT)
+        ) + "\n"
+        completed = subprocess.CompletedProcess(
+            args=["worker"],
+            returncode=0,
+            stdout=output,
+            stderr="",
+        )
+        with mock.patch.object(runner, "run_command", return_value=completed):
+            result = runner.run_validation_worker(
+                Path("/synthetic/worker"),
+                byte_count=64,
+                timeout_seconds=1,
+                independent_pair=True,
+            )
+
+        self.assertEqual(
+            result["digests"],
+            [(first_digest, second_digest)]
+            * runner.VALIDATION_ITERATION_COUNT,
+        )
+        self.assertEqual(result["command"][1], "--validate-pair")
+
+    def test_pair_summary_counts_both_messages(self) -> None:
+        result = runner.summarize_implementation(
+            [100],
+            byte_count=64,
+            iterations=10,
+            message_count=2,
+        )
+
+        self.assertEqual(result["nanosecondsPerOperation"]["median"], 5.0)
+        self.assertEqual(result["operationsPerSecond"]["median"], 200_000_000.0)
 
     def test_atomic_artifact_write_does_not_clobber_existing_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -1102,7 +1199,7 @@ class RunnerContractTests(unittest.TestCase):
             "Extern",
         ]
         if module_name == "SSLCrypto":
-            feature_names.append("BuiltinModule")
+            feature_names.extend(["BuiltinModule", "Volatile"])
         if module_name == "SSLCore":
             feature_names.append("Volatile")
         arguments = [
@@ -1187,6 +1284,7 @@ class RunnerContractTests(unittest.TestCase):
                 "-L",
                 str(platform_library_root),
                 "-g",
+                "-gnone",
                 "-Xcc",
                 "-isysroot",
                 "-Xcc",
@@ -1460,18 +1558,21 @@ class RunnerContractTests(unittest.TestCase):
         extra_loop_instruction: str,
     ) -> dict[str, object]:
         instructions: list[tuple[int, str, str]] = []
-        address = 0x80
-        for register in range(2, 18):
-            instruction = f"ldr q{register}, [x9]"
-            instructions.append((address, instruction, instruction))
-            address += 4
-
         loop_start = 0x100
         loop_instructions = [
-            "ldp q20, q21, [x0]",
-            "ldp q22, q23, [x0, #0x20]",
+            "ldr w8, [x3]",
+            "ld1.4s { v16, v17, v18, v19 }, [x0], #0x40",
             extra_loop_instruction,
         ]
+        for offset in range(0, 256, 32):
+            suffix = "" if offset == 0 else f", #0x{offset:x}"
+            loop_instructions.append(f"ldp q20, q21, [x8{suffix}]")
+        loop_instructions.extend(
+            "sha256su0.4s v2, v3" for _ in range(12)
+        )
+        loop_instructions.extend(
+            "sha256su1.4s v2, v3, v4" for _ in range(12)
+        )
         loop_instructions.extend("sha256h.4s q0, q1, v2" for _ in range(16))
         loop_instructions.extend("sha256h2.4s q1, q0, v2" for _ in range(16))
         address = loop_start
@@ -1495,7 +1596,7 @@ class RunnerContractTests(unittest.TestCase):
     @staticmethod
     def synthetic_context_update() -> dict[str, object]:
         call_instructions = [
-            "bl CryptoInputErrorOACs0E0AAWl",
+            "bl CryptoInputErrorOACs0D0AAWl",
             "bl swift_willThrowTypedImpl",
             "bl _memmove",
             "bl _memmove",
@@ -1518,7 +1619,7 @@ class RunnerContractTests(unittest.TestCase):
         call_instructions = [
             "bl _bzero",
             "bl _bzero",
-            "bl CryptoInputErrorOACs0E0AAWl",
+            "bl CryptoInputErrorOACs0D0AAWl",
             "bl swift_willThrowTypedImpl",
             "bl stack_chk_fail",
         ]

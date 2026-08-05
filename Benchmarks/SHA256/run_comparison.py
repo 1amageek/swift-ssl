@@ -25,7 +25,7 @@ from typing import Any, Sequence
 
 
 EXPECTED_BORINGSSL_COMMIT = "ae49d2681a56ca7b8609f6039a770fda2a8eb550"
-ARTIFACT_SCHEMA_VERSION = 4
+ARTIFACT_SCHEMA_VERSION = 5
 EXPECTED_BORINGSSL_ORIGIN = "https://boringssl.googlesource.com/boringssl"
 EXPECTED_SWIFT_TOOLCHAIN = "org.swift.64202607231a"
 EXPECTED_SWIFT_COMPILER_COMMIT = "ef761e567dc94ee"
@@ -34,10 +34,10 @@ EXPECTED_XCODE_BUILD = "27A5209h"
 EXPECTED_MACOS_SDK_VERSION = "27.0"
 EXPECTED_MACOS_SDK_BUILD = "26A5368f"
 EXPECTED_ARCHITECTURE = "arm64"
-SWIFT_BUILD_TRIPLE = "arm64-apple-macosx15.0"
+SWIFT_BUILD_TRIPLE = "arm64-apple-macosx26.0"
 SWIFT_COMPILE_TARGET = SWIFT_BUILD_TRIPLE
 SWIFT_BUILD_DIRECTORY_TRIPLE = "arm64-apple-macosx"
-DEPLOYMENT_TARGET = "15.0"
+DEPLOYMENT_TARGET = "26.0"
 HEADLINE_BYTE_COUNTS = (64, 1024, 16384)
 INITIAL_ITERATIONS = {
     64: 250_000,
@@ -101,6 +101,13 @@ BUILD_PROCESS_EXCLUDED_EXACT_NAMES = frozenset(
 )
 RESULT_PATTERN = re.compile(r"^RESULT,([0-9]+),([0-9]+),([0-9a-f]{64})$")
 DIGEST_PATTERN = re.compile(r"^DIGEST,([0-9]+),([0-9a-f]{64})$")
+PAIR_RESULT_PATTERN = re.compile(
+    r"^PAIR_RESULT,([0-9]+),([0-9]+),"
+    r"([0-9a-f]{64}),([0-9a-f]{64})$"
+)
+PAIR_DIGEST_PATTERN = re.compile(
+    r"^PAIR_DIGEST,([0-9]+),([0-9a-f]{64}),([0-9a-f]{64})$"
+)
 BORINGSSL_CAPABILITY_PATTERN = re.compile(
     r"^CAPABILITY,boringssl_asm,([01])$"
 )
@@ -188,6 +195,16 @@ def parse_positive_integer(value: str) -> int:
     return parsed
 
 
+def parse_positive_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("expected a positive number") from error
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise argparse.ArgumentTypeError("expected a positive number")
+    return parsed
+
+
 def parse_nonnegative_integer(value: str) -> int:
     try:
         parsed = int(value, 10)
@@ -261,6 +278,23 @@ def build_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--maximum-load-per-logical-cpu",
+        type=parse_positive_float,
+        default=MAXIMUM_LOAD_PER_LOGICAL_CPU,
+        help=(
+            "Maximum one-minute host load per logical CPU for exploratory timing; "
+            f"default: {MAXIMUM_LOAD_PER_LOGICAL_CPU}. Formal runs require the default."
+        ),
+    )
+    parser.add_argument(
+        "--allow-active-build-processes",
+        action="store_true",
+        help=(
+            "Allow unrelated build processes during exploratory timing; "
+            "formal runs always reject this override."
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         help=(
@@ -274,6 +308,15 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help=(
             "Require committed clean sources, the pinned toolchain, fresh builds, "
             "and all environmental gates. Other runs are exploratory."
+        ),
+    )
+    parser.add_argument(
+        "--independent-pair",
+        action="store_true",
+        help=(
+            "Measure two independent equal-length messages per iteration. "
+            "Pure Swift uses the public batch API while BoringSSL performs "
+            "two sequential public SHA256 calls."
         ),
     )
     return parser
@@ -656,6 +699,7 @@ def require_swift_build_contract(
             "Lifetimes",
             "Extern",
             "BuiltinModule",
+            "Volatile",
         ),
         "SSLSHA256Benchmark": (
             "NonescapableTypes",
@@ -889,6 +933,7 @@ def require_swift_build_contract(
                     "-L",
                     str(platform_library_root),
                     "-g",
+                    "-gnone",
                     "-Xcc",
                     "-isysroot",
                     "-Xcc",
@@ -919,6 +964,7 @@ def require_swift_build_contract(
         "sdkPath": toolchain["macOSSDKPath"],
         "configuration": "release",
         "optimizationFlagObserved": "-O",
+        "debugInformationFlagObserved": "-gnone",
         "wholeModuleOptimizationRequired": True,
         "validatedModules": validated_commands,
         "validatedSourceLists": validated_source_lists,
@@ -2039,6 +2085,7 @@ def find_backedges(
     instructions: Sequence[tuple[int, str, str]],
     *,
     function_start: int,
+    function_symbol: str | None = None,
 ) -> list[tuple[int, int]]:
     branch_pattern = re.compile(
         r"^(?:b|b\.[a-z0-9]+|bc\.[a-z0-9]+|cbnz|cbz|tbnz|tbz)\s+"
@@ -2049,9 +2096,16 @@ def find_backedges(
         if branch_pattern.match(instruction) is None:
             continue
         target_match = target_pattern.search(instruction)
-        if target_match is None:
+        if target_match is not None:
+            target = int(target_match.group(1), 16)
+        elif function_symbol is not None and instruction.endswith(
+            function_symbol
+        ):
+            # otool renders a loop branch to the function entry as the Mach-O
+            # symbol instead of a numeric address on current Xcode toolchains.
+            target = function_start
+        else:
             continue
-        target = int(target_match.group(1), 16)
         if function_start <= target < address:
             backedges.append((target, address))
     return backedges
@@ -2077,11 +2131,23 @@ def is_return_instruction(instruction: str) -> bool:
     )
 
 
+def is_callee_saved_simd_restore(instruction: str) -> bool:
+    register = r"d(?:8|9|1[0-5])"
+    return (
+        re.match(
+            rf"^ldp\s+{register},\s*{register},\s*\[sp(?:,|\])",
+            instruction,
+        )
+        is not None
+    )
+
+
 def is_external_branch_transfer(
     *,
     instruction: str,
     function_start: int,
     function_end: int,
+    function_symbol: str | None = None,
 ) -> bool:
     if (
         re.match(
@@ -2102,6 +2168,8 @@ def is_external_branch_transfer(
     target_text = operands.rsplit(",", 1)[-1].strip()
     numeric_match = re.fullmatch(r"0x([0-9a-fA-F]+)", target_text)
     if numeric_match is None:
+        if function_symbol is not None and target_text == function_symbol:
+            return False
         return True
     target = int(numeric_match.group(1), 16)
     return not function_start <= target < function_end
@@ -2183,7 +2251,7 @@ def analyze_swift_worker_codegen(
         toolchain=toolchain,
         required_symbol_fragments=(
             "SSLSHA256Benchmark",
-            "SHA256C7CommandO3run",
+            "SHA256B7CommandO3run",
         ),
         label="Swift benchmark run",
     )
@@ -2194,6 +2262,7 @@ def analyze_swift_worker_codegen(
     backedges = find_backedges(
         instructions,
         function_start=function_start,
+        function_symbol=function["symbol"],
     )
     if len(backedges) != 1:
         raise BenchmarkError(
@@ -2230,11 +2299,13 @@ def analyze_swift_worker_codegen(
                 instruction=instruction,
                 function_start=function_start,
                 function_end=function_end,
+                function_symbol=function["symbol"],
             )
             or is_return_instruction(instruction)
         )
     ]
     required_loop_calls = {
+        "SHA256Context.init": "SHA256ContextVACycfC",
         "SHA256Context.update": "SHA256ContextV6update",
         "SHA256Context.finalizeInPlace": "SHA256ContextV15finalizeInPlace",
     }
@@ -2300,6 +2371,112 @@ def analyze_swift_worker_codegen(
     }
 
 
+def analyze_swift_pair_worker_codegen(
+    path: Path,
+    *,
+    toolchain: dict[str, Any],
+) -> dict[str, Any]:
+    function = load_macho_text_function(
+        path,
+        toolchain=toolchain,
+        required_symbol_fragments=(
+            "SSLSHA256Benchmark",
+            "SHA256B7CommandO7runPair",
+        ),
+        label="Swift benchmark two-way run",
+    )
+    function_start = function["functionStart"]
+    function_end = function["functionEnd"]
+    instructions = function["instructions"]
+    backedges = find_backedges(
+        instructions,
+        function_start=function_start,
+        function_symbol=function["symbol"],
+    )
+    if len(backedges) != 1:
+        raise BenchmarkError(
+            "Swift benchmark two-way run must contain exactly one timed-loop "
+            f"backedge; found {len(backedges)}"
+        )
+    loop_start, loop_end = backedges[0]
+    loop_instructions = [
+        (address, instruction, line)
+        for address, instruction, line in instructions
+        if loop_start <= address <= loop_end
+    ]
+    loop_disassembly = "\n".join(
+        line for _, _, line in loop_instructions
+    )
+    forbidden = [
+        symbol for symbol in LOOP_FORBIDDEN_SYMBOLS if symbol in loop_disassembly
+    ]
+    if forbidden:
+        raise BenchmarkError(
+            "Swift two-way timed loop contains forbidden ownership/copy "
+            "operations: " + ", ".join(forbidden)
+        )
+    loop_calls = [
+        (address, instruction)
+        for address, instruction, _ in loop_instructions
+        if is_call_instruction(instruction)
+    ]
+    batch_calls = [
+        (address, instruction)
+        for address, instruction in loop_calls
+        if "SHA256O9hashBatch" in instruction
+    ]
+    if len(batch_calls) != 1 or len(loop_calls) != 1:
+        raise BenchmarkError(
+            "Swift two-way timed loop must call the public SHA-256 batch API "
+            f"exactly once and no other helpers; found {loop_calls}"
+        )
+    external_transfers = [
+        instruction
+        for _, instruction, _ in loop_instructions
+        if is_external_branch_transfer(
+            instruction=instruction,
+            function_start=function_start,
+            function_end=function_end,
+            function_symbol=function["symbol"],
+        )
+        or is_return_instruction(instruction)
+    ]
+    if external_transfers:
+        raise BenchmarkError(
+            "Swift two-way timed loop contains external branch transfers: "
+            + ", ".join(external_transfers)
+        )
+    prefix_disassembly = "\n".join(
+        line for address, _, line in instructions if address < loop_start
+    )
+    uniqueness_checks = prefix_disassembly.count("swift_isUniquelyReferenced")
+    ownership_copies = prefix_disassembly.count("consumeAndCreateNew")
+    if uniqueness_checks != 2 or ownership_copies > 2:
+        raise BenchmarkError(
+            "Swift two-way worker ownership setup changed: "
+            f"uniqueness checks={uniqueness_checks}, copies={ownership_copies}"
+        )
+    batch_call_address, batch_call_instruction = batch_calls[0]
+    return {
+        "symbol": function["symbol"],
+        "functionStartAddress": f"0x{function_start:x}",
+        "functionEndAddress": f"0x{function_end:x}",
+        "loopStartAddress": f"0x{loop_start:x}",
+        "loopBackedgeAddress": f"0x{loop_end:x}",
+        "uniquenessChecksBeforeLoop": uniqueness_checks,
+        "conditionalOwnershipCopiesBeforeLoop": ownership_copies,
+        "publicBatchCallInLoop": {
+            "address": f"0x{batch_call_address:x}",
+            "instruction": batch_call_instruction,
+        },
+        "forbiddenSymbolsInLoop": forbidden,
+        "forbiddenSymbolPolicy": list(LOOP_FORBIDDEN_SYMBOLS),
+        "externalBranchTransferCount": len(external_transfers),
+        "loopDisassembly": loop_disassembly,
+        "passed": True,
+    }
+
+
 def analyze_sha256_multiblock_codegen(
     path: Path,
     *,
@@ -2320,6 +2497,7 @@ def analyze_sha256_multiblock_codegen(
     backedges = find_backedges(
         kernel_instructions,
         function_start=kernel_start,
+        function_symbol=kernel["symbol"],
     )
     if len(backedges) != 1:
         raise BenchmarkError(
@@ -2327,29 +2505,12 @@ def analyze_sha256_multiblock_codegen(
             f"block-loop backedge; found {len(backedges)}"
         )
     loop_start, loop_end = backedges[0]
-    prefix_instructions = [
-        instruction
-        for address, instruction, _ in kernel_instructions
-        if address < loop_start
-    ]
     loop_instructions = [
         (address, instruction, line)
         for address, instruction, line in kernel_instructions
         if loop_start <= address <= loop_end
     ]
     loop_disassembly = "\n".join(line for _, _, line in loop_instructions)
-    prefix_constant_loads = [
-        instruction
-        for instruction in prefix_instructions
-        if re.match(r"^ldr\s+q[0-9]+,", instruction) is not None
-    ]
-    if len(prefix_constant_loads) != 16:
-        raise BenchmarkError(
-            "SHA-256 ARM64 multi-block kernel must hoist exactly 16 vector "
-            f"constant loads before the block loop; found "
-            f"{len(prefix_constant_loads)}"
-        )
-
     loop_call_count = sum(
         1
         for _, instruction, _ in loop_instructions
@@ -2358,6 +2519,7 @@ def analyze_sha256_multiblock_codegen(
             instruction=instruction,
             function_start=kernel_start,
             function_end=kernel_end,
+            function_symbol=kernel["symbol"],
         )
         or is_return_instruction(instruction)
     )
@@ -2371,21 +2533,36 @@ def analyze_sha256_multiblock_codegen(
         for _, instruction, _ in loop_instructions
         if "[" in instruction
     ]
-    input_vector_load_offsets: list[int] = []
+    input_vector_loads: list[str] = []
+    constant_vector_pair_load_offsets: list[int] = []
+    volatile_offset_loads: list[str] = []
     unexpected_memory_operations: list[str] = []
     input_vector_load_pattern = re.compile(
-        r"^ldp\s+q[0-9]+,\s*q[0-9]+,\s*"
-        r"\[x0(?:,\s*#(0x[0-9a-fA-F]+))?\]$"
+        r"^ld1\.4s\s+\{\s*v[0-9]+,\s*v[0-9]+,\s*v[0-9]+,\s*"
+        r"v[0-9]+\s*\},\s*\[x0\],\s*#(?:0x40|64)$"
     )
+    constant_vector_pair_load_pattern = re.compile(
+        r"^ldp\s+q[0-9]+,\s*q[0-9]+,\s*"
+        r"\[x8(?:,\s*#(0x[0-9a-fA-F]+))?\]$"
+    )
+    volatile_offset_load_pattern = re.compile(r"^ldr\s+w[0-9]+,\s*\[x3\]$")
     for instruction in loop_memory_instructions:
-        match = input_vector_load_pattern.fullmatch(instruction)
-        if match is None:
-            unexpected_memory_operations.append(instruction)
+        if input_vector_load_pattern.fullmatch(instruction) is not None:
+            input_vector_loads.append(instruction)
             continue
-        offset_text = match.group(1)
-        input_vector_load_offsets.append(
-            int(offset_text, 16) if offset_text is not None else 0
+        constant_match = constant_vector_pair_load_pattern.fullmatch(
+            instruction
         )
+        if constant_match is not None:
+            offset_text = constant_match.group(1)
+            constant_vector_pair_load_offsets.append(
+                int(offset_text, 16) if offset_text is not None else 0
+            )
+            continue
+        if volatile_offset_load_pattern.fullmatch(instruction) is not None:
+            volatile_offset_loads.append(instruction)
+            continue
+        unexpected_memory_operations.append(instruction)
     forbidden_in_loop = [
         symbol
         for symbol in (*LOOP_FORBIDDEN_SYMBOLS, "swift_once")
@@ -2401,6 +2578,16 @@ def analyze_sha256_multiblock_codegen(
         for _, instruction, _ in loop_instructions
         if instruction.startswith("sha256h2.4s")
     )
+    sha256su0_count = sum(
+        1
+        for _, instruction, _ in loop_instructions
+        if instruction.startswith("sha256su0.4s")
+    )
+    sha256su1_count = sum(
+        1
+        for _, instruction, _ in loop_instructions
+        if instruction.startswith("sha256su1.4s")
+    )
     if loop_call_count != 0:
         raise BenchmarkError(
             "SHA-256 ARM64 multi-block loop contains a function call"
@@ -2409,11 +2596,24 @@ def analyze_sha256_multiblock_codegen(
         raise BenchmarkError(
             "SHA-256 ARM64 multi-block loop reloads a page-relative address"
         )
-    if sorted(input_vector_load_offsets) != [0, 32]:
+    if len(input_vector_loads) != 1:
         raise BenchmarkError(
-            "SHA-256 ARM64 multi-block loop must perform exactly two "
-            "64-byte input vector-pair loads at offsets 0 and 32; found "
-            f"{input_vector_load_offsets}"
+            "SHA-256 ARM64 multi-block loop must perform exactly one "
+            "post-indexed 64-byte LD1x4 input load; found "
+            f"{input_vector_loads}"
+        )
+    expected_constant_offsets = list(range(0, 256, 32))
+    if sorted(constant_vector_pair_load_offsets) != expected_constant_offsets:
+        raise BenchmarkError(
+            "SHA-256 ARM64 multi-block loop must perform exactly eight "
+            "constant-vector pair loads at 32-byte offsets; found "
+            f"{constant_vector_pair_load_offsets}"
+        )
+    if len(volatile_offset_loads) != 1:
+        raise BenchmarkError(
+            "SHA-256 ARM64 multi-block loop must perform exactly one "
+            "volatile zero-offset load; found "
+            f"{volatile_offset_loads}"
         )
     if unexpected_memory_operations:
         raise BenchmarkError(
@@ -2432,6 +2632,12 @@ def analyze_sha256_multiblock_codegen(
             f"sha256h and 16 sha256h2 instructions; found "
             f"{sha256h_count} and {sha256h2_count}"
         )
+    if sha256su0_count != 12 or sha256su1_count != 12:
+        raise BenchmarkError(
+            "SHA-256 ARM64 multi-block loop must contain exactly 12 "
+            f"sha256su0 and 12 sha256su1 instructions; found "
+            f"{sha256su0_count} and {sha256su1_count}"
+        )
 
     context_update = load_macho_text_function(
         path,
@@ -2447,7 +2653,7 @@ def analyze_sha256_multiblock_codegen(
         context_instructions,
         label="SHA-256 context update",
         required_calls=(
-            ("typed-error witness", "CryptoInputErrorOACs0E0AAWl", 1),
+            ("typed-error witness", "CryptoInputErrorOACs0D0AAWl", 1),
             ("typed-error throw", "swift_willThrowTypedImpl", 1),
             ("bounded pending-byte copy", "_memmove", 2),
             ("multi-block kernel", "compressMultipleBlocks", 1),
@@ -2470,6 +2676,7 @@ def analyze_sha256_multiblock_codegen(
     context_backedges = find_backedges(
         context_instructions,
         function_start=context_update["functionStart"],
+        function_symbol=context_update["symbol"],
     )
     containing_backedges = [
         (loop_target, branch_address)
@@ -2488,6 +2695,7 @@ def analyze_sha256_multiblock_codegen(
         )
         if "[" in instruction
         and re.search(r"\b[bhdqsv][0-9]+\b", instruction) is not None
+        and not is_callee_saved_simd_restore(instruction)
     ]
     if len(post_helper_vector_memory) != 1:
         raise BenchmarkError(
@@ -2529,7 +2737,7 @@ def analyze_sha256_multiblock_codegen(
         label="SHA-256 context finalize",
         required_calls=(
             ("padding zero fill", "_bzero", 2),
-            ("typed-error witness", "CryptoInputErrorOACs0E0AAWl", 1),
+            ("typed-error witness", "CryptoInputErrorOACs0D0AAWl", 1),
             ("typed-error throw", "swift_willThrowTypedImpl", 1),
             ("stack-check failure", "stack_chk_fail", 1),
         ),
@@ -2540,13 +2748,21 @@ def analyze_sha256_multiblock_codegen(
         "kernelFunctionEndAddress": f"0x{kernel_end:x}",
         "blockLoopStartAddress": f"0x{loop_start:x}",
         "blockLoopBackedgeAddress": f"0x{loop_end:x}",
-        "constantVectorLoadsBeforeLoop": len(prefix_constant_loads),
+        "inputLD1x4LoadsPerBlock": len(input_vector_loads),
+        "constantVectorPairLoadsPerBlock": len(
+            constant_vector_pair_load_offsets
+        ),
+        "constantVectorPairLoadOffsets": sorted(
+            constant_vector_pair_load_offsets
+        ),
+        "volatileZeroOffsetLoadsPerBlock": len(volatile_offset_loads),
         "functionCallsInLoop": loop_call_count,
         "pageAddressLoadsInLoop": loop_page_address_count,
-        "inputVectorPairLoadOffsets": sorted(input_vector_load_offsets),
         "unexpectedMemoryOperations": unexpected_memory_operations,
         "sha256hInstructionsPerBlock": sha256h_count,
         "sha256h2InstructionsPerBlock": sha256h2_count,
+        "sha256su0InstructionsPerBlock": sha256su0_count,
+        "sha256su1InstructionsPerBlock": sha256su1_count,
         "forbiddenSymbolsInLoop": forbidden_in_loop,
         "forbiddenSymbolPolicy": [
             *LOOP_FORBIDDEN_SYMBOLS,
@@ -2578,10 +2794,175 @@ def analyze_sha256_multiblock_codegen(
     }
 
 
+def analyze_sha256_pair_codegen(
+    path: Path,
+    *,
+    toolchain: dict[str, Any],
+) -> dict[str, Any]:
+    kernel = load_macho_text_function(
+        path,
+        toolchain=toolchain,
+        required_symbol_fragments=(
+            "SSLCrypto17SHA256ARM64Kernel",
+            "compressMultipleBlockPairs",
+        ),
+        label="SHA-256 ARM64 two-way kernel",
+    )
+    kernel_start = kernel["functionStart"]
+    kernel_end = kernel["functionEnd"]
+    backedges = find_backedges(
+        kernel["instructions"],
+        function_start=kernel_start,
+        function_symbol=kernel["symbol"],
+    )
+    if len(backedges) != 1:
+        raise BenchmarkError(
+            "SHA-256 ARM64 two-way kernel must contain exactly one "
+            f"block-loop backedge; found {len(backedges)}"
+        )
+    loop_start, loop_end = backedges[0]
+    loop_instructions = [
+        (address, instruction, line)
+        for address, instruction, line in kernel["instructions"]
+        if loop_start <= address <= loop_end
+    ]
+    loop_disassembly = "\n".join(
+        line for _, _, line in loop_instructions
+    )
+    external_transfers = [
+        instruction
+        for _, instruction, _ in loop_instructions
+        if is_call_instruction(instruction)
+        or is_external_branch_transfer(
+            instruction=instruction,
+            function_start=kernel_start,
+            function_end=kernel_end,
+            function_symbol=kernel["symbol"],
+        )
+        or is_return_instruction(instruction)
+    ]
+    if external_transfers:
+        raise BenchmarkError(
+            "SHA-256 ARM64 two-way loop contains a call or external transfer: "
+            + ", ".join(external_transfers)
+        )
+
+    memory_instructions = [
+        instruction
+        for _, instruction, _ in loop_instructions
+        if "[" in instruction
+    ]
+    first_input_pattern = re.compile(
+        r"^ld1\.4s\s+\{\s*v[0-9]+,\s*v[0-9]+,\s*v[0-9]+,\s*"
+        r"v[0-9]+\s*\},\s*\[x0\],\s*#(?:0x40|64)$"
+    )
+    second_input_pattern = re.compile(
+        r"^ld1\.4s\s+\{\s*v[0-9]+,\s*v[0-9]+,\s*v[0-9]+,\s*"
+        r"v[0-9]+\s*\},\s*\[x1\],\s*#(?:0x40|64)$"
+    )
+    constant_pattern = re.compile(
+        r"^ldp\s+q[0-9]+,\s*q[0-9]+,\s*"
+        r"\[x8(?:,\s*#(0x[0-9a-fA-F]+))?\]$"
+    )
+    volatile_pattern = re.compile(r"^ldr\s+w[0-9]+,\s*\[x4\]$")
+    first_input_loads: list[str] = []
+    second_input_loads: list[str] = []
+    constant_offsets: list[int] = []
+    volatile_loads: list[str] = []
+    unexpected_memory: list[str] = []
+    for instruction in memory_instructions:
+        if first_input_pattern.fullmatch(instruction) is not None:
+            first_input_loads.append(instruction)
+            continue
+        if second_input_pattern.fullmatch(instruction) is not None:
+            second_input_loads.append(instruction)
+            continue
+        constant_match = constant_pattern.fullmatch(instruction)
+        if constant_match is not None:
+            offset_text = constant_match.group(1)
+            constant_offsets.append(
+                int(offset_text, 16) if offset_text is not None else 0
+            )
+            continue
+        if volatile_pattern.fullmatch(instruction) is not None:
+            volatile_loads.append(instruction)
+            continue
+        unexpected_memory.append(instruction)
+    if len(first_input_loads) != 1 or len(second_input_loads) != 1:
+        raise BenchmarkError(
+            "SHA-256 ARM64 two-way loop must perform one 64-byte LD1x4 "
+            "load for each input"
+        )
+    expected_constant_offsets = list(range(0, 256, 32))
+    if sorted(constant_offsets) != expected_constant_offsets:
+        raise BenchmarkError(
+            "SHA-256 ARM64 two-way loop must share exactly eight constant "
+            f"pair loads; found {constant_offsets}"
+        )
+    if len(volatile_loads) != 1 or unexpected_memory:
+        raise BenchmarkError(
+            "SHA-256 ARM64 two-way loop has an unexpected memory contract: "
+            f"volatile={volatile_loads}, unexpected={unexpected_memory}"
+        )
+
+    instruction_counts = {
+        mnemonic: sum(
+            1
+            for _, instruction, _ in loop_instructions
+            if instruction.startswith(mnemonic)
+        )
+        for mnemonic in (
+            "sha256h.4s",
+            "sha256h2.4s",
+            "sha256su0.4s",
+            "sha256su1.4s",
+        )
+    }
+    expected_instruction_counts = {
+        "sha256h.4s": 32,
+        "sha256h2.4s": 32,
+        "sha256su0.4s": 24,
+        "sha256su1.4s": 24,
+    }
+    if instruction_counts != expected_instruction_counts:
+        raise BenchmarkError(
+            "SHA-256 ARM64 two-way round instruction counts changed: "
+            f"{instruction_counts}"
+        )
+    forbidden = [
+        symbol
+        for symbol in (*LOOP_FORBIDDEN_SYMBOLS, "swift_once")
+        if symbol in loop_disassembly
+    ]
+    if forbidden:
+        raise BenchmarkError(
+            "SHA-256 ARM64 two-way loop contains ownership/copy operations: "
+            + ", ".join(forbidden)
+        )
+
+    return {
+        "kernelSymbol": kernel["symbol"],
+        "blockLoopStartAddress": f"0x{loop_start:x}",
+        "blockLoopBackedgeAddress": f"0x{loop_end:x}",
+        "loopInstructionCount": len(loop_instructions),
+        "inputLD1x4LoadsPerPair": 2,
+        "constantVectorPairLoadsPerPair": len(constant_offsets),
+        "constantVectorPairLoadOffsets": sorted(constant_offsets),
+        "volatileZeroOffsetLoadsPerPair": len(volatile_loads),
+        "roundInstructionCounts": instruction_counts,
+        "externalTransferCount": len(external_transfers),
+        "unexpectedMemoryOperations": unexpected_memory,
+        "forbiddenSymbolsInLoop": forbidden,
+        "blockLoopDisassembly": loop_disassembly,
+        "passed": True,
+    }
+
+
 def analyze_boringssl_sha256_backend_codegen(
     path: Path,
     *,
     toolchain: dict[str, Any],
+    independent_pair: bool = False,
 ) -> dict[str, Any]:
     function = load_macho_text_function(
         path,
@@ -2743,53 +3124,129 @@ def analyze_boringssl_sha256_backend_codegen(
         if is_call_instruction(instruction)
         and "steady_clock3nowEv" in instruction
     ]
-    if len(clock_calls) != 2:
+    if len(clock_calls) < 2:
         raise BenchmarkError(
-            "BoringSSL benchmark main must call the steady clock exactly "
+            "BoringSSL benchmark main must call the steady clock at least "
             f"twice; found {len(clock_calls)}"
         )
-    timed_start = clock_calls[0][0]
-    timed_end = clock_calls[1][0]
+    expected_sha256_call_count = 2 if independent_pair else 1
+    timed_region_candidates: list[
+        tuple[int, int, list[tuple[int, str]], list[tuple[int, str]]]
+    ] = []
+    for start_call, end_call in zip(clock_calls, clock_calls[1:]):
+        candidate_start = start_call[0]
+        candidate_end = end_call[0]
+        candidate_calls = [
+            (address, instruction)
+            for address, instruction, _ in main_instructions
+            if candidate_start < address < candidate_end
+            and is_call_instruction(instruction)
+        ]
+        candidate_sha256_calls = [
+            (address, instruction)
+            for address, instruction in candidate_calls
+            if re.search(r"(?:^|\s)_SHA256$", instruction) is not None
+        ]
+        candidate_pair_calls = [
+            (address, instruction)
+            for address, instruction in candidate_calls
+            if "run_pair" in instruction and ".cold." not in instruction
+        ]
+        candidate_matches = (
+            len(candidate_calls) == 1
+            and len(candidate_pair_calls) == 1
+            if independent_pair
+            else len(candidate_calls) == 1
+            and len(candidate_sha256_calls) == 1
+        )
+        if candidate_matches:
+            timed_region_candidates.append(
+                (
+                    candidate_start,
+                    candidate_end,
+                    candidate_calls,
+                    candidate_sha256_calls,
+                )
+            )
+    if len(timed_region_candidates) != 1:
+        raise BenchmarkError(
+            "BoringSSL benchmark must contain exactly one matching timed "
+            f"region for {expected_sha256_call_count} message(s); found "
+            f"{len(timed_region_candidates)}"
+        )
+    timed_start, timed_end, timed_calls, sha256_calls = (
+        timed_region_candidates[0]
+    )
     timed_instructions = [
         (address, instruction, line)
         for address, instruction, line in main_instructions
         if timed_start < address < timed_end
     ]
-    timed_calls = [
-        (address, instruction)
-        for address, instruction, _ in timed_instructions
-        if is_call_instruction(instruction)
-    ]
-    sha256_calls = [
-        (address, instruction)
-        for address, instruction in timed_calls
-        if re.search(r"(?:^|\s)_SHA256$", instruction) is not None
-    ]
-    if len(timed_calls) != 1 or len(sha256_calls) != 1:
-        raise BenchmarkError(
-            "BoringSSL timed loop must call only the public SHA256 one-shot "
-            f"function once; calls were {[item[1] for item in timed_calls]}"
+    if independent_pair:
+        timed_function = load_macho_text_function(
+            path,
+            toolchain=toolchain,
+            exact_symbol=(
+                "__ZN12_GLOBAL__N_18run_pairERNSt3__16vectorIhNS0_9allocator"
+                "IhEEEES5_RNS0_5arrayIhLm32EEES8_m"
+            ),
+            label="BoringSSL benchmark pair run",
         )
-    main_backedges = find_backedges(
-        main_instructions,
-        function_start=benchmark_main["functionStart"],
-    )
-    timed_backedges = [
-        (target, branch)
-        for target, branch in main_backedges
-        if timed_start < target <= branch < timed_end
-    ]
-    if len(timed_backedges) != 1:
-        raise BenchmarkError(
-            "BoringSSL timed region must contain exactly one loop backedge; "
-            f"found {len(timed_backedges)}"
+        timed_function_instructions = timed_function["instructions"]
+        timed_backedges = find_backedges(
+            timed_function_instructions,
+            function_start=timed_function["functionStart"],
+            function_symbol=timed_function["symbol"],
         )
-    timed_loop_start, timed_loop_end = timed_backedges[0]
-    sha256_call_address = sha256_calls[0][0]
-    if not timed_loop_start <= sha256_call_address <= timed_loop_end:
-        raise BenchmarkError(
-            "BoringSSL public SHA256 call is outside the timed loop"
+        if len(timed_backedges) != 1:
+            raise BenchmarkError(
+                "BoringSSL pair run must contain exactly one loop backedge; "
+                f"found {len(timed_backedges)}"
+            )
+        timed_loop_start, timed_loop_end = timed_backedges[0]
+        loop_calls = [
+            (address, instruction)
+            for address, instruction, _ in timed_function_instructions
+            if timed_loop_start <= address <= timed_loop_end
+            and is_call_instruction(instruction)
+        ]
+        sha256_calls = [
+            (address, instruction)
+            for address, instruction in loop_calls
+            if re.search(r"(?:^|\s)_SHA256$", instruction) is not None
+        ]
+        if len(loop_calls) != 2 or len(sha256_calls) != 2:
+            raise BenchmarkError(
+                "BoringSSL pair loop must call only the public SHA256 "
+                f"function twice; found {[item[1] for item in loop_calls]}"
+            )
+        timed_function_disassembly = "\n".join(
+            line
+            for address, _, line in timed_function_instructions
+            if timed_loop_start <= address <= timed_loop_end
         )
+    else:
+        timed_function = benchmark_main
+        main_backedges = find_backedges(
+            main_instructions,
+            function_start=benchmark_main["functionStart"],
+            function_symbol=benchmark_main["symbol"],
+        )
+        timed_backedges = [
+            (target, branch)
+            for target, branch in main_backedges
+            if timed_start < target <= branch < timed_end
+        ]
+        if len(timed_backedges) != 1:
+            raise BenchmarkError(
+                "BoringSSL timed region must contain exactly one loop "
+                f"backedge; found {len(timed_backedges)}"
+            )
+        timed_loop_start, timed_loop_end = timed_backedges[0]
+        timed_function_disassembly = "\n".join(
+            line for _, _, line in timed_instructions
+        )
+    sha256_call_addresses = [address for address, _ in sha256_calls]
     timed_external_transfers = [
         instruction
         for _, instruction, _ in timed_instructions
@@ -2798,6 +3255,7 @@ def analyze_boringssl_sha256_backend_codegen(
                 instruction=instruction,
                 function_start=benchmark_main["functionStart"],
                 function_end=benchmark_main["functionEnd"],
+                function_symbol=benchmark_main["symbol"],
             )
             or is_return_instruction(instruction)
         )
@@ -2816,15 +3274,17 @@ def analyze_boringssl_sha256_backend_codegen(
         "publicCallContracts": public_call_contracts,
         "timedLoop": {
             "mainSymbol": benchmark_main["symbol"],
+            "timedFunctionSymbol": timed_function["symbol"],
             "clockStartAddress": f"0x{timed_start:x}",
             "clockEndAddress": f"0x{timed_end:x}",
             "loopStartAddress": f"0x{timed_loop_start:x}",
             "loopBackedgeAddress": f"0x{timed_loop_end:x}",
-            "sha256CallAddress": f"0x{sha256_call_address:x}",
+            "messagesPerIteration": expected_sha256_call_count,
+            "sha256CallAddresses": [
+                f"0x{address:x}" for address in sha256_call_addresses
+            ],
             "externalBranchTransferCount": len(timed_external_transfers),
-            "disassembly": "\n".join(
-                line for _, _, line in timed_instructions
-            ),
+            "disassembly": timed_function_disassembly,
         },
         "passed": True,
     }
@@ -3049,7 +3509,11 @@ def power_mode() -> int | None:
     return values[-1]
 
 
-def collect_quiescence() -> dict[str, Any]:
+def collect_quiescence(
+    *,
+    maximum_load_per_logical_cpu: float = MAXIMUM_LOAD_PER_LOGICAL_CPU,
+    allow_active_build_processes: bool = False,
+) -> dict[str, Any]:
     logical_cpu_count = os.cpu_count()
     try:
         load_average = os.getloadavg()
@@ -3065,7 +3529,8 @@ def collect_quiescence() -> dict[str, Any]:
         "logicalCPUCount": logical_cpu_count,
         "loadAverage": list(load_average) if load_average is not None else None,
         "oneMinuteLoadPerLogicalCPU": load_per_cpu,
-        "maximumLoadPerLogicalCPU": MAXIMUM_LOAD_PER_LOGICAL_CPU,
+        "maximumLoadPerLogicalCPU": maximum_load_per_logical_cpu,
+        "allowActiveBuildProcesses": allow_active_build_processes,
         "activeBuildProcesses": active_build_processes(),
         "buildProcessDetection": {
             "exactNames": sorted(BUILD_PROCESS_EXACT_NAMES),
@@ -3083,17 +3548,23 @@ def collect_quiescence() -> dict[str, Any]:
 def quiescence_reasons(observation: dict[str, Any]) -> list[str]:
     reasons: list[str] = []
     load_per_cpu = observation["oneMinuteLoadPerLogicalCPU"]
+    maximum_load = observation.get(
+        "maximumLoadPerLogicalCPU",
+        MAXIMUM_LOAD_PER_LOGICAL_CPU,
+    )
     if load_per_cpu is None:
         reasons.append("one-minute load per logical CPU is unavailable")
-    elif load_per_cpu > MAXIMUM_LOAD_PER_LOGICAL_CPU:
+    elif load_per_cpu > maximum_load:
         reasons.append(
             "one-minute load per logical CPU exceeds "
-            f"{MAXIMUM_LOAD_PER_LOGICAL_CPU:.2f}: {load_per_cpu:.6f}"
+            f"{maximum_load:.2f}: {load_per_cpu:.6f}"
         )
     build_processes = observation["activeBuildProcesses"]
     if build_processes is None:
         reasons.append("build process state is unavailable")
-    elif build_processes:
+    elif build_processes and not observation.get(
+        "allowActiveBuildProcesses", False
+    ):
         reasons.append(f"build processes are active: {build_processes}")
     power_state = observation["powerState"]
     if power_state is None or "AC Power" not in power_state:
@@ -3138,18 +3609,28 @@ def collect_host_metadata() -> dict[str, Any]:
     }
 
 
-def wait_for_quiescence(timeout_seconds: int) -> dict[str, Any]:
+def wait_for_quiescence(
+    timeout_seconds: int,
+    *,
+    maximum_load_per_logical_cpu: float = MAXIMUM_LOAD_PER_LOGICAL_CPU,
+    allow_active_build_processes: bool = False,
+) -> dict[str, Any]:
     deadline = time.monotonic() + timeout_seconds
     observations: list[dict[str, Any]] = []
     while True:
-        observation = collect_quiescence()
+        observation = collect_quiescence(
+            maximum_load_per_logical_cpu=maximum_load_per_logical_cpu,
+            allow_active_build_processes=allow_active_build_processes,
+        )
         observations.append(observation)
         reasons = quiescence_reasons(observation)
         if not reasons:
             return {
                 "criterion": {
-                    "maximumLoadPerLogicalCPU": MAXIMUM_LOAD_PER_LOGICAL_CPU,
-                    "activeBuildProcesses": 0,
+                    "maximumLoadPerLogicalCPU": maximum_load_per_logical_cpu,
+                    "activeBuildProcesses": (
+                        "ignored" if allow_active_build_processes else 0
+                    ),
                     "buildProcessExactNames": sorted(
                         BUILD_PROCESS_EXACT_NAMES
                     ),
@@ -3512,11 +3993,13 @@ def build_workers(
     boringssl_commit: str,
     toolchain: dict[str, Any],
     timeout_seconds: int,
+    independent_pair: bool = False,
 ) -> dict[str, Any]:
     verify_executable_metadata_unchanged(toolchain["trustedExecutables"])
     selected_environment = {
         "DEVELOPER_DIR": toolchain["developerDirectory"],
         "SDKROOT": toolchain["macOSSDKPath"],
+        "MACOSX_DEPLOYMENT_TARGET": DEPLOYMENT_TARGET,
         "SWIFT_SSL_ENABLE_BENCHMARKS": "1",
         "TOOLCHAINS": EXPECTED_SWIFT_TOOLCHAIN,
     }
@@ -3546,6 +4029,8 @@ def build_workers(
         "--jobs",
         "2",
         "-v",
+        "-Xswiftc",
+        "-gnone",
     ]
     swift_completed = run_command(
         swift_command,
@@ -3724,17 +4209,28 @@ def build_workers(
         build_directory=boringssl_build,
         toolchain=toolchain,
     )
-    swift_codegen = analyze_swift_worker_codegen(
-        swift_worker,
-        toolchain=toolchain,
-    )
-    sha256_multiblock_codegen = analyze_sha256_multiblock_codegen(
-        swift_worker,
-        toolchain=toolchain,
-    )
+    if independent_pair:
+        swift_codegen = analyze_swift_pair_worker_codegen(
+            swift_worker,
+            toolchain=toolchain,
+        )
+        sha256_kernel_codegen = analyze_sha256_pair_codegen(
+            swift_worker,
+            toolchain=toolchain,
+        )
+    else:
+        swift_codegen = analyze_swift_worker_codegen(
+            swift_worker,
+            toolchain=toolchain,
+        )
+        sha256_kernel_codegen = analyze_sha256_multiblock_codegen(
+            swift_worker,
+            toolchain=toolchain,
+        )
     boringssl_sha256_codegen = analyze_boringssl_sha256_backend_codegen(
         boringssl_worker,
         toolchain=toolchain,
+        independent_pair=independent_pair,
     )
     boringssl_runtime_capability = validate_boringssl_runtime_capability(
         boringssl_worker,
@@ -3751,7 +4247,7 @@ def build_workers(
             "buildSystem": "native",
             "buildSystemRationale": (
                 "The fixed SwiftBuild snapshot rewrites the final linked SDK "
-                "load command to 15.0; the native SwiftPM build preserves the "
+                "load command to 26.0; the native SwiftPM build preserves the "
                 "requested SDK 27.0 and is machine-code validated."
             ),
             "build": command_evidence(
@@ -3770,7 +4266,8 @@ def build_workers(
             ),
             "buildContract": swift_build_contract,
             "timedLoopCodeGeneration": swift_codegen,
-            "sha256MultiBlockCodeGeneration": sha256_multiblock_codegen,
+            "sha256KernelCodeGeneration": sha256_kernel_codegen,
+            "messagesPerTimedIteration": 2 if independent_pair else 1,
             "worker": swift_worker_metadata,
         },
         "boringSSL": {
@@ -3854,13 +4351,18 @@ def run_worker(
     iterations: int,
     warmup_iterations: int,
     timeout_seconds: int,
+    independent_pair: bool = False,
 ) -> dict[str, Any]:
-    command = [
-        str(executable),
-        str(byte_count),
-        str(iterations),
-        str(warmup_iterations),
-    ]
+    command = [str(executable)]
+    if independent_pair:
+        command.append("--pair")
+    command.extend(
+        [
+            str(byte_count),
+            str(iterations),
+            str(warmup_iterations),
+        ]
+    )
     environment = sanitized_environment()
     wall_start = time.monotonic_ns()
     completed = run_command(
@@ -3880,7 +4382,8 @@ def run_worker(
         raise BenchmarkError(
             f"worker emitted unexpected stderr: {' '.join(command)}"
         )
-    match = RESULT_PATTERN.fullmatch(result_lines[0])
+    result_pattern = PAIR_RESULT_PATTERN if independent_pair else RESULT_PATTERN
+    match = result_pattern.fullmatch(result_lines[0])
     if match is None:
         raise BenchmarkError(f"malformed worker RESULT line: {result_lines[0]}")
 
@@ -3891,13 +4394,19 @@ def run_worker(
     if checksum > (1 << 64) - 1:
         raise BenchmarkError("worker checksum is outside the UInt64 range")
 
+    digest_hexes = (
+        [match.group(3), match.group(4)]
+        if independent_pair
+        else [match.group(3)]
+    )
     return {
         "command": command,
         "environment": environment,
         "measuredNanoseconds": measured_nanoseconds,
         "wallNanoseconds": wall_nanoseconds,
         "checksum": checksum,
-        "digestHex": match.group(3),
+        "digestHex": "".join(digest_hexes),
+        "digestHexes": digest_hexes,
         "stdout": completed.stdout,
         "stderr": completed.stderr,
     }
@@ -3908,10 +4417,11 @@ def run_validation_worker(
     *,
     byte_count: int,
     timeout_seconds: int,
+    independent_pair: bool = False,
 ) -> dict[str, Any]:
     command = [
         str(executable),
-        "--validate",
+        "--validate-pair" if independent_pair else "--validate",
         str(byte_count),
         str(VALIDATION_ITERATION_COUNT),
     ]
@@ -3929,9 +4439,10 @@ def run_validation_worker(
         raise BenchmarkError(
             f"validation worker emitted unexpected stderr: {' '.join(command)}"
         )
-    digests: list[str] = []
+    digests: list[tuple[str, ...]] = []
+    digest_pattern = PAIR_DIGEST_PATTERN if independent_pair else DIGEST_PATTERN
     for expected_index, line in enumerate(completed.stdout.splitlines()):
-        match = DIGEST_PATTERN.fullmatch(line)
+        match = digest_pattern.fullmatch(line)
         if match is None:
             raise BenchmarkError(
                 f"malformed validation output from {' '.join(command)}: {line}"
@@ -3942,7 +4453,11 @@ def run_validation_worker(
                 "validation iteration sequence mismatch: "
                 f"expected {expected_index}, found {actual_index}"
             )
-        digests.append(match.group(2))
+        digests.append(
+            (match.group(2), match.group(3))
+            if independent_pair
+            else (match.group(2),)
+        )
     if len(digests) != VALIDATION_ITERATION_COUNT:
         raise BenchmarkError(
             "validation digest count mismatch: "
@@ -3962,6 +4477,7 @@ def validate_full_outputs(
     boringssl_worker: Path,
     *,
     timeout_seconds: int,
+    independent_pair: bool = False,
 ) -> dict[str, Any]:
     workloads: list[dict[str, Any]] = []
     for byte_count in HEADLINE_BYTE_COUNTS:
@@ -3969,11 +4485,13 @@ def validate_full_outputs(
             swift_worker,
             byte_count=byte_count,
             timeout_seconds=timeout_seconds,
+            independent_pair=independent_pair,
         )
         boringssl = run_validation_worker(
             boringssl_worker,
             byte_count=byte_count,
             timeout_seconds=timeout_seconds,
+            independent_pair=independent_pair,
         )
         if swift["digests"] != boringssl["digests"]:
             mismatch = next(
@@ -4004,8 +4522,12 @@ def validate_full_outputs(
     return {
         "placement": "outside all timed samples",
         "coverage": (
-            "all 256 possible low-byte mutations for each headline input size"
+            "all 256 possible low-byte mutations for both independent messages "
+            "at each headline input size"
+            if independent_pair
+            else "all 256 possible low-byte mutations for each headline input size"
         ),
+        "messagesPerIteration": 2 if independent_pair else 1,
         "allDigestsMatched": True,
         "workloads": workloads,
     }
@@ -4041,6 +4563,7 @@ def calibrate_iterations(
     *,
     byte_count: int,
     timeout_seconds: int,
+    independent_pair: bool = False,
 ) -> dict[str, Any]:
     iterations = INITIAL_ITERATIONS[byte_count]
     rounds: list[dict[str, Any]] = []
@@ -4052,6 +4575,7 @@ def calibrate_iterations(
             iterations=iterations,
             warmup_iterations=warmup_iterations,
             timeout_seconds=timeout_seconds,
+            independent_pair=independent_pair,
         )
         boringssl = run_worker(
             boringssl_worker,
@@ -4059,6 +4583,7 @@ def calibrate_iterations(
             iterations=iterations,
             warmup_iterations=warmup_iterations,
             timeout_seconds=timeout_seconds,
+            independent_pair=independent_pair,
         )
         require_matching_outputs(
             swift,
@@ -4131,12 +4656,18 @@ def verify_timing_convergence(
     iterations: int,
     warmup_iterations: int,
     timeout_seconds: int,
+    maximum_load_per_logical_cpu: float = MAXIMUM_LOAD_PER_LOGICAL_CPU,
+    allow_active_build_processes: bool = False,
+    independent_pair: bool = False,
 ) -> dict[str, Any]:
     rounds: list[dict[str, Any]] = []
     swift_per_operation: list[float] = []
     boringssl_per_operation: list[float] = []
     for round_index in range(MAXIMUM_CONVERGENCE_ROUNDS):
-        quiescence = collect_quiescence()
+        quiescence = collect_quiescence(
+            maximum_load_per_logical_cpu=maximum_load_per_logical_cpu,
+            allow_active_build_processes=allow_active_build_processes,
+        )
         reasons = quiescence_reasons(quiescence)
         if reasons:
             raise BenchmarkError(
@@ -4163,6 +4694,7 @@ def verify_timing_convergence(
                 iterations=iterations,
                 warmup_iterations=warmup_iterations,
                 timeout_seconds=timeout_seconds,
+                independent_pair=independent_pair,
             )
         require_matching_outputs(
             results["swift"],
@@ -4229,15 +4761,17 @@ def summarize_implementation(
     *,
     byte_count: int,
     iterations: int,
+    message_count: int = 1,
 ) -> dict[str, Any]:
     batch_values = [float(value) for value in measured_nanoseconds]
-    operation_values = [value / iterations for value in batch_values]
-    total_bytes = byte_count * iterations
+    operation_count = iterations * message_count
+    operation_values = [value / operation_count for value in batch_values]
+    total_bytes = byte_count * operation_count
     throughput_values = [
         total_bytes * 1_000_000_000.0 / value for value in batch_values
     ]
     operations_per_second = [
-        iterations * 1_000_000_000.0 / value for value in batch_values
+        operation_count * 1_000_000_000.0 / value for value in batch_values
     ]
     return {
         "batchNanoseconds": {
@@ -4306,6 +4840,9 @@ def sample_workload(
     bootstrap_resamples: int,
     seed: int,
     timeout_seconds: int,
+    maximum_load_per_logical_cpu: float = MAXIMUM_LOAD_PER_LOGICAL_CPU,
+    allow_active_build_processes: bool = False,
+    independent_pair: bool = False,
 ) -> dict[str, Any]:
     generator = random.Random(seed)
     orders = balanced_orders(sample_count, generator)
@@ -4313,7 +4850,10 @@ def sample_workload(
     expected_identity: tuple[int, str] | None = None
 
     for pair_index, order in enumerate(orders):
-        quiescence = collect_quiescence()
+        quiescence = collect_quiescence(
+            maximum_load_per_logical_cpu=maximum_load_per_logical_cpu,
+            allow_active_build_processes=allow_active_build_processes,
+        )
         reasons = quiescence_reasons(quiescence)
         if reasons:
             raise BenchmarkError(
@@ -4336,6 +4876,7 @@ def sample_workload(
                 iterations=iterations,
                 warmup_iterations=warmup_iterations,
                 timeout_seconds=timeout_seconds,
+                independent_pair=independent_pair,
             )
 
         identity = require_matching_outputs(
@@ -4379,15 +4920,18 @@ def sample_workload(
         resamples=bootstrap_resamples,
         seed=bootstrap_seed,
     )
+    message_count = 2 if independent_pair else 1
     swift_summary = summarize_implementation(
         swift_nanoseconds,
         byte_count=byte_count,
         iterations=iterations,
+        message_count=message_count,
     )
     boringssl_summary = summarize_implementation(
         boringssl_nanoseconds,
         byte_count=byte_count,
         iterations=iterations,
+        message_count=message_count,
     )
     ratio_of_median_throughputs = (
         swift_summary["bytesPerSecond"]["median"]
@@ -4395,6 +4939,7 @@ def sample_workload(
     )
     return {
         "byteCount": byte_count,
+        "messagesPerIteration": message_count,
         "iterationsPerSample": iterations,
         "warmupIterationsPerInvocation": warmup_iterations,
         "sampling": {
@@ -4565,6 +5110,12 @@ def main(arguments: Sequence[str] | None = None) -> int:
             "algorithm": "SHA-256",
             "platform": "Native",
             "comparison": "Pure Swift versus pinned official BoringSSL",
+            "workload": (
+                "two independent equal-length messages"
+                if options.independent_pair
+                else "one message"
+            ),
+            "messagesPerIteration": 2 if options.independent_pair else 1,
             "headlineByteCounts": list(HEADLINE_BYTE_COUNTS),
             "wasiMeasured": False,
             "embeddedMeasured": False,
@@ -4580,6 +5131,8 @@ def main(arguments: Sequence[str] | None = None) -> int:
             "validationIterationsPerWorkload": VALIDATION_ITERATION_COUNT,
             "convergenceWindow": CONVERGENCE_WINDOW,
             "convergenceTolerance": CONVERGENCE_TOLERANCE,
+            "maximumLoadPerLogicalCPU": options.maximum_load_per_logical_cpu,
+            "allowActiveBuildProcesses": options.allow_active_build_processes,
         },
         "memoryEvidence": {
             "allocationCountMeasured": False,
@@ -4622,12 +5175,26 @@ def main(arguments: Sequence[str] | None = None) -> int:
             raise BenchmarkError(
                 "host does not report ARM FEAT_SHA256 capability"
             )
-        initial_quiescence = collect_quiescence()
+        initial_quiescence = collect_quiescence(
+            maximum_load_per_logical_cpu=options.maximum_load_per_logical_cpu,
+            allow_active_build_processes=options.allow_active_build_processes,
+        )
         eligibility_reasons = formal_eligibility_reasons(
             swift_repository,
             toolchain,
             initial_quiescence,
         )
+        if options.formal and (
+            options.maximum_load_per_logical_cpu
+            != MAXIMUM_LOAD_PER_LOGICAL_CPU
+        ):
+            eligibility_reasons.append(
+                "formal runs require the default maximum host load threshold"
+            )
+        if options.formal and options.allow_active_build_processes:
+            eligibility_reasons.append(
+                "formal runs reject active build process overrides"
+            )
         formal_eligible = not eligibility_reasons
         artifact["formalEvidence"] = {
             "requested": options.formal,
@@ -4692,6 +5259,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
             boringssl_commit=boringssl_repository["commit"],
             toolchain=toolchain,
             timeout_seconds=options.build_timeout_seconds,
+            independent_pair=options.independent_pair,
         )
         artifact["builds"] = builds
         artifact["storage"]["atPostBuild"] = collect_storage_capacity(
@@ -4706,7 +5274,9 @@ def main(arguments: Sequence[str] | None = None) -> int:
         boringssl_worker = Path(builds["boringSSL"]["worker"]["path"])
 
         artifact["postBuildQuiescence"] = wait_for_quiescence(
-            options.quiescence_timeout_seconds
+            options.quiescence_timeout_seconds,
+            maximum_load_per_logical_cpu=options.maximum_load_per_logical_cpu,
+            allow_active_build_processes=options.allow_active_build_processes,
         )
 
         artifact["status"] = "validating"
@@ -4714,6 +5284,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
             swift_worker,
             boringssl_worker,
             timeout_seconds=options.worker_timeout_seconds,
+            independent_pair=options.independent_pair,
         )
 
         workload_order = list(HEADLINE_BYTE_COUNTS)
@@ -4727,6 +5298,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
                 boringssl_worker,
                 byte_count=byte_count,
                 timeout_seconds=options.worker_timeout_seconds,
+                independent_pair=options.independent_pair,
             )
             convergence = verify_timing_convergence(
                 swift_worker,
@@ -4735,6 +5307,9 @@ def main(arguments: Sequence[str] | None = None) -> int:
                 iterations=calibration["iterationsPerSample"],
                 warmup_iterations=calibration["warmupIterationsPerInvocation"],
                 timeout_seconds=options.worker_timeout_seconds,
+                maximum_load_per_logical_cpu=options.maximum_load_per_logical_cpu,
+                allow_active_build_processes=options.allow_active_build_processes,
+                independent_pair=options.independent_pair,
             )
             workload_seed = seed ^ (byte_count << 17) ^ workload_index
             result = sample_workload(
@@ -4747,6 +5322,9 @@ def main(arguments: Sequence[str] | None = None) -> int:
                 bootstrap_resamples=options.bootstrap_resamples,
                 seed=workload_seed,
                 timeout_seconds=options.worker_timeout_seconds,
+                maximum_load_per_logical_cpu=options.maximum_load_per_logical_cpu,
+                allow_active_build_processes=options.allow_active_build_processes,
+                independent_pair=options.independent_pair,
             )
             result["calibration"] = calibration
             result["convergence"] = convergence
@@ -4759,7 +5337,12 @@ def main(arguments: Sequence[str] | None = None) -> int:
             "minimumSpeedup": TARGET_SPEEDUP,
             "criterion": (
                 "every fixed headline workload must have a paired median "
-                "speedup 95% bootstrap confidence-interval lower bound of 1.10"
+                "speedup 95% bootstrap confidence-interval lower bound of 1.10; "
+                + (
+                    "each iteration hashes two independent messages"
+                    if options.independent_pair
+                    else "each iteration hashes one message"
+                )
             ),
             "decision": decision,
         }
@@ -4804,7 +5387,10 @@ def main(arguments: Sequence[str] | None = None) -> int:
                 toolchain["trustedExecutables"]
             )
         )
-        final_quiescence = collect_quiescence()
+        final_quiescence = collect_quiescence(
+            maximum_load_per_logical_cpu=options.maximum_load_per_logical_cpu,
+            allow_active_build_processes=options.allow_active_build_processes,
+        )
         final_quiescence_reasons = quiescence_reasons(final_quiescence)
         if final_quiescence_reasons:
             raise BenchmarkError(

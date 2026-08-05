@@ -15,7 +15,36 @@ enum SHA256BenchmarkCommand {
 
   static func main() throws {
     let arguments = try commandLineArguments()
-    if (arguments.count == 4 || arguments.count == 5),
+    if arguments.count == 4, arguments[1] == "--validate-pair",
+      let byteCount = Int(arguments[2]),
+      let iterations = Int(arguments[3]),
+      byteCount > 0,
+      iterations > 0
+    {
+      try validatePair(
+        byteCount: byteCount,
+        iterations: iterations
+      )
+      return
+    }
+
+    if arguments.count == 5, arguments[1] == "--pair",
+      let byteCount = Int(arguments[2]),
+      let iterations = Int(arguments[3]),
+      let warmupIterations = Int(arguments[4]),
+      byteCount > 0,
+      iterations > 0,
+      warmupIterations >= 0
+    {
+      try measurePair(
+        byteCount: byteCount,
+        iterations: iterations,
+        warmupIterations: warmupIterations
+      )
+      return
+    }
+
+    if arguments.count == 4 || arguments.count == 5,
       arguments[1] == "--validate"
     {
       guard
@@ -36,7 +65,7 @@ enum SHA256BenchmarkCommand {
       return
     }
 
-    guard (arguments.count == 4 || arguments.count == 5),
+    guard arguments.count == 4 || arguments.count == 5,
       let byteCount = Int(arguments[1]),
       let iterations = Int(arguments[2]),
       let warmupIterations = Int(arguments[3]),
@@ -105,6 +134,65 @@ enum SHA256BenchmarkCommand {
     print("RESULT,\(nanoseconds),\(checksum),\(hexString(output.span))")
   }
 
+  private static func measurePair(
+    byteCount: Int,
+    iterations: Int,
+    warmupIterations: Int
+  ) throws {
+    var inputStorage = makeInput(byteCount: byteCount, inputOffset: 0)
+    let secondInput = makeInput(byteCount: byteCount, inputOffset: 0)
+    inputStorage.append(contentsOf: secondInput)
+    let inputs = ContiguousArray([
+      HashBatchInput(offset: 0, byteCount: byteCount),
+      HashBatchInput(offset: byteCount, byteCount: byteCount),
+    ])
+    var output = ContiguousArray<UInt8>(repeating: 0, count: 64)
+    _ = try runPair(
+      inputStorage: &inputStorage,
+      inputs: inputs,
+      output: &output,
+      iterations: warmupIterations
+    )
+
+    let checksum: UInt64
+    let nanoseconds: UInt64
+    #if os(WASI)
+      let start = try wasiMonotonicNanoseconds()
+      checksum = try runPair(
+        inputStorage: &inputStorage,
+        inputs: inputs,
+        output: &output,
+        iterations: iterations
+      )
+      let end = try wasiMonotonicNanoseconds()
+      guard end >= start else {
+        throw ArgumentError.unavailableWASIClock
+      }
+      nanoseconds = end - start
+    #else
+      let clock = ContinuousClock()
+      let start = clock.now
+      checksum = try runPair(
+        inputStorage: &inputStorage,
+        inputs: inputs,
+        output: &output,
+        iterations: iterations
+      )
+      let elapsed = start.duration(to: clock.now).components
+      guard elapsed.seconds >= 0, elapsed.attoseconds >= 0 else {
+        throw ArgumentError.unavailableWASIClock
+      }
+      nanoseconds =
+        UInt64(elapsed.seconds) * 1_000_000_000
+        + UInt64(elapsed.attoseconds) / 1_000_000_000
+    #endif
+    print(
+      "PAIR_RESULT,\(nanoseconds),\(checksum),"
+        + "\(hexString(output.span.extracting(0..<32))),"
+        + "\(hexString(output.span.extracting(32..<64)))"
+    )
+  }
+
   private static func validate(
     byteCount: Int,
     iterations: Int,
@@ -127,6 +215,37 @@ enum SHA256BenchmarkCommand {
         into: &outputSpan
       )
       print("DIGEST,\(iteration),\(hexString(outputSpan.span))")
+      iteration += 1
+    }
+  }
+
+  private static func validatePair(
+    byteCount: Int,
+    iterations: Int
+  ) throws(BatchHashError) {
+    var inputStorage = makeInput(byteCount: byteCount, inputOffset: 0)
+    inputStorage.append(contentsOf: makeInput(byteCount: byteCount, inputOffset: 0))
+    let inputs = ContiguousArray([
+      HashBatchInput(offset: 0, byteCount: byteCount),
+      HashBatchInput(offset: byteCount, byteCount: byteCount),
+    ])
+    var output = ContiguousArray<UInt8>(repeating: 0, count: 64)
+    var inputStorageSpan = inputStorage.mutableSpan
+    var outputSpan = output.mutableSpan
+    var iteration = 0
+    while iteration < iterations {
+      inputStorageSpan[0] = UInt8(truncatingIfNeeded: iteration)
+      inputStorageSpan[byteCount] = UInt8(truncatingIfNeeded: iteration &+ 1)
+      try SHA256.hashBatch(
+        inputStorageSpan.span,
+        inputs: inputs.span,
+        into: &outputSpan
+      )
+      print(
+        "PAIR_DIGEST,\(iteration),"
+          + "\(hexString(outputSpan.span.extracting(0..<32))),"
+          + "\(hexString(outputSpan.span.extracting(32..<64)))"
+      )
       iteration += 1
     }
   }
@@ -261,6 +380,32 @@ enum SHA256BenchmarkCommand {
         into: &outputSpan
       )
       checksum &+= UInt64(outputSpan[iteration & 31])
+      iteration += 1
+    }
+    return checksum
+  }
+
+  @inline(never)
+  private static func runPair(
+    inputStorage: inout ContiguousArray<UInt8>,
+    inputs: borrowing ContiguousArray<HashBatchInput>,
+    output: inout ContiguousArray<UInt8>,
+    iterations: Int
+  ) throws(BatchHashError) -> UInt64 {
+    var inputStorageSpan = inputStorage.mutableSpan
+    var outputSpan = output.mutableSpan
+    var checksum: UInt64 = 0
+    var iteration = 0
+    while iteration < iterations {
+      inputStorageSpan[0] = UInt8(truncatingIfNeeded: iteration)
+      inputStorageSpan[inputs[1].offset] = UInt8(truncatingIfNeeded: iteration &+ 1)
+      try SHA256.hashBatch(
+        inputStorageSpan.span,
+        inputs: inputs.span,
+        into: &outputSpan
+      )
+      checksum &+= UInt64(outputSpan[iteration & 31])
+      checksum &+= UInt64(outputSpan[32 + ((iteration &+ 1) & 31)])
       iteration += 1
     }
     return checksum

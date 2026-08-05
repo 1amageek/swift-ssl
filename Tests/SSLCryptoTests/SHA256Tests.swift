@@ -188,6 +188,175 @@ final class SHA256Tests: XCTestCase {
     )
   }
 
+  func testBatchMatchesIndividualHashesAcrossDispatchPaths() throws {
+    let messages = [
+      makePattern(byteCount: 64),
+      makePattern(byteCount: 64),
+      makePattern(byteCount: 55),
+      makePattern(byteCount: 56),
+      makePattern(byteCount: 65),
+    ]
+    var storage = ContiguousArray<UInt8>()
+    var inputs = ContiguousArray<HashBatchInput>()
+    for message in messages {
+      inputs.append(
+        HashBatchInput(offset: storage.count, byteCount: message.count)
+      )
+      storage.append(contentsOf: message)
+    }
+    var output = ContiguousArray<UInt8>(
+      repeating: 0,
+      count: messages.count * SHA256.digestByteCount
+    )
+
+    do {
+      var outputSpan = output.mutableSpan
+      try SHA256.hashBatch(
+        storage.span,
+        inputs: inputs.span,
+        into: &outputSpan
+      )
+    }
+
+    for (index, message) in messages.enumerated() {
+      let start = index * SHA256.digestByteCount
+      let digest = ContiguousArray(
+        output[start..<(start + SHA256.digestByteCount)]
+      )
+      XCTAssertEqual(try digestHex(of: message), hexString(digest))
+    }
+  }
+
+  func testPairedBatchMatchesDistinctIndividualHashesAtBoundaries() throws {
+    for byteCount in [0, 1, 55, 56, 63, 64, 65, 127, 128, 1_024, 16_384] {
+      let first = makePattern(byteCount: byteCount)
+      var second = ContiguousArray<UInt8>()
+      second.reserveCapacity(byteCount)
+      var byteIndex = 0
+      while byteIndex < byteCount {
+        second.append(
+          UInt8(truncatingIfNeeded: byteIndex &* 17 &+ 0xA3)
+        )
+        byteIndex += 1
+      }
+      var storage = first
+      storage.append(contentsOf: second)
+      let inputs = ContiguousArray([
+        HashBatchInput(offset: 0, byteCount: byteCount),
+        HashBatchInput(offset: byteCount, byteCount: byteCount),
+      ])
+      var output = ContiguousArray<UInt8>(repeating: 0, count: 64)
+
+      do {
+        var outputSpan = output.mutableSpan
+        try SHA256.hashBatch(
+          storage.span,
+          inputs: inputs.span,
+          into: &outputSpan
+        )
+      }
+
+      XCTAssertEqual(
+        hexString(ContiguousArray(output[0..<32])),
+        try digestHex(of: first),
+        "Unexpected first digest for \(byteCount) bytes"
+      )
+      XCTAssertEqual(
+        hexString(ContiguousArray(output[32..<64])),
+        try digestHex(of: second),
+        "Unexpected second digest for \(byteCount) bytes"
+      )
+    }
+  }
+
+  func testBatchRejectsInvalidRangeWithoutModifyingOutput() {
+    let storage = makePattern(byteCount: 64)
+    let inputs = ContiguousArray([
+      HashBatchInput(offset: 0, byteCount: 64),
+      HashBatchInput(offset: 63, byteCount: 2),
+    ])
+    var output = ContiguousArray<UInt8>(repeating: 0xA5, count: 64)
+
+    do {
+      var outputSpan = output.mutableSpan
+      try SHA256.hashBatch(
+        storage.span,
+        inputs: inputs.span,
+        into: &outputSpan
+      )
+      XCTFail("SHA-256 batch accepted an invalid input range")
+    } catch {
+      XCTAssertEqual(error, .invalidInputRange(index: 1))
+    }
+
+    XCTAssertTrue(output.allSatisfy { $0 == 0xA5 })
+  }
+
+  func testBatchRejectsInvalidOutputWithoutModification() {
+    let storage = makePattern(byteCount: 64)
+    let inputs = ContiguousArray([
+      HashBatchInput(offset: 0, byteCount: 64)
+    ])
+    var output = ContiguousArray<UInt8>(repeating: 0xA5, count: 31)
+
+    do {
+      var outputSpan = output.mutableSpan
+      try SHA256.hashBatch(
+        storage.span,
+        inputs: inputs.span,
+        into: &outputSpan
+      )
+      XCTFail("SHA-256 batch accepted an invalid output length")
+    } catch {
+      XCTAssertEqual(
+        error,
+        .invalidOutputLength(expected: 32, actual: 31)
+      )
+    }
+
+    XCTAssertTrue(output.allSatisfy { $0 == 0xA5 })
+  }
+
+  func testBatchRejectsOverlappingInputAndOutputWithoutModification() {
+    var storage = ContiguousArray<UInt8>(repeating: 0xA5, count: 64)
+    let inputs = ContiguousArray([
+      HashBatchInput(offset: 0, byteCount: 64)
+    ])
+
+    XCTAssertThrowsError(
+      try storage.withUnsafeMutableBufferPointer { buffer in
+        // Unsafe test fixture invariants: storage owns 64 initialized bytes
+        // for the synchronous closure. The deliberately overlapping immutable
+        // and mutable views remain in bounds and do not escape. The production
+        // API must reject them before any mutation.
+        let input = Span(
+          _unsafeStart: UnsafePointer(buffer.baseAddress.unsafelyUnwrapped),
+          count: buffer.count
+        )
+        var output = MutableSpan(
+          _unsafeStart: buffer.baseAddress.unsafelyUnwrapped,
+          count: SHA256.digestByteCount
+        )
+        try SHA256.hashBatch(
+          input,
+          inputs: inputs.span,
+          into: &output
+        )
+      }
+    ) { error in
+      XCTAssertEqual(error as? BatchHashError, .overlappingInputAndOutput)
+    }
+    XCTAssertTrue(storage.allSatisfy { $0 == 0xA5 })
+  }
+
+  func testBatchPreferredWidthMatchesTargetCapability() {
+    #if os(macOS) && arch(arm64) && canImport(simd)
+      XCTAssertEqual(SHA256.preferredBatchWidth, 2)
+    #else
+      XCTAssertEqual(SHA256.preferredBatchWidth, 1)
+    #endif
+  }
+
   #if os(macOS) && arch(arm64) && canImport(simd)
     func testARM64KernelMatchesScalarKernel() {
       var seed: UInt64 = 0x9E37_79B9_7F4A_7C15

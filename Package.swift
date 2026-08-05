@@ -13,7 +13,8 @@ let ownershipSettings: [SwiftSetting] = [
 ]
 
 let cryptoSettings = ownershipSettings + [
-  .enableExperimentalFeature("BuiltinModule")
+  .enableExperimentalFeature("BuiltinModule"),
+  .enableExperimentalFeature("Volatile"),
 ]
 
 let tlsTypesDependency: Target.Dependency = .product(

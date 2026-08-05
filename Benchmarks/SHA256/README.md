@@ -1,7 +1,8 @@
 # SHA-256 comparison benchmark
 
-This benchmark compares the production Pure Swift `SHA256.hash` path with the
-public one-shot `SHA256` API from one exact official BoringSSL commit:
+This benchmark compares the production Pure Swift `SHA256.hash` and
+`SHA256.hashBatch` paths with the public one-shot `SHA256` API from one exact
+official BoringSSL commit:
 
 ```text
 ae49d2681a56ca7b8609f6039a770fda2a8eb550
@@ -13,7 +14,7 @@ neither adds BoringSSL to any SSL library target or runtime path.
 
 | Runner | Target boundary | BoringSSL backend |
 |---|---|---|
-| `run_comparison.py` | Native arm64/macOS | Platform assembly enabled |
+| `run_comparison.py` | Native arm64/macOS, one message or `--independent-pair` | Platform assembly enabled |
 | `run_wasm_comparison.py` | WASI and Embedded WASI | Portable no-assembly implementation |
 
 ## Native comparison boundary
@@ -36,37 +37,35 @@ flowchart LR
 
 Both workers generate byte `i` as `UInt8(truncatingIfNeeded: i * 31 + 17)` and
 replace byte zero with the low byte of the current iteration immediately before
-hashing. Input allocation, warm-up, and result formatting are outside the timed
-region. The iteration-byte mutation, context creation, hashing, finalization,
-digest write, and checksum sink are inside the timed region in both
-implementations.
+hashing. Pair mode uses the next low-byte value for the second message. Input
+allocation, warm-up, and result formatting are outside the timed region. The
+iteration-byte mutation, context creation, hashing, finalization, digest write,
+and checksum sink are inside the timed region in both implementations.
 
 The Swift worker acquires mutable input and output spans once per measured
 batch. The runner inspects the resulting machine code and rejects a worker when
 the timed loop contains a copy-on-write uniqueness check, buffer growth,
 allocation, retain/release, `memcpy`, or `memmove`, or when it directly calls
-anything other than `SHA256Context.update` and
-`SHA256Context.finalizeInPlace`. The two current `ContiguousArray` uniqueness
-checks occur before the loop and are paid once per batch, not once per digest
-operation. The runner separately validates the complete direct-call sets of
-both context functions, rejecting an unexpected allocation, reference-count,
-copy, or helper call.
+anything outside the selected contract: one `SHA256Context` initializer,
+`update`, and `finalizeInPlace` for one-message mode, or one `SHA256.hashBatch`
+call for pair mode. The two current `ContiguousArray` uniqueness checks occur
+before the loop and are paid once per batch, not once per digest operation.
+One-message mode also validates the complete direct-call sets of both context
+functions.
 
-The runner also inspects the production ARM64 SHA-256 multi-block kernel. It
-requires one context-to-kernel call site, one loop backedge, 16 vector constant
-loads before that loop, exactly 16 `sha256h` and 16 `sha256h2` instructions per
-block, and one paired state-vector store immediately after the call. Calls,
-page-relative address loads, lazy initialization, allocation, reference
-counting, bulk copies, or memory operations other than the two 32-byte
-input loads at offsets zero and 32 inside the block loop invalidate the run.
-The context call site must not be enclosed by a backedge.
-Unconditional backedges are included in this control-flow check. External
-direct, conditional, compare-and-branch, test-and-branch, and indirect branch
-transfers are treated as unvalidated control flow.
+The runner also inspects the active production ARM64 SHA-256 kernel. The
+single-message loop must load one 64-byte block with one `LD1x4`, perform eight
+constant-vector pair loads, and execute exactly 16 `sha256h`, 16 `sha256h2`,
+12 `sha256su0`, and 12 `sha256su1` instructions. The two-message loop must load
+one block from each input, share the eight constant-vector pair loads, and
+execute twice those round instructions. Calls, spills, lazy initialization,
+allocation, reference counting, and bulk copies invalidate either loop. In
+pair mode the public timed loop must call `SHA256.hashBatch` exactly once.
 
-The BoringSSL worker is checked symmetrically. Its timed region must contain
-one loop whose only call is the public one-shot `SHA256` function. That
-function must call the BCM initialize, update, and finalization path; the
+The BoringSSL worker is checked symmetrically. Its one-message loop calls the
+public one-shot `SHA256` function once; its pair loop calls the same public
+function exactly twice. That function must call the BCM initialize, update,
+and finalization path; the
 public incremental wrappers must call their corresponding BCM functions; and
 the linked BCM update/finalization path must call the ARM64 hardware kernel
 without a direct no-hardware dispatch.
@@ -76,6 +75,8 @@ The worker output contract is:
 ```text
 RESULT,<measured-nanoseconds>,<checksum>,<64-lowercase-hex-digest>
 DIGEST,<iteration>,<64-lowercase-hex-digest>
+PAIR_RESULT,<measured-nanoseconds>,<checksum>,<digest-1>,<digest-2>
+PAIR_DIGEST,<iteration>,<digest-1>,<digest-2>
 CAPABILITY,boringssl_asm,<0-or-1>
 ```
 
@@ -133,6 +134,45 @@ the state chain would need to be another `6.795374%` faster at 1 KiB and
 restoring the omitted digest work. The original eight raw state-only pairs were
 not retained, so this is a reproducible diagnostic certificate rather than a
 formal benchmark artifact.
+
+### 2026-08-05 independent-message batch optimization
+
+`SHA256.hashBatch` accepts one borrowed input owner, borrowed range descriptors,
+and one caller-owned packed output. On ARM64, adjacent equal-length messages are
+compressed by a Pure Swift two-way kernel. It interleaves two independent state
+chains to fill SHA execution latency while sharing round-constant loads. Other
+targets and odd or unequal groups use the same API with the sequential Pure
+Swift path. No C, assembly source, or BoringSSL runtime dependency is used.
+
+The comparison hashes two independent equal-length messages per iteration.
+Pure Swift makes one public `hashBatch` call; BoringSSL makes two sequential
+public `SHA256` calls. Times and operation rates count both messages. Before
+timing, all 1,536 digests across 64 B, 1 KiB, and 16 KiB matched. The runner then
+used 30 balanced AB/BA pairs and 10,000 paired bootstrap resamples.
+
+```sh
+TOOLCHAINS=org.swift.64202607231a \
+python3 Benchmarks/SHA256/run_comparison.py \
+  --boringssl-source "$BORINGSSL_ROOT" \
+  --independent-pair \
+  --samples 30 \
+  --bootstrap-resamples 10000
+```
+
+The raw exploratory artifact is retained at
+`.test-artifacts/benchmark/20260805T143656Z-sha256-two-way-exploratory.json`.
+The Swift working tree was dirty and unrelated build processes were active, so
+this is not formal release evidence.
+
+| Message length | Pure Swift median ns/message | BoringSSL median ns/message | Ratio | 95% paired bootstrap CI |
+|---|---:|---:|---:|---:|
+| 64 B | 41.2130 | 50.0689 | `1.207206x` | `1.190243–1.234197x` |
+| 1 KiB | 290.5226 | 366.9695 | `1.256921x` | `1.250405–1.260146x` |
+| 16 KiB | 4461.9036 | 5783.9619 | `1.286876x` | `1.274728–1.298360x` |
+
+All three 95% confidence-interval lower bounds exceed the `1.10x` target. This
+passes the independent two-message batch gate. It does not reclassify or replace
+the separate one-message benchmark contract.
 
 ## WASI and Embedded WASI comparison
 
@@ -250,8 +290,8 @@ The Native baseline is pinned to:
 | Xcode | `27.0` (`27A5209h`) |
 | macOS SDK | `27.0` (`26A5368f`) |
 | Architecture | `arm64` |
-| Swift target triple | `arm64-apple-macosx15.0` |
-| Deployment target | macOS 15.0 |
+| Swift target triple | `arm64-apple-macosx26.0` |
+| Deployment target | macOS 26.0 |
 | BoringSSL commit | `ae49d2681a56ca7b8609f6039a770fda2a8eb550` |
 | BoringSSL origin | `https://boringssl.googlesource.com/boringssl` |
 | Build mode | Release |
@@ -353,7 +393,7 @@ built worker changes during the run, `swift-ssl` has no clean `HEAD`,
 `TOOLCHAINS` is not the pinned identifier, another build process is active,
 Low Power Mode or a thermal warning is present, AC power is unavailable, or
 one-minute load exceeds 0.25 per logical CPU. Xcode, SDK build, arm64
-architecture, macOS 15.0 deployment target, and Release optimization are hard
+architecture, macOS 26.0 deployment target, and Release optimization are hard
 gates. Failure to inspect the declared compiler, linker, and build-process
 families is itself an invalid state. The runner waits for its own build load to
 cool before sampling. Without
@@ -369,16 +409,16 @@ prevents it from being release evidence.
 | Item | Contract |
 |---|---|
 | Workloads | Fixed 64 B, 1 KiB, and 16 KiB matrix; all must pass |
-| Validation | All 256 first-byte mutations fully compared at every workload size outside timing |
+| Validation | All 256 first-byte mutations fully compared for every selected message at every workload size outside timing |
 | Formal source input | Read-only archives of both recorded commits; symlinks rejected |
 | Build/runtime environment | Explicit allowlist and fixed `PATH`; verified `SDKROOT`; unlisted variables discarded |
 | Build tools | Resolved binary execution plus initial/final invocation binding and executable hashes |
 | Compile inputs and flags | One verified Swift source-list response per module and no others; pinned Swift command shape; no BoringSSL response/config files; exact source/dependency roots; every Swift module uses `-O`; every BoringSSL entry has one `-O3` |
 | BoringSSL link/backend | Fresh object/archive inputs; assembly enabled; five exact sources; public-to-BCM-to-ARM64 path and instructions |
-| Worker binary | arm64 Mach-O, macOS 15.0 minimum, linked SDK exactly 27.0 |
+| Worker binary | arm64 Mach-O, macOS 26.0 minimum, linked SDK exactly 27.0 |
 | Swift timed-loop codegen | No COW check, buffer growth, allocation, refcount, bulk copy, unvalidated call, or external branch transfer |
-| Swift SHA-256 callees | Exact direct-call contracts for update and finalization |
-| Swift ARM64 multi-block codegen | Constants hoisted once; two input memory loads only; call-free block loop; one state return/store |
+| Swift SHA-256 callees | Exact direct-call contract for the selected one-message or public batch path |
+| Swift ARM64 kernel codegen | Selected single-message or two-way load, round-instruction, memory, and call-free loop contract |
 | Calibration | Identical iteration count; both workers run at least 250 ms per sample |
 | Pilot convergence | Last 3 per-operation durations within 5% of each worker's median |
 | Sample unit | One pair containing the same work in both freshly built workers |
@@ -458,8 +498,9 @@ artifact.
 
 ## What this runner does not prove
 
-This is a Native one-shot SHA-256 timing comparison. Even a formal timing pass
-does not establish all release gates:
+This is a Native SHA-256 timing comparison for the selected one-message or
+independent-message batch workload. Even a formal timing pass does not establish
+all release gates:
 
 - Native allocation and logical copy budgets require a separate instrumented run;
 - WASI and Embedded measurements must be reported separately;

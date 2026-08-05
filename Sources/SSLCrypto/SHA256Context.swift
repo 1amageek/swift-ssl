@@ -4,7 +4,11 @@ public struct SHA256Context: ~Copyable, HashContext, Sendable {
   public static let digestByteCount = 32
 
   private static let blockByteCount = 64
-  private static let maximumInputByteCount = UInt64.max >> 3
+  package static let maximumInputByteCount = UInt64.max >> 3
+  package static let initialState = SIMD8<UInt32>(
+    0x6A09_E667, 0xBB67_AE85, 0x3C6E_F372, 0xA54F_F53A,
+    0x510E_527F, 0x9B05_688C, 0x1F83_D9AB, 0x5BE0_CD19
+  )
 
   private var state: SIMD8<UInt32>
   private var pendingBytes: SIMD64<UInt8>
@@ -12,10 +16,7 @@ public struct SHA256Context: ~Copyable, HashContext, Sendable {
   private var totalByteCount: UInt64
 
   public init() {
-    state = SIMD8<UInt32>(
-      0x6A09_E667, 0xBB67_AE85, 0x3C6E_F372, 0xA54F_F53A,
-      0x510E_527F, 0x9B05_688C, 0x1F83_D9AB, 0x5BE0_CD19
-    )
+    state = Self.initialState
     pendingBytes = SIMD64<UInt8>(repeating: 0)
     pendingByteCount = 0
     totalByteCount = 0

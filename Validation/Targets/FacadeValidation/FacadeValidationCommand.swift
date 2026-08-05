@@ -554,6 +554,29 @@ enum FacadeValidationCommand {
     guard contextualOutput == expected else {
       throw Failure.sha256
     }
+
+    requireBatchHashFunction(SHA256.self)
+    var batchStorage = input
+    batchStorage.append(contentsOf: input)
+    let batchInputs = ContiguousArray([
+      HashBatchInput(offset: 0, byteCount: input.count),
+      HashBatchInput(offset: input.count, byteCount: input.count),
+    ])
+    var batchOutput = ContiguousArray<UInt8>(repeating: 0, count: 64)
+    do {
+      var outputSpan = batchOutput.mutableSpan
+      try SHA256.hashBatch(
+        batchStorage.span,
+        inputs: batchInputs.span,
+        into: &outputSpan
+      )
+    }
+    guard
+      ContiguousArray(batchOutput[0..<32]) == expected,
+      ContiguousArray(batchOutput[32..<64]) == expected
+    else {
+      throw Failure.sha256
+    }
   }
 
   private static func validateSHA384AndSHA512() throws {
@@ -1050,6 +1073,10 @@ enum FacadeValidationCommand {
 
   private static func requireHashContext<Context: ~Copyable & HashContext>(
     _: borrowing Context
+  ) {}
+
+  private static func requireBatchHashFunction<Function: BatchHashFunction>(
+    _: Function.Type
   ) {}
 
   private static func requireMessageAuthenticationCodeContext<
