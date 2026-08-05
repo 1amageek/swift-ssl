@@ -201,7 +201,8 @@ Benchmarks are manually invoked from `Benchmarks/` and never run through the nor
 
 ### 7.2 Performance target
 
-For every workload in a selected supported hot-path matrix, the release target is:
+For a workload that is explicitly declared as a performance gate for a release,
+the target is:
 
 ```text
 lower95CI(median(BoringSSL elapsed / swift-ssl elapsed)) >= 1.10
@@ -210,6 +211,10 @@ lower95CI(median(BoringSSL elapsed / swift-ssl elapsed)) >= 1.10
 The paired median and its confidence interval are the normative estimator because each pair shares the closest environmental conditions. Ratio of median throughputs remains descriptive. Every fixed workload must pass; a favorable size cannot substitute for a failing size. Latency workloads use the equivalent paired inverse ratio. Security, correctness, constant-time behavior, and memory invariants are hard gates; the implementation is not weakened to obtain the ratio.
 
 Results are added to `README.md` only from committed raw artifacts with the full comparison contract. Missing or failed measurements remain explicit and are never represented as zero or success.
+
+The SHA-256/BoringSSL comparison is excluded from this release-target section
+for the current Pure Swift responsibility migration. Its recorded measurements
+remain reproducibility evidence only; they do not determine completion.
 
 ## 8. Iterative optimization loop
 

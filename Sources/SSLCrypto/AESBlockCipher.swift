@@ -4,6 +4,11 @@ import SSLCore
 ///
 /// The type owns its expanded key schedule. Callers must validate that both
 /// spans contain exactly one AES block before entering this internal boundary.
+// The cipher remains an implementation detail of SSLCrypto. It is
+// `@usableFromInline` because public AES contexts store it across the module
+// boundary; this exports metadata for correct static linking without exposing
+// the block-cipher API as public surface.
+@usableFromInline
 struct AESBlockCipher: ~Copyable, Sendable {
   #if arch(arm64) && canImport(simd)
     private var hardwareRoundKeys: SIMD64<UInt32>
