@@ -1,11 +1,9 @@
 import SSLCore
 import SSLDTLS
-import Testing
+import XCTest
 
-@Suite("DTLS 1.2 WebRTC profile")
-struct DTLS12Tests {
-  @Test
-  func extensionsRoundTrip() throws {
+final class DTLS12Tests: XCTestCase {
+  func testExtensionsRoundTrip() throws {
     let extensions = try DTLS12SecurityExtensions(
       protectionProfiles: [.aes128CMHMACSHA180],
       mki: [1, 2, 3]
@@ -14,11 +12,10 @@ struct DTLS12Tests {
     let decoded = try encoded.withBorrowedBytes { bytes in
       try DTLS12SecurityExtensions.decode(bytes)
     }
-    #expect(decoded == extensions)
+    XCTAssertEqual(decoded, extensions)
   }
 
-  @Test
-  func aeadRoundTripAndTamperRejection() throws {
+  func testAEADRoundTripAndTamperRejection() throws {
     let key = ContiguousArray(repeating: UInt8(0x11), count: 16)
     let iv = ContiguousArray(repeating: UInt8(0x22), count: 4)
     let protector = try DTLS12AESGCMRecordProtector(
@@ -40,7 +37,7 @@ struct DTLS12Tests {
     let expected = message.withUnsafeBufferPointer { buffer in
       OwnedBytes(copying: Span(_unsafeElements: buffer))
     }
-    #expect(opened == expected)
+    XCTAssertEqual(opened, expected)
 
     var tampered = ContiguousArray<UInt8>(repeating: 0, count: sealed.count)
     sealed.withBorrowedBytes { bytes in
@@ -48,10 +45,12 @@ struct DTLS12Tests {
       while index < bytes.count { tampered[index] = bytes[index]; index += 1 }
     }
     tampered[tampered.count - 1] ^= 1
-    #expect(throws: DTLS12RecordError.self) {
+    XCTAssertThrowsError(
       try tampered.withUnsafeBufferPointer { buffer in
         try protector.open(recordFragment: Span(_unsafeElements: buffer), contentType: 23)
       }
+    ) { error in
+      XCTAssertTrue(error is DTLS12RecordError)
     }
   }
 }

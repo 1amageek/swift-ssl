@@ -160,19 +160,22 @@ python3 Benchmarks/SHA256/run_comparison.py \
 ```
 
 The raw exploratory artifact is retained at
-`.test-artifacts/benchmark/20260805T143656Z-sha256-two-way-exploratory.json`.
-The Swift working tree was dirty and unrelated build processes were active, so
-this is not formal release evidence.
+`.test-artifacts/benchmark/20260805T150242Z-sha256-two-way-exploratory.json`.
+The source worktree was clean at commit
+`e11067c2e76801747d0d75867ab969df898a4f44`, but unrelated build processes
+were active and formal mode was not requested. The result is therefore
+exploratory rather than formal release evidence.
 
 | Message length | Pure Swift median ns/message | BoringSSL median ns/message | Ratio | 95% paired bootstrap CI |
 |---|---:|---:|---:|---:|
-| 64 B | 41.2130 | 50.0689 | `1.207206x` | `1.190243–1.234197x` |
-| 1 KiB | 290.5226 | 366.9695 | `1.256921x` | `1.250405–1.260146x` |
-| 16 KiB | 4461.9036 | 5783.9619 | `1.286876x` | `1.274728–1.298360x` |
+| 64 B | 56.1862 | 68.0126 | `1.222479x` | `1.211613–1.236852x` |
+| 1 KiB | 602.5743 | 756.9013 | `1.245326x` | `1.214264–1.273710x` |
+| 16 KiB | 5849.7463 | 7559.7333 | `1.289170x` | `1.268184–1.293686x` |
 
 All three 95% confidence-interval lower bounds exceed the `1.10x` target. This
-passes the independent two-message batch gate. It does not reclassify or replace
-the separate one-message benchmark contract.
+passes the exploratory independent two-message batch criterion. It is not a
+formal release gate result and does not reclassify or replace the separate
+one-message benchmark contract.
 
 ## WASI and Embedded WASI comparison
 

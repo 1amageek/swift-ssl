@@ -7,9 +7,8 @@ Embedded Swift without reproducing the OpenSSL/BoringSSL C API or legacy protoco
 surface.
 
 > [!NOTE]
-> The declared Pure Swift migration scope is implemented and locally verified.
-> Production deployment remains a separate security-review and release decision;
-> no stable release tag has been published.
+> Version 0.1.0 is the initial public release of the declared Pure Swift scope.
+> Production deployment remains a separate security-review decision.
 
 ## Modules
 
@@ -128,11 +127,11 @@ release evidence gates, not alternate production implementations.
 
 ## Installation
 
-No stable release has been tagged yet. Development dependencies may track `main`:
+Add `swift-ssl` to the package dependencies:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/1amageek/swift-ssl.git", branch: "main")
+    .package(url: "https://github.com/1amageek/swift-ssl.git", from: "0.1.0")
 ]
 ```
 
@@ -172,7 +171,7 @@ promise BoringSSL API, ABI, source, or internal implementation equivalence.
 |---|---:|---|
 | Native SHA-256, 64 B / 1 KiB / 16 KiB | `1.0939x` / `0.8612x` / `0.8399x` | Historical measurement; not a gate |
 | Native SHA-256, source-optimized 64 B / 1 KiB / 16 KiB | `1.1564x` / `0.8594x` / `0.8385x` | Exploratory; 64 B pass, long-input gate fail |
-| Native SHA-256 batch, two independent 64 B / 1 KiB / 16 KiB messages | `1.2072x` / `1.2569x` / `1.2869x` | Exploratory; all 95% CI lower bounds pass `1.10x` |
+| Native SHA-256 batch, two independent 64 B / 1 KiB / 16 KiB messages | `1.2225x` / `1.2453x` / `1.2892x` | Exploratory; all 95% CI lower bounds pass `1.10x` |
 | WASI and Embedded WASI SHA-256, 1 MiB variants | `1.3311x`–`1.3389x` | Historical exploratory measurement |
 | Native X25519MLKEM768 TLS round trip | `1.1093x` | Pass |
 | Native X25519MLKEM768 TLS round trip, post-session changes (exploratory) | `1.1652x` (`1.1639x`–`1.1661x` 95% CI) | Exploratory pass |
