@@ -1,6 +1,10 @@
 # Responsibility matrix
 
-This matrix is the completeness ledger for replacing BoringSSL. Completeness means that no modern responsibility is unowned; it does not mean source or ABI compatibility.
+This matrix is the completeness ledger for the modern Pure Swift security
+responsibility surface. BoringSSL is used only as a responsibility inventory;
+completeness means that no selected modern responsibility is unowned. It does
+not mean BoringSSL API, ABI, source, internal-implementation, or performance
+compatibility.
 
 The matrix records `swift-ssl` mechanism ownership. Public Stream TLS, DTLS, and
 QUIC TLS session contracts belong to `swift-tls`; `swift-tls` delegates their

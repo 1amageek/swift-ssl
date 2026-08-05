@@ -6,9 +6,10 @@ It targets Native, WASI, and
 Embedded Swift without reproducing the OpenSSL/BoringSSL C API or legacy protocol
 surface.
 
-> [!WARNING]
-> The project is under active development and is not yet suitable for production
-> cryptography or network security.
+> [!NOTE]
+> The declared Pure Swift migration scope is implemented and locally verified.
+> Production deployment remains a separate security-review and release decision;
+> no stable release tag has been published.
 
 ## Modules
 
