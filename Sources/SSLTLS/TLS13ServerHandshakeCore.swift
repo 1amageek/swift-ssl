@@ -3600,4 +3600,4 @@ private func verifyCoreResumption(
     throw .preSharedKey(.derivationFailed)
   }
 }
-import SSLTypes
+import TLSTypes

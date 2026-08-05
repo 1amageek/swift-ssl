@@ -83,4 +83,4 @@ package struct TLS13CapabilitySequencer: Sendable {
     lastCompletedToken = token
   }
 }
-import SSLTypes
+import TLSTypes

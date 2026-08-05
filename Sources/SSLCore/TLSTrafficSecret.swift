@@ -1,4 +1,4 @@
-import SSLTypes
+import TLSTypes
 
 /// The owning boundary for one TLS-family traffic secret.
 ///

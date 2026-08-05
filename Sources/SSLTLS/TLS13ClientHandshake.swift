@@ -768,4 +768,4 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
     return input.extracting(range.offset..<range.endOffset)
   }
 }
-import SSLTypes
+import TLSTypes

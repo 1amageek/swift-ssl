@@ -19,4 +19,4 @@ public enum TLSStreamAction: TLSBatchAction, Hashable {
         }
     }
 }
-import SSLTypes
+import TLSTypes

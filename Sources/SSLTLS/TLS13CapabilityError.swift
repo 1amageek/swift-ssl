@@ -14,4 +14,4 @@ public enum TLS13CapabilityError: Error, Sendable, Equatable {
   case signatureRejected(TLSRole)
   case invalidCredential
 }
-import SSLTypes
+import TLSTypes

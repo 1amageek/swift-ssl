@@ -1,6 +1,6 @@
 import XCTest
 import SSLCore
-import SSLTypes
+import TLSTypes
 
 final class TLSTrafficSecretTests: XCTestCase {
     func testSecretIsBorrowedThroughCoreOwner() throws {

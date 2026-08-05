@@ -18,4 +18,4 @@ public protocol TLS13DelegatedCredentialCoding: Sendable {
     certificateDER: Span<UInt8>
   ) throws(TLS13DelegatedCredentialError) -> OwnedBytes
 }
-import SSLTypes
+import TLSTypes

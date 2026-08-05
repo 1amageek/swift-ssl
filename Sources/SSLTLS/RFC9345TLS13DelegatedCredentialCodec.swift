@@ -157,4 +157,4 @@ public struct RFC9345TLS13DelegatedCredentialCodec:
     }
   }
 }
-import SSLTypes
+import TLSTypes

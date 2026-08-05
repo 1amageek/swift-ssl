@@ -17,7 +17,7 @@ The current package graph is:
 
 ```mermaid
 flowchart TD
-    Types["SSLTypes\nvocabulary"]
+    Types["TLSTypes\nswift-tls-types vocabulary"]
     Core["SSLCore\nbytes, ownership, limits, capabilities"]
     Crypto["SSLCrypto\nSHA-2/3, HMAC/HKDF, AEAD, X25519, P-256, ML-KEM, DRBG, and primitive contracts"]
     ASN1["SSLASN1\nstrict DER foundation"]
@@ -89,7 +89,7 @@ The cross-package source of truth is
 
 | Module | Owns | Must not own |
 |---|---|---|
-| `SSLTypes` | Implementation-independent TLS vocabulary: role, version, cipher-suite identifiers, encryption level, ALPN, and opaque server-name values | Secret ownership, parsing, cryptographic algorithms, policy decisions, transport I/O |
+| `TLSTypes` (`swift-tls-types`) | Implementation-independent TLS vocabulary: role, version, cipher-suite identifiers, encryption level, ALPN, and opaque server-name values | Secret ownership, parsing, cryptographic algorithms, policy decisions, transport I/O |
 | `SSLCore` | Owned byte storage, scoped byte borrows, checked cursors/builders, resource limits, `TLSTrafficSecret` ownership/wipe/borrow, constant-time utilities, entropy/time capability protocols, shared error primitives | Algorithms, ASN.1 meaning, sockets, Foundation data types |
 | `SSLCrypto` | Hash, MAC, KDF, AEAD, key agreement, KEM, signatures, HPKE, fixed-width field/scalar arithmetic, and algorithm policy gates | Certificate policy, TLS negotiation, vocabulary identifiers, OS entropy selection, arbitrary public mutable big integers |
 | `SSLASN1` | Strict DER TLV parser/writer, OID and primitive codecs, RFC 7468 PEM boundaries, parse budgets | Certificate validation, BER normalization, algorithm policy, file I/O |

@@ -138,4 +138,4 @@ public struct RFC9345TLS13DelegatedCredentialValidator:
     return delegatedCredential.subjectPublicKeyInfo
   }
 }
-import SSLTypes
+import TLSTypes

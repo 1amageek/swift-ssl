@@ -31,4 +31,4 @@ public struct TLS13TrafficSecret: ~Copyable, Sendable {
         owner.takeSecret()
     }
 }
-import SSLTypes
+import TLSTypes

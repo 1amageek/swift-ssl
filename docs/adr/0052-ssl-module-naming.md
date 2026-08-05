@@ -19,7 +19,7 @@ same prefix:
 
 | Responsibility | Module |
 |---|---|
-| Shared TLS vocabulary (including cipher-suite IDs and ALPN) | `SSLTypes` |
+| Shared TLS vocabulary (including cipher-suite IDs and ALPN) | `TLSTypes` from `swift-tls-types` |
 | Safe byte ownership, clocks, and entropy | `SSLCore` |
 | Cryptographic algorithms and key owners | `SSLCrypto` |
 | DER and PEM codecs | `SSLASN1` |
@@ -31,7 +31,7 @@ same prefix:
 ```mermaid
 flowchart TD
     Facade["SSL facade"] --> Core["SSLCore"]
-    Facade --> Types["SSLTypes"]
+    Facade --> Types["TLSTypes\nswift-tls-types"]
     Facade --> Crypto["SSLCrypto"]
     Facade --> ASN1["SSLASN1"]
     Facade --> X509["SSLX509"]

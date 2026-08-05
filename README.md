@@ -14,7 +14,7 @@ surface.
 
 ```mermaid
 flowchart LR
-    Types[SSLTypes] --> Core[SSLCore]
+    Types[TLSTypes\nfrom swift-tls-types] --> Core[SSLCore]
     Core[SSLCore] --> Crypto[SSLCrypto]
     Core --> ASN1[SSLASN1]
     Crypto --> X509[SSLX509]
@@ -35,7 +35,7 @@ flowchart LR
 
 | Product | Responsibility |
 |---|---|
-| Internal target `SSLTypes` | Dependency-light TLS vocabulary values (role, version, cipher-suite ID, ALPN, encryption level, and server name); it does not own secrets or protocol state |
+| External product `TLSTypes` from `swift-tls-types` | Dependency-light TLS vocabulary values (role, version, cipher-suite ID, ALPN, encryption level, and server name); it does not own secrets or protocol state |
 | `SSLCore` | Owned and borrowed bytes, secret memory, entropy, clocks, and typed errors |
 | `SSLCrypto` | Hashes, AEAD, key agreement, signatures, KEMs, and HPKE |
 | `SSLASN1` | Strict DER and PEM parsing and encoding |
@@ -68,12 +68,10 @@ mechanisms that implement those contracts. Transport packages own I/O and
 transport framing. See the workspace
 [Secure Transport Architecture](../SECURE_TRANSPORT_ARCHITECTURE.md).
 
-`SSLTypes` is intentionally an internal package target until its vocabulary is
-proven across multiple stable consumers. ALPN
-and cipher-suite identifiers are defined here; protocol modules only add
-boundary adapters. The secret owner remains `SSLCore.TLSTrafficSecret`; extracting a separate
-`swift-tls-types` package before the vocabulary is used by multiple stable
-consumers would freeze ownership and lifetime contracts too early.
+`swift-tls-types` is the independent vocabulary package at the bottom of the
+stack. It owns only implementation-independent values and opaque byte-backed
+names. The secret owner remains `SSLCore.TLSTrafficSecret`; ownership-backed
+borrows and output sinks are deliberately not exported by `swift-tls-types`.
 
 `swift-ssl` is the only TLS/DTLS mechanism owner. `swift-tls-sessions` is a
 session-contract and policy facade: it supplies identity, trust, timer, and

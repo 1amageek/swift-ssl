@@ -1,7 +1,7 @@
 import SSLCore
 import SSLCrypto
 import SSLTLS
-import SSLTypes
+import TLSTypes
 
 /// QUIC TLS server mechanism driven by complete TLS handshake messages.
 ///

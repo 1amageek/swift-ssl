@@ -1,4 +1,4 @@
-import SSLTypes
+import TLSTypes
 
-/// Compatibility spelling for the shared SSLTypes vocabulary.
-public typealias TLSRole = SSLTypes.TLSRole
+/// Compatibility spelling for the shared TLSTypes vocabulary.
+public typealias TLSRole = TLSTypes.TLSRole

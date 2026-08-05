@@ -1,4 +1,4 @@
-import SSLTypes
+import TLSTypes
 
 /// Cipher suites supported by the modern TLS 1.3 profile.
-public typealias TLSCipherSuite = SSLTypes.TLSCipherSuite
+public typealias TLSCipherSuite = TLSTypes.TLSCipherSuite

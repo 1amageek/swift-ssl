@@ -358,4 +358,4 @@ func wipe(_ bytes: inout ContiguousArray<UInt8>) {
     SecureWipe.erase(UnsafeMutableRawPointer(baseAddress), byteCount: buffer.count)
   }
 }
-import SSLTypes
+import TLSTypes

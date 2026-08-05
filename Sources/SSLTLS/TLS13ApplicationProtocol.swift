@@ -1,7 +1,7 @@
-import SSLTypes
+import TLSTypes
 
 /// The protocol-facing spelling is retained while the value itself is owned
-/// by `SSLTypes`. This keeps ALPN vocabulary independent from the TLS state
+/// by `TLSTypes`. This keeps ALPN vocabulary independent from the TLS state
 /// machine and prevents a second byte-owning implementation from appearing in
 /// `SSLTLS`.
 public typealias TLS13ApplicationProtocol = TLSApplicationProtocol

@@ -16,6 +16,11 @@ let cryptoSettings = ownershipSettings + [
   .enableExperimentalFeature("BuiltinModule")
 ]
 
+let tlsTypesDependency: Target.Dependency = .product(
+  name: "TLSTypes",
+  package: "swift-tls-types"
+)
+
 var nistValidationSettings = ownershipSettings
 switch ProcessInfo.processInfo.environment["SWIFT_SSL_NIST_VALIDATION_CASE"] {
 case nil, "all":
@@ -117,19 +122,15 @@ var targets: [Target] = [
     swiftSettings: ownershipSettings
   ),
   .target(
-    name: "SSLTypes",
-    swiftSettings: ownershipSettings
-  ),
-  .target(
     name: "SSLCore",
-    dependencies: ["SSLTypes"],
+    dependencies: [tlsTypesDependency],
     swiftSettings: ownershipSettings + [
       .enableExperimentalFeature("Volatile")
     ]
   ),
   .target(
     name: "SSLCrypto",
-    dependencies: ["SSLCore", "SSLTypes"],
+    dependencies: ["SSLCore", tlsTypesDependency],
     swiftSettings: cryptoSettings
   ),
   .target(
@@ -144,7 +145,7 @@ var targets: [Target] = [
   ),
   .target(
     name: "SSLTLS",
-    dependencies: ["SSLTypes", "SSLCore", "SSLCrypto", "SSLASN1", "SSLX509"],
+    dependencies: [tlsTypesDependency, "SSLCore", "SSLCrypto", "SSLASN1", "SSLX509"],
     swiftSettings: ownershipSettings
   ),
   .target(
@@ -154,14 +155,14 @@ var targets: [Target] = [
   ),
   .target(
     name: "SSLQUIC",
-    dependencies: ["SSLTypes", "SSLCore", "SSLCrypto", "SSLTLS"],
+    dependencies: [tlsTypesDependency, "SSLCore", "SSLCrypto", "SSLTLS"],
     swiftSettings: ownershipSettings
   ),
   .target(
     name: "SSL",
     dependencies: [
       "SSLCore",
-      "SSLTypes",
+      tlsTypesDependency,
       "SSLCrypto",
       "SSLASN1",
       "SSLX509",
@@ -213,11 +214,6 @@ var targets: [Target] = [
   .testTarget(
     name: "SSLCoreTests",
     dependencies: ["SSLCore"],
-    swiftSettings: ownershipSettings
-  ),
-  .testTarget(
-    name: "SSLTypesTests",
-    dependencies: ["SSLTypes"],
     swiftSettings: ownershipSettings
   ),
   .testTarget(
@@ -351,5 +347,11 @@ let package = Package(
     .visionOS(.v26),
   ],
   products: products,
+  dependencies: [
+    .package(
+      url: "https://github.com/1amageek/swift-tls-types.git",
+      branch: "main"
+    ),
+  ],
   targets: targets
 )

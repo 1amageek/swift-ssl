@@ -206,4 +206,4 @@ public struct TLS13ApplicationSecrets: ~Copyable, Sendable {
     return OwnedBytes(consuming: output)
   }
 }
-import SSLTypes
+import TLSTypes
