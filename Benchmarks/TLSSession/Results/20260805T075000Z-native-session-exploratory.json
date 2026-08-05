@@ -1,6 +1,6 @@
 {
   "classification": "exploratory",
-  "sourceCommit": "56af739a6d0e2390ac1628dc3aa8153e7f5738b4",
+  "sourceCommit": "152495c422ee740053fc683ef976caa69e60f9df",
   "completedAt": "2026-08-05T07:55:22.132713+00:00",
   "reason": "Swift-only changed-path benchmark; no equivalent BoringSSL session worker was added",
   "sampleCount": 30,

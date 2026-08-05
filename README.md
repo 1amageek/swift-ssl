@@ -188,7 +188,8 @@ Committed timing and memory artifacts:
 - [HPKE](Benchmarks/HPKE/README.md)
 
 The post-session-change exploratory run used 30 paired samples of 4,000
-X25519MLKEM768 transactions on the current `main` commit. Swift's median was
+X25519MLKEM768 transactions on commit `56af739a6d0e2390ac1628dc3aa8153e7f5738b4`.
+Swift's median was
 70,621.98 ns/op versus 82,340.53 ns/op for pinned BoringSSL, for a paired
 median of `1.1652x`. The formal host-quiescence gate was unavailable because an
 unrelated Swift build was active; the result is therefore not a formal release

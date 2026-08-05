@@ -37,7 +37,7 @@ samples were collected per workload. The host-load gate used by the formal
 BoringSSL runner could not be satisfied because another Swift build was active,
 so this is an exploratory Swift-only result and is not a BoringSSL speedup
 claim. The source commit was
-`56af739a6d0e2390ac1628dc3aa8153e7f5738b4`.
+`152495c422ee740053fc683ef976caa69e60f9df`.
 
 | Workload | Iterations/sample | Swift median | Swift p95 | Checksum |
 |---|---:|---:|---:|---|
