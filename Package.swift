@@ -309,6 +309,20 @@ if ProcessInfo.processInfo.environment["SWIFT_SSL_ENABLE_BENCHMARKS"] == "1" {
   )
   products.append(
     .executable(
+      name: "swift-ssl-tls-session-benchmark",
+      targets: ["SSLTLSSessionBenchmark"]
+    )
+  )
+  targets.append(
+    .executableTarget(
+      name: "SSLTLSSessionBenchmark",
+      dependencies: ["SSLCore", "SSLCrypto", "SSLTLS", "SSLX509"],
+      path: "Benchmarks/TLSSession/SwiftWorker",
+      swiftSettings: ownershipSettings
+    )
+  )
+  products.append(
+    .executable(
       name: "swift-ssl-mldsa-benchmark",
       targets: ["SSLMLDSABenchmark"]
     )

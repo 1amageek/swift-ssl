@@ -170,6 +170,7 @@ lower bound of at least `1.10x`.
 | Native SHA-256, 64 B / 1 KiB / 16 KiB | `1.0939x` / `0.8612x` / `0.8399x` | Fail |
 | WASI and Embedded WASI SHA-256, 1 MiB variants | `1.3311x`–`1.3389x` | Exploratory pass |
 | Native X25519MLKEM768 TLS round trip | `1.1093x` | Pass |
+| Native X25519MLKEM768 TLS round trip, post-session changes (exploratory) | `1.1652x` (`1.1639x`–`1.1661x` 95% CI) | Exploratory pass |
 | Native ML-KEM-768/1024 operations | `1.1128x`–`1.3450x` | Pass |
 | Native ML-DSA-44/65/87 operations | `1.1534x`–`2.7822x` | Pass |
 | Native HPKE X25519 workloads | `1.1064x`–`1.1644x` | Pass |
@@ -183,7 +184,17 @@ Committed timing and memory artifacts:
 - [ML-KEM](Benchmarks/MLKEM/README.md)
 - [ML-DSA](Benchmarks/MLDSA/README.md)
 - [X25519MLKEM768 TLS](Benchmarks/TLSHybrid/README.md)
+- [TLS session ticket and PSK resumption](Benchmarks/TLSSession/README.md)
 - [HPKE](Benchmarks/HPKE/README.md)
+
+The post-session-change exploratory run used 30 paired samples of 4,000
+X25519MLKEM768 transactions on the current `main` commit. Swift's median was
+70,621.98 ns/op versus 82,340.53 ns/op for pinned BoringSSL, for a paired
+median of `1.1652x`. The formal host-quiescence gate was unavailable because an
+unrelated Swift build was active; the result is therefore not a formal release
+gate. The direct session-ticket/resumption measurements are reported
+separately in [Benchmarks/TLSSession](Benchmarks/TLSSession/README.md) and do
+not claim a BoringSSL ratio.
 
 See [docs/VERIFICATION.md](docs/VERIFICATION.md) for measurement and release
 gates.

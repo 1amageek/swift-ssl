@@ -1,0 +1,423 @@
+{
+  "bootstrapResamples": 10000,
+  "classification": "exploratory",
+  "sourceCommit": "56af739a6d0e2390ac1628dc3aa8153e7f5738b4",
+  "boringSSLCommit": "ae49d2681a56ca7b8609f6039a770fda2a8eb550",
+  "completedAt": "2026-08-05T07:45:54.535459+00:00",
+  "interoperability": {
+    "boringSSLClientSwiftServer": {
+      "clientShareSHA256": "cc742fa884241b15279c6156a83dd3cd8bfc4a39cf63416a45b158fd0a09e670",
+      "serverShareSHA256": "7a4e7a80bb4cbadf785da51c522e5cd782b7ed0e3463a2cbb2d0f26245446c57",
+      "sharedSecretSHA256": "b2978aee4f3a0a97966d6683bce50182ac35ba1f8a36a38331c7cc8ea97bbe90"
+    },
+    "clientShareBytes": 1216,
+    "group": "X25519MLKEM768",
+    "namedGroup": "0x11ec",
+    "passed": true,
+    "serverShareBytes": 1120,
+    "sharedSecretBytes": 64,
+    "swiftClientBoringSSLServer": {
+      "clientShareSHA256": "3ffa31bf187fd35cb370d365f39406c37ca0e021601f97ce51b4f45e4c3a7b61",
+      "serverShareSHA256": "d135e01bc80f8671250339d22a84df8e46c498950384fc8d1b773e960879dbbc",
+      "sharedSecretSHA256": "193f53f0d31941c00db3f31d4c31c206bc553afe561b218233a13c2650632faa"
+    }
+  },
+  "passed": true,
+  "reason": "formal runner host-quiescence gate was unavailable because another Swift build was active",
+  "result": {
+    "boringSSLMedianNanosecondsPerOperation": 82340.53125,
+    "boringSSLP95NanosecondsPerOperation": 82686.30832499999,
+    "iterationsPerSample": 4000,
+    "medianPairedSpeedup": 1.1652301360481596,
+    "operation": "roundtrip",
+    "passed": true,
+    "samples": [
+      {
+        "boringSSL": {
+          "checksum": 1021907,
+          "nanoseconds": 329095584
+        },
+        "index": 0,
+        "order": "swift-first",
+        "swift": {
+          "checksum": 1012643,
+          "nanoseconds": 282901834
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1008475,
+          "nanoseconds": 329615500
+        },
+        "index": 1,
+        "order": "boringssl-first",
+        "swift": {
+          "checksum": 1016408,
+          "nanoseconds": 283970667
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1021035,
+          "nanoseconds": 329505416
+        },
+        "index": 2,
+        "order": "boringssl-first",
+        "swift": {
+          "checksum": 1014950,
+          "nanoseconds": 283810500
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1027751,
+          "nanoseconds": 329459333
+        },
+        "index": 3,
+        "order": "swift-first",
+        "swift": {
+          "checksum": 1015618,
+          "nanoseconds": 283267458
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1012884,
+          "nanoseconds": 329352625
+        },
+        "index": 4,
+        "order": "swift-first",
+        "swift": {
+          "checksum": 1013940,
+          "nanoseconds": 282149667
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1009765,
+          "nanoseconds": 328951292
+        },
+        "index": 5,
+        "order": "swift-first",
+        "swift": {
+          "checksum": 1015155,
+          "nanoseconds": 282761167
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1011156,
+          "nanoseconds": 329585625
+        },
+        "index": 6,
+        "order": "swift-first",
+        "swift": {
+          "checksum": 1025538,
+          "nanoseconds": 282597125
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1021804,
+          "nanoseconds": 329144625
+        },
+        "index": 7,
+        "order": "swift-first",
+        "swift": {
+          "checksum": 1016588,
+          "nanoseconds": 282561375
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1015523,
+          "nanoseconds": 329518917
+        },
+        "index": 8,
+        "order": "boringssl-first",
+        "swift": {
+          "checksum": 1019525,
+          "nanoseconds": 282313542
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1014654,
+          "nanoseconds": 328785666
+        },
+        "index": 9,
+        "order": "boringssl-first",
+        "swift": {
+          "checksum": 1016338,
+          "nanoseconds": 282330666
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1020353,
+          "nanoseconds": 329093959
+        },
+        "index": 10,
+        "order": "boringssl-first",
+        "swift": {
+          "checksum": 1021485,
+          "nanoseconds": 282294000
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1018033,
+          "nanoseconds": 329371625
+        },
+        "index": 11,
+        "order": "swift-first",
+        "swift": {
+          "checksum": 1015022,
+          "nanoseconds": 284696125
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1014187,
+          "nanoseconds": 328708917
+        },
+        "index": 12,
+        "order": "boringssl-first",
+        "swift": {
+          "checksum": 1013378,
+          "nanoseconds": 282003542
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1013683,
+          "nanoseconds": 329383208
+        },
+        "index": 13,
+        "order": "boringssl-first",
+        "swift": {
+          "checksum": 1020357,
+          "nanoseconds": 282414458
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1002980,
+          "nanoseconds": 328409167
+        },
+        "index": 14,
+        "order": "swift-first",
+        "swift": {
+          "checksum": 1002564,
+          "nanoseconds": 281714084
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1022587,
+          "nanoseconds": 329794916
+        },
+        "index": 15,
+        "order": "swift-first",
+        "swift": {
+          "checksum": 1028175,
+          "nanoseconds": 281465792
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1014436,
+          "nanoseconds": 328422875
+        },
+        "index": 16,
+        "order": "swift-first",
+        "swift": {
+          "checksum": 1022332,
+          "nanoseconds": 281683250
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1016900,
+          "nanoseconds": 328773958
+        },
+        "index": 17,
+        "order": "boringssl-first",
+        "swift": {
+          "checksum": 1013309,
+          "nanoseconds": 282349417
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1015093,
+          "nanoseconds": 330000708
+        },
+        "index": 18,
+        "order": "boringssl-first",
+        "swift": {
+          "checksum": 1017428,
+          "nanoseconds": 281810333
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1009546,
+          "nanoseconds": 329259750
+        },
+        "index": 19,
+        "order": "swift-first",
+        "swift": {
+          "checksum": 1013765,
+          "nanoseconds": 281145083
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1004024,
+          "nanoseconds": 328971791
+        },
+        "index": 20,
+        "order": "boringssl-first",
+        "swift": {
+          "checksum": 1024054,
+          "nanoseconds": 281576417
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1012234,
+          "nanoseconds": 330298583
+        },
+        "index": 21,
+        "order": "swift-first",
+        "swift": {
+          "checksum": 1017358,
+          "nanoseconds": 283161000
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1024319,
+          "nanoseconds": 328255916
+        },
+        "index": 22,
+        "order": "swift-first",
+        "swift": {
+          "checksum": 1000587,
+          "nanoseconds": 281697292
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1010614,
+          "nanoseconds": 330021792
+        },
+        "index": 23,
+        "order": "boringssl-first",
+        "swift": {
+          "checksum": 1025126,
+          "nanoseconds": 284716833
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1026363,
+          "nanoseconds": 329632500
+        },
+        "index": 24,
+        "order": "swift-first",
+        "swift": {
+          "checksum": 1015852,
+          "nanoseconds": 285789500
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1004067,
+          "nanoseconds": 330594167
+        },
+        "index": 25,
+        "order": "boringssl-first",
+        "swift": {
+          "checksum": 1017014,
+          "nanoseconds": 284739250
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1026977,
+          "nanoseconds": 330868833
+        },
+        "index": 26,
+        "order": "boringssl-first",
+        "swift": {
+          "checksum": 1011632,
+          "nanoseconds": 283239083
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1019403,
+          "nanoseconds": 328914917
+        },
+        "index": 27,
+        "order": "swift-first",
+        "swift": {
+          "checksum": 1009770,
+          "nanoseconds": 282286458
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1016505,
+          "nanoseconds": 328885917
+        },
+        "index": 28,
+        "order": "boringssl-first",
+        "swift": {
+          "checksum": 1017055,
+          "nanoseconds": 284532792
+        }
+      },
+      {
+        "boringSSL": {
+          "checksum": 1014107,
+          "nanoseconds": 332789292
+        },
+        "index": 29,
+        "order": "boringssl-first",
+        "swift": {
+          "checksum": 1014578,
+          "nanoseconds": 285675792
+        }
+      }
+    ],
+    "speedupConfidenceInterval95": [
+      1.1638880753429022,
+      1.1661017677196799
+    ],
+    "swiftMedianNanosecondsPerOperation": 70621.979125,
+    "swiftP95NanosecondsPerOperation": 71313.587025,
+    "targetSpeedup": 1.1
+  },
+  "sampleCount": 30,
+  "schemaVersion": 1,
+  "seed": 20260805,
+  "targetSpeedup": 1.1,
+  "valid": true,
+  "workers": {
+    "boringSSL": {
+      "invocationPath": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-tls-hybrid/run-99hbgahs/boringssl-build/boringssl-tls-hybrid-benchmark",
+      "resolvedPath": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-tls-hybrid/run-99hbgahs/boringssl-build/boringssl-tls-hybrid-benchmark",
+      "sha256": "1246c7e0c25d45dfada8d8807713c702033f63ba7370b5e935ea89720bcc64f2",
+      "sizeBytes": 1776400
+    },
+    "swift": {
+      "invocationPath": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-tls-hybrid/run-99hbgahs/swift-build/arm64-apple-macosx/release/swift-ssl-tls-hybrid-benchmark",
+      "resolvedPath": "/Users/1amageek/Desktop/networking/swift-ssl/.build/benchmark-tls-hybrid/run-99hbgahs/swift-build/arm64-apple-macosx/release/swift-ssl-tls-hybrid-benchmark",
+      "sha256": "e71a030ca5b2b8c137a6c55b9dd08185424bcba4dd5923a71eebb048413c08d6",
+      "sizeBytes": 4644576
+    }
+  }
+}

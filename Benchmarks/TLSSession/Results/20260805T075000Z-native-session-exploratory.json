@@ -1,0 +1,337 @@
+{
+  "classification": "exploratory",
+  "sourceCommit": "56af739a6d0e2390ac1628dc3aa8153e7f5738b4",
+  "completedAt": "2026-08-05T07:55:22.132713+00:00",
+  "reason": "Swift-only changed-path benchmark; no equivalent BoringSSL session worker was added",
+  "sampleCount": 30,
+  "schemaVersion": 1,
+  "valid": true,
+  "warmupIterations": {
+    "resumption": 5,
+    "ticket": 2
+  },
+  "workers": {
+    "swift": {
+      "path": "/private/tmp/swift-ssl-session.RrZHCo/build/arm64-apple-macosx/release/swift-ssl-tls-session-benchmark",
+      "sha256": "af78edce395a88fb728bbfdbc92e04d3e9f1fe410a04c7d8ba7e11c5129132f5"
+    }
+  },
+  "workloads": {
+    "resumption": {
+      "iterationsPerSample": 50,
+      "medianNanosecondsPerOperation": 4478393.75,
+      "p95NanosecondsPerOperation": 4792833.32,
+      "passed": true,
+      "samples": [
+        {
+          "checksum": 50,
+          "index": 0,
+          "nanoseconds": 221923041
+        },
+        {
+          "checksum": 50,
+          "index": 1,
+          "nanoseconds": 225162833
+        },
+        {
+          "checksum": 50,
+          "index": 2,
+          "nanoseconds": 242652750
+        },
+        {
+          "checksum": 50,
+          "index": 3,
+          "nanoseconds": 221753833
+        },
+        {
+          "checksum": 50,
+          "index": 4,
+          "nanoseconds": 223720625
+        },
+        {
+          "checksum": 50,
+          "index": 5,
+          "nanoseconds": 226587834
+        },
+        {
+          "checksum": 50,
+          "index": 6,
+          "nanoseconds": 228806291
+        },
+        {
+          "checksum": 50,
+          "index": 7,
+          "nanoseconds": 223556875
+        },
+        {
+          "checksum": 50,
+          "index": 8,
+          "nanoseconds": 224271042
+        },
+        {
+          "checksum": 50,
+          "index": 9,
+          "nanoseconds": 220991125
+        },
+        {
+          "checksum": 50,
+          "index": 10,
+          "nanoseconds": 221944542
+        },
+        {
+          "checksum": 50,
+          "index": 11,
+          "nanoseconds": 223888625
+        },
+        {
+          "checksum": 50,
+          "index": 12,
+          "nanoseconds": 221786417
+        },
+        {
+          "checksum": 50,
+          "index": 13,
+          "nanoseconds": 223950750
+        },
+        {
+          "checksum": 50,
+          "index": 14,
+          "nanoseconds": 221621208
+        },
+        {
+          "checksum": 50,
+          "index": 15,
+          "nanoseconds": 218717250
+        },
+        {
+          "checksum": 50,
+          "index": 16,
+          "nanoseconds": 236060500
+        },
+        {
+          "checksum": 50,
+          "index": 17,
+          "nanoseconds": 231027792
+        },
+        {
+          "checksum": 50,
+          "index": 18,
+          "nanoseconds": 239641666
+        },
+        {
+          "checksum": 50,
+          "index": 19,
+          "nanoseconds": 235070666
+        },
+        {
+          "checksum": 50,
+          "index": 20,
+          "nanoseconds": 235465792
+        },
+        {
+          "checksum": 50,
+          "index": 21,
+          "nanoseconds": 239477083
+        },
+        {
+          "checksum": 50,
+          "index": 22,
+          "nanoseconds": 235683417
+        },
+        {
+          "checksum": 50,
+          "index": 23,
+          "nanoseconds": 229528125
+        },
+        {
+          "checksum": 50,
+          "index": 24,
+          "nanoseconds": 222378666
+        },
+        {
+          "checksum": 50,
+          "index": 25,
+          "nanoseconds": 221085708
+        },
+        {
+          "checksum": 50,
+          "index": 26,
+          "nanoseconds": 221929583
+        },
+        {
+          "checksum": 50,
+          "index": 27,
+          "nanoseconds": 225602666
+        },
+        {
+          "checksum": 50,
+          "index": 28,
+          "nanoseconds": 220702375
+        },
+        {
+          "checksum": 50,
+          "index": 29,
+          "nanoseconds": 218559375
+        }
+      ]
+    },
+    "ticket": {
+      "iterationsPerSample": 16,
+      "medianNanosecondsPerOperation": 22371545.5625,
+      "p95NanosecondsPerOperation": 23913026.0,
+      "passed": true,
+      "samples": [
+        {
+          "checksum": 1836,
+          "index": 0,
+          "nanoseconds": 295495084
+        },
+        {
+          "checksum": 1836,
+          "index": 1,
+          "nanoseconds": 301833916
+        },
+        {
+          "checksum": 1836,
+          "index": 2,
+          "nanoseconds": 298596250
+        },
+        {
+          "checksum": 1836,
+          "index": 3,
+          "nanoseconds": 295660500
+        },
+        {
+          "checksum": 1836,
+          "index": 4,
+          "nanoseconds": 297507042
+        },
+        {
+          "checksum": 1836,
+          "index": 5,
+          "nanoseconds": 299787583
+        },
+        {
+          "checksum": 1836,
+          "index": 6,
+          "nanoseconds": 296664333
+        },
+        {
+          "checksum": 1836,
+          "index": 7,
+          "nanoseconds": 307936500
+        },
+        {
+          "checksum": 1836,
+          "index": 8,
+          "nanoseconds": 317875750
+        },
+        {
+          "checksum": 1836,
+          "index": 9,
+          "nanoseconds": 338045792
+        },
+        {
+          "checksum": 1836,
+          "index": 10,
+          "nanoseconds": 331464375
+        },
+        {
+          "checksum": 1836,
+          "index": 11,
+          "nanoseconds": 329660167
+        },
+        {
+          "checksum": 1836,
+          "index": 12,
+          "nanoseconds": 343004917
+        },
+        {
+          "checksum": 1836,
+          "index": 13,
+          "nanoseconds": 353923125
+        },
+        {
+          "checksum": 1836,
+          "index": 14,
+          "nanoseconds": 380950250
+        },
+        {
+          "checksum": 1836,
+          "index": 15,
+          "nanoseconds": 378452292
+        },
+        {
+          "checksum": 1836,
+          "index": 16,
+          "nanoseconds": 379263584
+        },
+        {
+          "checksum": 1836,
+          "index": 17,
+          "nanoseconds": 379301625
+        },
+        {
+          "checksum": 1836,
+          "index": 18,
+          "nanoseconds": 381309250
+        },
+        {
+          "checksum": 1836,
+          "index": 19,
+          "nanoseconds": 375140625
+        },
+        {
+          "checksum": 1836,
+          "index": 20,
+          "nanoseconds": 361551250
+        },
+        {
+          "checksum": 1836,
+          "index": 21,
+          "nanoseconds": 371896125
+        },
+        {
+          "checksum": 1836,
+          "index": 22,
+          "nanoseconds": 356441250
+        },
+        {
+          "checksum": 1836,
+          "index": 23,
+          "nanoseconds": 359559209
+        },
+        {
+          "checksum": 1836,
+          "index": 24,
+          "nanoseconds": 362697500
+        },
+        {
+          "checksum": 1836,
+          "index": 25,
+          "nanoseconds": 370576459
+        },
+        {
+          "checksum": 1836,
+          "index": 26,
+          "nanoseconds": 382608416
+        },
+        {
+          "checksum": 1836,
+          "index": 27,
+          "nanoseconds": 386185375
+        },
+        {
+          "checksum": 1836,
+          "index": 28,
+          "nanoseconds": 369208791
+        },
+        {
+          "checksum": 1836,
+          "index": 29,
+          "nanoseconds": 359448208
+        }
+      ]
+    }
+  }
+}
