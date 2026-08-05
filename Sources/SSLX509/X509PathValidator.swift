@@ -35,6 +35,27 @@ public struct X509PathValidator: Sendable {
         at instant: VerificationInstant,
         hostname: Span<UInt8>? = nil
     ) throws(X509PathError) -> X509ValidatedPath {
+        try validateAll(
+            leaf: leaf,
+            intermediates: intermediates,
+            at: instant,
+            hostname: hostname
+        ).first!
+    }
+
+    /// Returns every bounded path that satisfies the cryptographic and
+    /// structural checks. The caller may apply a higher-level policy to each
+    /// candidate without rebuilding the path or re-verifying signatures.
+    ///
+    /// Path construction remains owned by SSLX509. Returning candidates rather
+    /// than stopping at the first structurally valid path is required when a
+    /// consumer policy rejects one cross-signed issuer but accepts another.
+    public func validateAll(
+        leaf: X509Certificate,
+        intermediates: ContiguousArray<X509Certificate> = [],
+        at instant: VerificationInstant,
+        hostname: Span<UInt8>? = nil
+    ) throws(X509PathError) -> ContiguousArray<X509ValidatedPath> {
         guard Self.maximumPathLength > 0 else {
             throw .invalidPathLength
         }
@@ -45,6 +66,7 @@ public struct X509PathValidator: Sendable {
         var pending: [ContiguousArray<X509Certificate>] = [ContiguousArray([leaf])]
         var lastFailure: X509PathError = .issuerNotFound
         var exploredPathCount = 0
+        var validatedPaths = ContiguousArray<X509ValidatedPath>()
 
         while !pending.isEmpty {
             let path = pending.removeFirst()
@@ -55,8 +77,13 @@ public struct X509PathValidator: Sendable {
             let current = path[path.count - 1]
 
             if Self.containsExact(current, in: trustAnchors) {
-                try policy.evaluate(path: path, hostname: hostname)
-                return X509ValidatedPath(certificates: path)
+                do {
+                    try policy.evaluate(path: path, hostname: hostname)
+                    validatedPaths.append(X509ValidatedPath(certificates: path))
+                } catch let error as X509PathError {
+                    lastFailure = error
+                }
+                continue
             }
 
             guard path.count < Self.maximumPathLength else {
@@ -102,8 +129,13 @@ public struct X509PathValidator: Sendable {
                 var next = path
                 next.append(candidate)
                 if Self.containsExact(candidate, in: trustAnchors) {
-                    try policy.evaluate(path: next, hostname: hostname)
-                    return X509ValidatedPath(certificates: next)
+                    do {
+                        try policy.evaluate(path: next, hostname: hostname)
+                        validatedPaths.append(X509ValidatedPath(certificates: next))
+                    } catch let error as X509PathError {
+                        lastFailure = error
+                    }
+                    continue
                 }
                 pending.append(next)
             }
@@ -112,6 +144,9 @@ public struct X509PathValidator: Sendable {
             }
         }
 
+        if !validatedPaths.isEmpty {
+            return validatedPaths
+        }
         throw lastFailure
     }
 
