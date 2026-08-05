@@ -1,5 +1,6 @@
 import SSLCore
 import SSLCrypto
+import TLSTypes
 
 /// TLS 1.3 client stream adapter backed by the record-independent core.
 public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable {
@@ -15,6 +16,7 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
   private var pendingHandshakeMessageIndex: Int
   private var earlyDataByteCountSent: UInt32
   private var hasFailed: Bool
+  private let verificationInstant: VerificationInstant
 
   public init(
     random: Span<UInt8>,
@@ -46,7 +48,7 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
       earlyDataConfiguration: earlyDataConfiguration,
       echConfiguration: consume echConfiguration
     )
-    self.init(core: core)
+    self.init(core: core, verificationInstant: verificationInstant)
   }
 
   public init(
@@ -79,7 +81,7 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
       earlyDataConfiguration: earlyDataConfiguration,
       echConfiguration: consume echConfiguration
     )
-    self.init(core: core)
+    self.init(core: core, verificationInstant: verificationInstant)
   }
 
   public init(
@@ -112,7 +114,7 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
       earlyDataConfiguration: earlyDataConfiguration,
       echConfiguration: consume echConfiguration
     )
-    self.init(core: core)
+    self.init(core: core, verificationInstant: verificationInstant)
   }
 
   public init(
@@ -145,7 +147,7 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
       earlyDataConfiguration: earlyDataConfiguration,
       echConfiguration: consume echConfiguration
     )
-    self.init(core: core)
+    self.init(core: core, verificationInstant: verificationInstant)
   }
 
   public init(
@@ -178,7 +180,7 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
       earlyDataConfiguration: earlyDataConfiguration,
       echConfiguration: consume echConfiguration
     )
-    self.init(core: core)
+    self.init(core: core, verificationInstant: verificationInstant)
   }
 
   public init(
@@ -211,10 +213,13 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
       earlyDataConfiguration: earlyDataConfiguration,
       echConfiguration: consume echConfiguration
     )
-    self.init(core: core)
+    self.init(core: core, verificationInstant: verificationInstant)
   }
 
-  private init(core: consuming TLS13ClientHandshakeCore) {
+  private init(
+    core: consuming TLS13ClientHandshakeCore,
+    verificationInstant: VerificationInstant
+  ) {
     self.core = core
     earlyRead = nil
     earlyWrite = nil
@@ -227,6 +232,7 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
     pendingHandshakeMessageIndex = 0
     earlyDataByteCountSent = 0
     hasFailed = false
+    self.verificationInstant = verificationInstant
   }
 
   public var isEstablished: Bool { !hasFailed && core.isEstablished }
@@ -491,6 +497,48 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
     }
   }
 
+  public mutating func receiveApplicationRecordStep(
+    _ input: Span<UInt8>
+  ) throws(TLS13HandshakeEngineError) -> TLS13StreamRecordTransition {
+    guard !hasFailed, isEstablished else { throw .invalidState }
+    do {
+      let opened = try openSingleEncryptedRecord(input)
+      switch opened.contentType {
+      case .applicationData:
+        return .applicationData(opened.plaintext)
+      case .handshake:
+        let messageRanges = try TLS13HandshakeWire.handshakeMessageRanges(
+          opened.plaintext.span
+        )
+        guard messageRanges.count == 1 else {
+          throw TLS13HandshakeEngineError.malformedInput
+        }
+        let message = try opened.plaintext.span(in: messageRanges[0])
+        if !message.isEmpty,
+          message[0] == TLS13SessionTicketCodec.newSessionTicketType
+        {
+          let ticket = try TLS13SessionTicketCodec.parseNewSessionTicket(message)
+          return .sessionTicket(
+            try core.makeResumptionState(
+              ticket: ticket,
+              receivedAt: verificationInstant
+            )
+          )
+        }
+        return .postHandshake(
+          try processPostHandshakePlaintextStep(opened.plaintext)
+        )
+      case .alert:
+        return .alert(try TLS13HandshakeWire.parseAlert(opened.plaintext))
+      case .changeCipherSpec:
+        throw TLS13HandshakeEngineError.malformedInput
+      }
+    } catch let error {
+      hasFailed = true
+      throw mapHandshakeEngineError(error)
+    }
+  }
+
   public mutating func receiveNewSessionTicket(
     _ input: Span<UInt8>,
     receivedAt: VerificationInstant
@@ -540,6 +588,17 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
     guard !hasFailed, isEstablished else { throw .invalidState }
     do {
       let plaintext = try openHandshakeApplicationRecord(input)
+      return try processPostHandshakePlaintextStep(plaintext)
+    } catch let error {
+      hasFailed = true
+      throw mapHandshakeEngineError(error)
+    }
+  }
+
+  private mutating func processPostHandshakePlaintextStep(
+    _ plaintext: borrowing OwnedBytes
+  ) throws(TLS13HandshakeEngineError) -> TLS13StreamHandshakeTransition {
+    do {
       let ranges = try TLS13HandshakeWire.handshakeMessageRanges(plaintext.span)
       guard ranges.count == 1 else { throw TLS13HandshakeEngineError.malformedInput }
       let message = try plaintext.span(in: ranges[0])
@@ -566,7 +625,6 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
       if let request { return .suspended(request, output) }
       return .output(output)
     } catch let error {
-      hasFailed = true
       throw mapHandshakeEngineError(error)
     }
   }
@@ -672,28 +730,25 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
   private mutating func openHandshakeApplicationRecord(
     _ input: Span<UInt8>
   ) throws(TLS13HandshakeEngineError) -> OwnedBytes {
-    let ranges = try TLS13HandshakeWire.recordRanges(input)
-    guard ranges.count == 1,
-      var protector = applicationRead.take()
-    else {
-      throw .malformedInput
-    }
-    do {
-      let plaintext = try TLS13HandshakeWire.open(
-        record: try inputSpan(input, range: ranges[0]),
-        with: &protector
-      )
-      applicationRead = consume protector
-      return plaintext
-    } catch let error {
-      applicationRead = consume protector
-      throw error
-    }
+    try openSingleEncryptedRecord(input).plaintext
   }
 
   private mutating func openSingleApplicationRecord(
     _ input: Span<UInt8>
   ) throws(TLS13HandshakeEngineError) -> OwnedBytes {
+    let opened = try openSingleEncryptedRecord(input)
+    guard opened.contentType == .applicationData else {
+      throw TLS13HandshakeEngineError.malformedInput
+    }
+    return opened.plaintext
+  }
+
+  private mutating func openSingleEncryptedRecord(
+    _ input: Span<UInt8>
+  ) throws(TLS13HandshakeEngineError) -> (
+    contentType: TLS13ContentType,
+    plaintext: OwnedBytes
+  ) {
     let ranges = try TLS13HandshakeWire.recordRanges(input)
     guard ranges.count == 1,
       var protector = applicationRead.take()
@@ -701,9 +756,8 @@ public struct TLS13ClientHandshake: TLS13ClientHandshaking, ~Copyable, Sendable 
       throw .malformedInput
     }
     do {
-      let result = try TLS13HandshakeWire.open(
+      let result = try TLS13HandshakeWire.openAny(
         record: try inputSpan(input, range: ranges[0]),
-        expectedContentType: .applicationData,
         with: &protector
       )
       applicationRead = consume protector

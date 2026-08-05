@@ -185,11 +185,41 @@ enum TLS13HandshakeWire {
     )
   }
 
+  static func parseAlert(
+    _ plaintext: borrowing OwnedBytes
+  ) throws(TLS13HandshakeEngineError) -> TLSAlert {
+    guard plaintext.count == 2,
+      let alert = TLSAlert(rawValue: plaintext.span[1])
+    else {
+      throw .malformedInput
+    }
+    let level = plaintext.span[0]
+    let isValidLevel = alert == .closeNotify
+      ? level == 1
+      : level == 2
+    guard isValidLevel else { throw .malformedInput }
+    return alert
+  }
+
   static func open(
     record: Span<UInt8>,
     expectedContentType: TLS13ContentType = .handshake,
     with protector: inout TLS13RecordProtector
   ) throws(TLS13HandshakeEngineError) -> OwnedBytes {
+    let opened = try openAny(record: record, with: &protector)
+    guard opened.contentType == expectedContentType else {
+      throw TLS13HandshakeEngineError.malformedInput
+    }
+    return opened.plaintext
+  }
+
+  static func openAny(
+    record: Span<UInt8>,
+    with protector: inout TLS13RecordProtector
+  ) throws(TLS13HandshakeEngineError) -> (
+    contentType: TLS13ContentType,
+    plaintext: OwnedBytes
+  ) {
     let innerByteCount = Swift.max(
       0,
       record.count - TLS13RecordProtector.recordHeaderByteCount - 16
@@ -202,12 +232,14 @@ enum TLS13HandshakeWire {
     } catch let error {
       throw .record(error)
     }
-    guard contentType == expectedContentType else { throw .malformedInput }
     let unusedByteCount = plaintext.count - protector.lastOpenedByteCount
     if unusedByteCount > 0 {
       plaintext.removeLast(unusedByteCount)
     }
-    return OwnedBytes(consuming: plaintext)
+    return (
+      contentType: contentType,
+      plaintext: OwnedBytes(consuming: plaintext)
+    )
   }
 
   static func makeOutput(

@@ -178,11 +178,12 @@ public struct RFC9147DTLS13RecordProtector: DTLS13RecordProtecting, ~Copyable, S
           count: 16
         )
       )
-      if let mask = try? makeRecordNumberMask(sample: sample) {
+      do {
+        let mask = try makeRecordNumberMask(sample: sample)
         let sequenceOffset = 1 + connectionID.count
         baseAddress[sequenceOffset] ^= mask[0]
         baseAddress[sequenceOffset + 1] ^= mask[1]
-      } else {
+      } catch {
         sealSucceeded = false
       }
     }

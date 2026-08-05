@@ -1,5 +1,6 @@
 import SSLCore
 import SSLCrypto
+import TLSTypes
 
 /// TLS 1.3 server stream adapter backed by the record-independent core.
 public struct TLS13ServerHandshake: TLS13ServerHandshaking, ~Copyable, Sendable {
@@ -718,6 +719,30 @@ public struct TLS13ServerHandshake: TLS13ServerHandshaking, ~Copyable, Sendable 
     }
   }
 
+  public mutating func receiveApplicationRecordStep(
+    _ input: Span<UInt8>
+  ) throws(TLS13HandshakeEngineError) -> TLS13StreamRecordTransition {
+    guard !hasFailed, isEstablished else { throw .invalidState }
+    do {
+      let opened = try openSingleEncryptedRecord(input)
+      switch opened.contentType {
+      case .applicationData:
+        return .applicationData(opened.plaintext)
+      case .handshake:
+        return .postHandshake(
+          try processPostHandshakePlaintextStep(opened.plaintext)
+        )
+      case .alert:
+        return .alert(try TLS13HandshakeWire.parseAlert(opened.plaintext))
+      case .changeCipherSpec:
+        throw TLS13HandshakeEngineError.malformedInput
+      }
+    } catch let error {
+      hasFailed = true
+      throw mapHandshakeEngineError(error)
+    }
+  }
+
   public mutating func sendNewSessionTicket(
     lifetime: UInt32,
     ageAdd: UInt32,
@@ -811,6 +836,17 @@ public struct TLS13ServerHandshake: TLS13ServerHandshaking, ~Copyable, Sendable 
     guard !hasFailed, isEstablished else { throw .invalidState }
     do {
       let plaintext = try openHandshakeApplicationRecord(input)
+      return try processPostHandshakePlaintextStep(plaintext)
+    } catch let error {
+      hasFailed = true
+      throw mapHandshakeEngineError(error)
+    }
+  }
+
+  private mutating func processPostHandshakePlaintextStep(
+    _ plaintext: borrowing OwnedBytes
+  ) throws(TLS13HandshakeEngineError) -> TLS13StreamHandshakeTransition {
+    do {
       let ranges = try TLS13HandshakeWire.handshakeMessageRanges(plaintext.span)
       guard ranges.count == 1 else { throw TLS13HandshakeEngineError.malformedInput }
       let message = try plaintext.span(in: ranges[0])
@@ -838,7 +874,6 @@ public struct TLS13ServerHandshake: TLS13ServerHandshaking, ~Copyable, Sendable 
       if let request { return .suspended(request, output) }
       return .output(output)
     } catch let error {
-      hasFailed = true
       throw mapHandshakeEngineError(error)
     }
   }
@@ -1033,28 +1068,25 @@ public struct TLS13ServerHandshake: TLS13ServerHandshaking, ~Copyable, Sendable 
   private mutating func openHandshakeApplicationRecord(
     _ input: Span<UInt8>
   ) throws(TLS13HandshakeEngineError) -> OwnedBytes {
-    let ranges = try TLS13HandshakeWire.recordRanges(input)
-    guard ranges.count == 1,
-      var protector = applicationRead.take()
-    else {
-      throw .malformedInput
-    }
-    do {
-      let plaintext = try TLS13HandshakeWire.open(
-        record: try inputSpan(input, range: ranges[0]),
-        with: &protector
-      )
-      applicationRead = consume protector
-      return plaintext
-    } catch let error {
-      applicationRead = consume protector
-      throw error
-    }
+    try openSingleEncryptedRecord(input).plaintext
   }
 
   private mutating func openSingleApplicationRecord(
     _ input: Span<UInt8>
   ) throws(TLS13HandshakeEngineError) -> OwnedBytes {
+    let opened = try openSingleEncryptedRecord(input)
+    guard opened.contentType == .applicationData else {
+      throw TLS13HandshakeEngineError.malformedInput
+    }
+    return opened.plaintext
+  }
+
+  private mutating func openSingleEncryptedRecord(
+    _ input: Span<UInt8>
+  ) throws(TLS13HandshakeEngineError) -> (
+    contentType: TLS13ContentType,
+    plaintext: OwnedBytes
+  ) {
     let ranges = try TLS13HandshakeWire.recordRanges(input)
     guard ranges.count == 1,
       var protector = applicationRead.take()
@@ -1062,9 +1094,8 @@ public struct TLS13ServerHandshake: TLS13ServerHandshaking, ~Copyable, Sendable 
       throw .malformedInput
     }
     do {
-      let result = try TLS13HandshakeWire.open(
+      let result = try TLS13HandshakeWire.openAny(
         record: try inputSpan(input, range: ranges[0]),
-        expectedContentType: .applicationData,
         with: &protector
       )
       applicationRead = consume protector

@@ -22,6 +22,8 @@ public protocol TLS13ServerHandshaking: ~Copyable, Sendable {
     throws(TLS13HandshakeEngineError) -> TLS13HandshakeOutput
   mutating func receiveApplicationRecord(_ input: Span<UInt8>)
     throws(TLS13HandshakeEngineError) -> OwnedBytes
+  mutating func receiveApplicationRecordStep(_ input: Span<UInt8>)
+    throws(TLS13HandshakeEngineError) -> TLS13StreamRecordTransition
   mutating func sendNewSessionTicket(
     lifetime: UInt32,
     ageAdd: UInt32,

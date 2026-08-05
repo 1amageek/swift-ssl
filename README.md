@@ -79,6 +79,24 @@ transport-facing adapters but does not duplicate wire, transcript, key schedule,
 handshake, replay, flight, or record code. QUIC CRYPTO offsets/reassembly remain
 owned by `swift-quic`.
 
+The stream mechanism exposes one classified encrypted-record transition so the
+facade does not infer protocol state from a generic output or error:
+
+```mermaid
+flowchart LR
+    Record[Authenticated TLS record] --> Classify{Inner content type}
+    Classify --> App[applicationData OwnedBytes]
+    Classify --> Post[postHandshake transition]
+    Classify --> Alert[validated TLSAlert]
+    Alert --> Close[close_notify terminal state]
+    Alert --> Fatal[fatal alert typed failure]
+```
+
+`TLS13ClientHandshake` and `TLS13ServerHandshake` provide
+`receiveApplicationRecordStep(_:)` for this boundary. The method opens exactly
+one record, preserves the record-protector state on both success and failure,
+and rejects change-cipher-spec records and malformed alert levels.
+
 ## Supported profile
 
 - AES-128/192/256-GCM and ChaCha20-Poly1305

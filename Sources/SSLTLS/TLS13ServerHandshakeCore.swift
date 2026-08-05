@@ -2316,7 +2316,6 @@ public struct TLS13ServerHandshakeCore:
     throws(TLS13HandshakeEngineError) -> ContiguousArray<OwnedBytes>
   {
     guard handshakeSecrets != nil else { throw .invalidState }
-    let certificateEntries = try serverCredential.certificateEntries()
     var messages = ContiguousArray<OwnedBytes>()
     let encryptedExtensions = try engineTry {
       try TLS13HandshakeCodec.makeEncryptedExtensions(
@@ -2333,6 +2332,7 @@ public struct TLS13ServerHandshakeCore:
     try appendTranscript(encryptedExtensions.span)
     messages.append(encryptedExtensions)
     if !resumedHandshake {
+      let certificateEntries = try serverCredential.certificateEntries()
       if mainHandshakeClientAuthentication != nil {
         let certificateRequest = try engineTry {
           try TLS13HandshakeCodec.makeCertificateRequest(
