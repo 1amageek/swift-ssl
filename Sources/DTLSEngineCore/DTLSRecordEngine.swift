@@ -123,7 +123,7 @@ struct DTLSRecordEngine: Sendable {
     /// write epoch, advancing the write sequence number. Throws on seq exhaustion.
     mutating func encodeRecord(
         contentType: DTLSContentType,
-        plaintext: [UInt8]
+        plaintext: Span<UInt8>
     ) throws(DTLSEngineError) -> [UInt8] {
         try encodeRecord(
             contentType: contentType,
@@ -141,7 +141,7 @@ struct DTLSRecordEngine: Sendable {
         let epoch = currentWriteState.epoch
         let bytes = try encodeRecord(
             contentType: contentType,
-            plaintext: plaintext,
+            plaintext: plaintext.span,
             epoch: epoch
         )
         return (
@@ -161,7 +161,7 @@ struct DTLSRecordEngine: Sendable {
     ) throws(DTLSEngineError) -> [UInt8] {
         try encodeRecord(
             contentType: recipe.contentType,
-            plaintext: recipe.plaintext,
+            plaintext: recipe.plaintext.span,
             epoch: recipe.epoch
         )
     }
@@ -170,7 +170,7 @@ struct DTLSRecordEngine: Sendable {
 
     private mutating func encodeRecord(
         contentType: DTLSContentType,
-        plaintext: [UInt8],
+        plaintext: Span<UInt8>,
         epoch: UInt16
     ) throws(DTLSEngineError) -> [UInt8] {
         guard plaintext.count <= Self.maxPlaintextSize else {
@@ -191,7 +191,30 @@ struct DTLSRecordEngine: Sendable {
             throw .internalError(reason: "DTLS protected write epoch has no key owner")
         }
         let seqNum = try allocateWriteSequenceNumber(for: epoch)
-        var fragment = plaintext
+        let fragmentByteCount: Int
+        if epoch > 0, let protector {
+            do {
+                fragmentByteCount = try protector.sealedByteCount(
+                    forPlaintextByteCount: plaintext.count
+                )
+            } catch {
+                throw .internalError(reason: "DTLS record size calculation failed: \(error)")
+            }
+        } else {
+            fragmentByteCount = plaintext.count
+        }
+        var record = [UInt8](
+            repeating: 0,
+            count: Self.headerSize + fragmentByteCount
+        )
+        Self.writeRecordHeader(
+            into: &record,
+            contentType: contentType,
+            epoch: epoch,
+            sequenceNumber: seqNum,
+            fragmentByteCount: fragmentByteCount
+        )
+
         if epoch > 0, let protector {
             let explicitNonce = Self.buildExplicitNonce(epoch: epoch, sequenceNumber: seqNum)
             let aad = Self.buildAAD(
@@ -201,17 +224,40 @@ struct DTLSRecordEngine: Sendable {
                 plaintextLength: plaintext.count
             )
             do {
-                fragment = try protector.seal(plaintext: plaintext, explicitNonce: explicitNonce, aad: aad)
+                let recordByteCount = record.count
+                try record.withUnsafeMutableBufferPointer { buffer throws(DTLSRecordProtectionError) in
+                    // `record` is the unique, initialized owner for this call.
+                    // The fragment borrow is exactly the validated tail after the
+                    // 13-byte header and does not escape the synchronous seal.
+                    var recordSpan = MutableSpan(_unsafeElements: buffer)
+                    var fragmentOutput = recordSpan._mutatingExtracting(
+                        Self.headerSize..<recordByteCount
+                    )
+                    try protector.seal(
+                        plaintext: plaintext,
+                        explicitNonce: explicitNonce,
+                        aad: aad,
+                        into: &fragmentOutput
+                    )
+                }
             } catch {
                 throw .internalError(reason: "DTLS record seal failed: \(error)")
             }
+        } else {
+            guard !plaintext.isEmpty else { return record }
+            record.withUnsafeMutableBufferPointer { destination in
+                plaintext.withUnsafeBufferPointer { source in
+                    // The destination tail is initialized, uniquely owned, and
+                    // exactly plaintext.count bytes. Both pointers are scoped to
+                    // this synchronous copy and never escape.
+                    destination.baseAddress!.advanced(by: Self.headerSize).update(
+                        from: source.baseAddress!,
+                        count: plaintext.count
+                    )
+                }
+            }
         }
-        return Self.encodeRecordBytes(
-            contentType: contentType,
-            epoch: epoch,
-            sequenceNumber: seqNum,
-            fragment: fragment
-        )
+        return record
     }
 
     private mutating func allocateWriteSequenceNumber(
@@ -243,29 +289,29 @@ struct DTLSRecordEngine: Sendable {
     /// too-old, malformed, and bad-MAC records are discarded (loop continues); a
     /// valid record yields its content type + plaintext fragment.
     mutating func decodeRecord(
-        from data: [UInt8],
+        from data: Span<UInt8>,
         at offset: Int
     ) throws(DTLSEngineError) -> DTLSRecordDecodeOutcome {
+        guard offset >= 0, offset <= data.count else {
+            throw .protocolFailure(reason: "DTLS record offset is outside the datagram")
+        }
         let available = data.count - offset
         guard available >= Self.headerSize else { return .insufficientData }
-
-        var reader = ByteReader(data)
-        try reader.eSkip(offset)
-        let contentTypeRaw = try reader.eReadUInt8()
+        let contentTypeRaw = data[offset]
         guard let contentType = DTLSContentType(rawValue: contentTypeRaw) else {
             // An unknown content type in the header is a malformed datagram.
             throw .protocolFailure(reason: "unknown DTLS content type \(contentTypeRaw)")
         }
-        _ = try reader.eReadUInt16() // version
-        let epoch = try reader.eReadUInt16()
-        let seqHigh = try reader.eReadUInt16()
-        let seqLow = try reader.eReadUInt32()
+        let epoch = Self.readUInt16(data, at: offset + 3)
+        let seqHigh = Self.readUInt16(data, at: offset + 5)
+        let seqLow = Self.readUInt32(data, at: offset + 7)
         let sequenceNumber = UInt64(seqHigh) << 32 | UInt64(seqLow)
-        let length = Int(try reader.eReadUInt16())
+        let length = Int(Self.readUInt16(data, at: offset + 11))
 
         let consumed = Self.headerSize + length
         guard available >= consumed else { return .insufficientData }
-        let fragment = try reader.eReadBytes(length)
+        let fragmentStart = offset + Self.headerSize
+        let fragment = data.extracting(fragmentStart..<(fragmentStart + length))
 
         // Epoch check (RFC 6347 §4.1): discard records from another epoch.
         if epoch != readEpoch {
@@ -274,10 +320,10 @@ struct DTLSRecordEngine: Sendable {
 
         // Encrypted record (epoch > 0 with keys installed).
         if let protector = readProtector, epoch > 0 {
-            guard fragment.count >= Self.aeadOverhead else {
+            guard length >= Self.aeadOverhead else {
                 return .discarded(consumed: consumed, reason: .malformed)
             }
-            let plaintextLength = fragment.count - Self.aeadOverhead
+            let plaintextLength = length - Self.aeadOverhead
             guard plaintextLength <= Self.maxPlaintextSize else {
                 return .discarded(consumed: consumed, reason: .malformed)
             }
@@ -318,7 +364,49 @@ struct DTLSRecordEngine: Sendable {
         }
 
         // Unencrypted record (epoch 0): no replay protection.
-        return .record(contentType: contentType, fragment: fragment, consumed: consumed)
+        return .record(
+            contentType: contentType,
+            fragment: Self.copyBytes(fragment),
+            consumed: consumed
+        )
+    }
+
+    @inline(__always)
+    private static func readUInt16(
+        _ bytes: Span<UInt8>,
+        at offset: Int
+    ) -> UInt16 {
+        UInt16(bytes[offset]) << 8 | UInt16(bytes[offset + 1])
+    }
+
+    @inline(__always)
+    private static func readUInt32(
+        _ bytes: Span<UInt8>,
+        at offset: Int
+    ) -> UInt32 {
+        UInt32(bytes[offset]) << 24
+            | UInt32(bytes[offset + 1]) << 16
+            | UInt32(bytes[offset + 2]) << 8
+            | UInt32(bytes[offset + 3])
+    }
+
+    @inline(__always)
+    private static func copyBytes(_ source: Span<UInt8>) -> [UInt8] {
+        guard !source.isEmpty else { return [] }
+        return [UInt8](unsafeUninitializedCapacity: source.count) {
+            destination,
+            initializedCount in
+            source.withUnsafeBufferPointer { sourceBuffer in
+                // The destination is a fresh allocation with exactly source.count
+                // uninitialized UInt8 elements. Both scoped pointers remain valid
+                // for this synchronous copy and cannot escape the closure.
+                destination.baseAddress!.update(
+                    from: sourceBuffer.baseAddress!,
+                    count: source.count
+                )
+            }
+            initializedCount = source.count
+        }
     }
 
     // MARK: - Wire helpers (byte-identical to DTLSRecordCodec / DTLSRecordLayer)
@@ -351,22 +439,28 @@ struct DTLSRecordEngine: Sendable {
         return writer.finishArray()
     }
 
-    /// Encodes a full DTLS record (13-byte header + fragment).
-    static func encodeRecordBytes(
+    /// Writes a full DTLS record header into the already-sized output owner.
+    private static func writeRecordHeader(
+        into output: inout [UInt8],
         contentType: DTLSContentType,
         epoch: UInt16,
         sequenceNumber: UInt64,
-        fragment: [UInt8]
-    ) -> [UInt8] {
-        var writer = ByteWriter()
-        writer.writeUInt8(contentType.rawValue)
-        writer.writeUInt8(0xFE)
-        writer.writeUInt8(0xFD)
-        writer.writeUInt16(epoch)
-        writer.writeUInt16(UInt16((sequenceNumber >> 32) & 0xFFFF))
-        writer.writeUInt32(UInt32(sequenceNumber & 0xFFFFFFFF))
-        writer.writeUInt16(UInt16(fragment.count & 0xFFFF))
-        writer.writeBytes(fragment)
-        return writer.finishArray()
+        fragmentByteCount: Int
+    ) {
+        precondition(output.count == headerSize + fragmentByteCount)
+        precondition(fragmentByteCount <= UInt16.max)
+        output[0] = contentType.rawValue
+        output[1] = 0xFE
+        output[2] = 0xFD
+        output[3] = UInt8(truncatingIfNeeded: epoch >> 8)
+        output[4] = UInt8(truncatingIfNeeded: epoch)
+        output[5] = UInt8(truncatingIfNeeded: sequenceNumber >> 40)
+        output[6] = UInt8(truncatingIfNeeded: sequenceNumber >> 32)
+        output[7] = UInt8(truncatingIfNeeded: sequenceNumber >> 24)
+        output[8] = UInt8(truncatingIfNeeded: sequenceNumber >> 16)
+        output[9] = UInt8(truncatingIfNeeded: sequenceNumber >> 8)
+        output[10] = UInt8(truncatingIfNeeded: sequenceNumber)
+        output[11] = UInt8(truncatingIfNeeded: fragmentByteCount >> 8)
+        output[12] = UInt8(truncatingIfNeeded: fragmentByteCount)
     }
 }

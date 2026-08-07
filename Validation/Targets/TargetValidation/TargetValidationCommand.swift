@@ -30,6 +30,7 @@ enum TargetValidationCommand {
     case secretOwner
     case sha256
     case hmacSHA256
+    case hmacSHA384AndSHA512
     case hkdfSHA256
     case actionBatch
     case quicSecret
@@ -74,6 +75,7 @@ enum TargetValidationCommand {
     try validateRSAPKCS1v15()
     try validateHMACDRBG()
     try validateSHA384AndSHA512()
+    try validateHMACSHA384AndSHA512()
     try validateSHA3()
     try validateSHA256()
     try validateHMACSHA256()
@@ -522,23 +524,28 @@ enum TargetValidationCommand {
       keyShare: clientShare.span
     )
     let parsedClientHello = try TLS13HandshakeCodec.parseClientHello(clientHello.span)
-    guard parsedClientHello.namedGroup == .x25519MLKEM768,
-      parsedClientHello.keyShare.count == 1_216
+    guard parsedClientHello.offeredNamedGroups
+      == [TLS13NamedGroup.x25519MLKEM768.rawValue],
+      parsedClientHello.keyShares.count == 1,
+      parsedClientHello.keyShares[0].keyExchange.count == 1_216
     else {
       throw Failure.hybridKeyExchange
     }
 
-    let serverResult = try server.accept(
-      clientShare: parsedClientHello.keyShare.span,
-      using: FixedEntropy(bytes: sequential(count: 32, seed: 0x70))
-    )
+    let clientKeyExchange = parsedClientHello.keyShares[0].keyExchange
+    let serverResult = try clientKeyExchange.withBorrowedBytes { clientShare in
+      try server.accept(
+        clientShare: clientShare,
+        using: FixedEntropy(bytes: sequential(count: 32, seed: 0x70))
+      )
+    }
     let serverHello = try TLS13HandshakeCodec.makeServerHello(
       random: ContiguousArray(repeating: 0x02, count: 32).span,
       namedGroup: .x25519MLKEM768,
       keyShare: serverResult.serverShare.span
     )
     let parsedServerHello = try TLS13HandshakeCodec.parseServerHello(serverHello.span)
-    guard parsedServerHello.namedGroup == .x25519MLKEM768,
+    guard parsedServerHello.namedGroup == TLS13NamedGroup.x25519MLKEM768,
       parsedServerHello.keyShare.count == 1_120
     else {
       throw Failure.hybridKeyExchange
@@ -1029,6 +1036,45 @@ enum TargetValidationCommand {
     var output512Span = output512.mutableSpan
     try SSL.SHA512.hash(input.span, into: &output512Span)
     guard output384 == expected384, output512 == expected512 else { throw Failure.sha384512 }
+  }
+
+  private static func validateHMACSHA384AndSHA512() throws {
+    let key = ContiguousArray<UInt8>(repeating: 0x0B, count: 20)
+    let message = ContiguousArray("Hi There".utf8)
+    let expected384 = try hexadecimalBytes(
+      "afd03944d84895626b0825f4ab46907f15f9dadbe4101ec682aa034c7cebc59c"
+        + "faea9ea9076ede7f4af152e8b2fa9cb6"
+    )
+    let expected512 = try hexadecimalBytes(
+      "87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cde"
+        + "daa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854"
+    )
+
+    var output384 = ContiguousArray<UInt8>(
+      repeating: 0,
+      count: SSLCrypto.HMACSHA384.tagByteCount
+    )
+    var output384Span = output384.mutableSpan
+    try SSLCrypto.HMACSHA384.authenticate(
+      message.span,
+      using: key.span,
+      into: &output384Span
+    )
+
+    var output512 = ContiguousArray<UInt8>(
+      repeating: 0,
+      count: SSLCrypto.HMACSHA512.tagByteCount
+    )
+    var output512Span = output512.mutableSpan
+    try SSLCrypto.HMACSHA512.authenticate(
+      message.span,
+      using: key.span,
+      into: &output512Span
+    )
+
+    guard output384 == expected384, output512 == expected512 else {
+      throw Failure.hmacSHA384AndSHA512
+    }
   }
 
   private static func validateSHA3() throws {

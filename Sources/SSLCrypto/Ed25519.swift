@@ -17,7 +17,7 @@ public enum Ed25519: DigitalSignature {
       throw .invalidLength(expected: Self.signatureByteCount, actual: signature.count)
     }
 
-    let publicPoint = try EdwardsPoint.decode(publicKey.span)
+    let publicPoint = publicKey.decodedPoint
     let rPoint = try EdwardsPoint.decode(signature.extracting(0..<32))
     let scalarBytes = signature.extracting(32..<64)
     guard Scalar.isCanonical(scalarBytes) else {
@@ -42,10 +42,13 @@ public enum Ed25519: DigitalSignature {
     let challenge = Scalar.reduce(digest.span)
     Self.wipe(&digest)
 
-    let left = EdwardsPoint.scalarMultiplyBase(scalarBytes)
-    let right = rPoint.add(publicPoint.scalarMultiply(challenge.span))
-    let leftCleared = left.double().double().double()
-    let rightCleared = right.double().double().double()
+    let verificationPoint = EdwardsPoint.doubleScalarMultiplyBase(
+      baseScalar: scalarBytes,
+      subtracting: publicPoint,
+      scalar: challenge.span
+    )
+    let leftCleared = verificationPoint.double().double().double()
+    let rightCleared = rPoint.double().double().double()
     return leftCleared.isEqual(to: rightCleared)
   }
 
@@ -58,6 +61,56 @@ public enum Ed25519: DigitalSignature {
 
   static func validatePublicKey(_ bytes: Span<UInt8>) throws(CryptoInputError) {
     _ = try EdwardsPoint.decode(bytes)
+  }
+
+  static func reduceScalarForTesting(_ bytes: Span<UInt8>) -> ContiguousArray<UInt8> {
+    Scalar.reduce(bytes)
+  }
+
+  static func multiplyScalarsForTesting(
+    _ lhs: Span<UInt8>,
+    _ rhs: Span<UInt8>
+  ) -> ContiguousArray<UInt8> {
+    var left = ContiguousArray<UInt8>()
+    left.reserveCapacity(lhs.count)
+    var index = 0
+    while index < lhs.count {
+      left.append(lhs[index])
+      index += 1
+    }
+    return Scalar.multiplyMod(left, rhs)
+  }
+
+  static func scalarMultiplyBaseForTesting(_ scalar: Span<UInt8>) -> ContiguousArray<UInt8> {
+    EdwardsPoint.scalarMultiplyBase(scalar).encoded
+  }
+
+  static func scalarMultiplyGenericBaseForTesting(_ scalar: Span<UInt8>) -> ContiguousArray<UInt8> {
+    EdwardsPoint.base.scalarMultiply(scalar).encoded
+  }
+
+  static func scalarMultiplyPublicBaseForTesting(_ scalar: Span<UInt8>) -> ContiguousArray<UInt8> {
+    EdwardsPoint.base.scalarMultiplyPublic(scalar).encoded
+  }
+
+  static func doubleScalarMultiplyBaseForTesting(
+    _ baseScalar: Span<UInt8>,
+    subtracting pointScalar: Span<UInt8>
+  ) -> ContiguousArray<UInt8> {
+    EdwardsPoint.doubleScalarMultiplyBase(
+      baseScalar: baseScalar,
+      subtracting: EdwardsPoint.base,
+      scalar: pointScalar
+    ).encoded
+  }
+
+  static func referenceDoubleScalarMultiplyBaseForTesting(
+    _ baseScalar: Span<UInt8>,
+    subtracting pointScalar: Span<UInt8>
+  ) -> ContiguousArray<UInt8> {
+    EdwardsPoint.scalarMultiplyBase(baseScalar)
+      .add(EdwardsPoint.base.scalarMultiply(pointScalar).negated())
+      .encoded
   }
 
   private static func wipe(_ bytes: inout ContiguousArray<UInt8>) {
@@ -106,8 +159,38 @@ public struct Ed25519PrivateKey: ~Copyable, Sendable {
     defer { Self.wipe(&expanded) }
 
     let scalar = expanded.span.extracting(0..<32)
-    let prefix = expanded.span.extracting(32..<64)
     let publicKey = EdwardsPoint.scalarMultiplyBase(scalar).encoded
+    return try sign(message: message, expanded: expanded, publicKey: publicKey.span)
+  }
+
+  /// Signs with a public key already derived from this seed.
+  ///
+  /// This SPI exists for value-oriented facades that retain the matching public
+  /// key alongside the seed. The caller must guarantee that `publicKey` belongs
+  /// to this private seed; a mismatch produces an invalid signature.
+  @_spi(PureSwiftCrypto)
+  public borrowing func sign(
+    message: Span<UInt8>,
+    precomputedPublicKey publicKey: Span<UInt8>
+  ) throws(CryptoInputError) -> ContiguousArray<UInt8> {
+    guard publicKey.count == Ed25519.publicKeyByteCount else {
+      throw .invalidLength(expected: Ed25519.publicKeyByteCount, actual: publicKey.count)
+    }
+    var expanded = try Self.expand(seed: seed)
+    expanded[0] &= 248
+    expanded[31] &= 63
+    expanded[31] |= 64
+    defer { Self.wipe(&expanded) }
+    return try sign(message: message, expanded: expanded, publicKey: publicKey)
+  }
+
+  private borrowing func sign(
+    message: Span<UInt8>,
+    expanded: borrowing ContiguousArray<UInt8>,
+    publicKey: Span<UInt8>
+  ) throws(CryptoInputError) -> ContiguousArray<UInt8> {
+    let scalar = expanded.span.extracting(0..<32)
+    let prefix = expanded.span.extracting(32..<64)
     var nonceInput = ContiguousArray<UInt8>()
     nonceInput.reserveCapacity(prefix.count + message.count)
     Self.append(&nonceInput, prefix)
@@ -122,7 +205,7 @@ public struct Ed25519PrivateKey: ~Copyable, Sendable {
     var challengeInput = ContiguousArray<UInt8>()
     challengeInput.reserveCapacity(encodedR.count + publicKey.count + message.count)
     challengeInput.append(contentsOf: encodedR)
-    challengeInput.append(contentsOf: publicKey)
+    Self.append(&challengeInput, publicKey)
     Self.append(&challengeInput, message)
     var challengeDigest = try Self.hash(challengeInput.span)
     defer { Self.wipe(&challengeDigest) }
@@ -179,45 +262,34 @@ public struct Ed25519PrivateKey: ~Copyable, Sendable {
 }
 
 private struct Scalar {
-  private static let modulus: ContiguousArray<UInt8> = hexBytes(
-    "edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010"
+  private static let modulus = Value(
+    word0: 0x5812_631a_5cf5_d3ed,
+    word1: 0x14de_f9de_a2f7_9cd6,
+    word2: 0,
+    word3: 0x1000_0000_0000_0000
   )
 
   static func isCanonical(_ bytes: Span<UInt8>) -> Bool {
-    var index = bytes.count - 1
-    while index >= 0 {
-      if bytes[index] < modulus[index] { return true }
-      if bytes[index] > modulus[index] { return false }
-      index -= 1
-    }
-    return false
+    guard bytes.count == 32 else { return false }
+    var value = Value(bytes)
+    return !value.subtractIfAtLeast(modulus)
   }
 
   static func reduce(_ bytes: Span<UInt8>) -> ContiguousArray<UInt8> {
-    // The 64-byte hash is secret while signing. Long division performs one
-    // shift and one masked conditional subtraction for every input bit, so
-    // control flow and memory indices do not depend on the reduced value.
-    var remainder = ContiguousArray<UInt8>(repeating: 0, count: 33)
+    // The hash is secret while signing. Fixed four-word long division performs
+    // one shift and one masked subtraction per input bit. The memory access
+    // pattern and control flow are independent of the scalar value, and no
+    // per-bit heap allocation is performed.
+    var remainder = Value.zero
     var bit = bytes.count * 8 - 1
     while bit >= 0 {
-      let inputBit = (bytes[bit >> 3] >> UInt8(bit & 7)) & 1
-      var carry = inputBit
-      var index = 0
-      while index < remainder.count {
-        let nextCarry = remainder[index] >> 7
-        remainder[index] = (remainder[index] << 1) | carry
-        carry = nextCarry
-        index += 1
-      }
-      Self.subtractModulusIfPossible(&remainder)
+      let inputBit = UInt64((bytes[bit >> 3] >> UInt8(bit & 7)) & 1)
+      remainder.shiftLeft(adding: inputBit)
+      _ = remainder.subtractIfAtLeast(modulus)
       bit -= 1
     }
-    var result = ContiguousArray<UInt8>(repeating: 0, count: 32)
-    var resultIndex = 0
-    while resultIndex < 32 {
-      result[resultIndex] = remainder[resultIndex]
-      resultIndex += 1
-    }
+    let result = remainder.encoded
+    remainder.wipe()
     return result
   }
 
@@ -225,18 +297,14 @@ private struct Scalar {
     _ lhs: ContiguousArray<UInt8>,
     _ rhs: ContiguousArray<UInt8>
   ) -> ContiguousArray<UInt8> {
-    var result = ContiguousArray<UInt8>(repeating: 0, count: 33)
-    var carry: UInt16 = 0
-    var index = 0
-    while index < 32 {
-      let value = UInt16(lhs[index]) + UInt16(rhs[index]) + carry
-      result[index] = UInt8(truncatingIfNeeded: value)
-      carry = value >> 8
-      index += 1
-    }
-    result[32] = UInt8(truncatingIfNeeded: carry)
-    Self.subtractModulusIfPossible(&result)
-    result.removeLast()
+    var left = Value(lhs.span)
+    var right = Value(rhs.span)
+    var sum = left.adding(right)
+    _ = sum.subtractIfAtLeast(modulus)
+    let result = sum.encoded
+    left.wipe()
+    right.wipe()
+    sum.wipe()
     return result
   }
 
@@ -244,74 +312,150 @@ private struct Scalar {
     _ lhs: ContiguousArray<UInt8>,
     _ rhs: Span<UInt8>
   ) -> ContiguousArray<UInt8> {
-    var result = ContiguousArray<UInt8>(repeating: 0, count: 32)
-    var addend = lhs
+    var result = Value.zero
+    var addend = Value(lhs.span)
     var bit = 0
     while bit < 256 {
-      let sum = Self.addMod(result, addend)
-      let selected = (rhs[bit >> 3] >> UInt8(bit & 7)) & 1
-      Self.select(&result, sum, when: selected)
-      addend = Self.addMod(addend, addend)
+      var sum = result.adding(addend)
+      _ = sum.subtractIfAtLeast(modulus)
+      let selected = UInt64((rhs[bit >> 3] >> UInt8(bit & 7)) & 1)
+      result.select(sum, when: selected)
+      sum.wipe()
+      var doubled = addend.adding(addend)
+      _ = doubled.subtractIfAtLeast(modulus)
+      addend.wipe()
+      addend = doubled
       bit += 1
     }
-    return result
+    let encoded = result.encoded
+    result.wipe()
+    addend.wipe()
+    return encoded
   }
 
-  private static func subtractModulusIfPossible(
-    _ value: inout ContiguousArray<UInt8>
-  ) {
-    var difference = ContiguousArray<UInt8>(repeating: 0, count: value.count)
-    var borrow: UInt16 = 0
-    var index = 0
-    while index < value.count {
-      let subtrahend = UInt16(index < modulus.count ? modulus[index] : 0) + borrow
-      let minuend = UInt16(value[index])
-      difference[index] = UInt8(truncatingIfNeeded: minuend &- subtrahend)
-      borrow = UInt16(minuend < subtrahend ? 1 : 0)
-      index += 1
+  private struct Value {
+    var word0: UInt64
+    var word1: UInt64
+    var word2: UInt64
+    var word3: UInt64
+
+    static let zero = Self(word0: 0, word1: 0, word2: 0, word3: 0)
+
+    init(word0: UInt64, word1: UInt64, word2: UInt64, word3: UInt64) {
+      self.word0 = word0
+      self.word1 = word1
+      self.word2 = word2
+      self.word3 = word3
     }
-    let useDifference = UInt8(truncatingIfNeeded: UInt16(1) &- borrow)
-    Self.select(&value, difference, when: useDifference)
-  }
 
-  private static func select(
-    _ whenZero: inout ContiguousArray<UInt8>,
-    _ whenOne: ContiguousArray<UInt8>,
-    when select: UInt8
-  ) {
-    let mask = UInt8(0) &- select
-    var index = 0
-    while index < whenZero.count {
-      whenZero[index] = (whenZero[index] & ~mask) | (whenOne[index] & mask)
-      index += 1
+    init(_ bytes: Span<UInt8>) {
+      precondition(bytes.count >= 32)
+      word0 = Self.loadWord(bytes, offset: 0)
+      word1 = Self.loadWord(bytes, offset: 8)
+      word2 = Self.loadWord(bytes, offset: 16)
+      word3 = Self.loadWord(bytes, offset: 24)
     }
-  }
 
-  private static func hexBytes(_ string: String) -> ContiguousArray<UInt8> {
-    var result = ContiguousArray<UInt8>()
-    result.reserveCapacity(string.utf8.count / 2)
-    var high: UInt8 = 0
-    var haveHigh = false
-    for byte in string.utf8 {
-      let value: UInt8
-      switch byte {
-      case 0x30...0x39: value = byte - 0x30
-      case 0x61...0x66: value = byte - 0x61 + 10
-      default: value = 0
+    mutating func shiftLeft(adding bit: UInt64) {
+      let carry0 = word0 >> 63
+      let carry1 = word1 >> 63
+      let carry2 = word2 >> 63
+      word0 = (word0 << 1) | bit
+      word1 = (word1 << 1) | carry0
+      word2 = (word2 << 1) | carry1
+      word3 = (word3 << 1) | carry2
+    }
+
+    func adding(_ other: Self) -> Self {
+      let (sum0, overflow0) = word0.addingReportingOverflow(other.word0)
+      let (partial1, overflow1A) = word1.addingReportingOverflow(other.word1)
+      let (sum1, overflow1B) = partial1.addingReportingOverflow(overflow0 ? 1 : 0)
+      let (partial2, overflow2A) = word2.addingReportingOverflow(other.word2)
+      let (sum2, overflow2B) = partial2.addingReportingOverflow(
+        (overflow1A || overflow1B) ? 1 : 0
+      )
+      let (partial3, overflow3A) = word3.addingReportingOverflow(other.word3)
+      let (sum3, overflow3B) = partial3.addingReportingOverflow(
+        (overflow2A || overflow2B) ? 1 : 0
+      )
+      precondition(!overflow3A && !overflow3B)
+      return Self(word0: sum0, word1: sum1, word2: sum2, word3: sum3)
+    }
+
+    /// Subtracts `other` with a mask if `self >= other`.
+    /// - Returns: `true` exactly when subtraction was applied.
+    @discardableResult
+    mutating func subtractIfAtLeast(_ other: Self) -> Bool {
+      let (difference0, borrow0) = word0.subtractingReportingOverflow(other.word0)
+      let (partial1, borrow1A) = word1.subtractingReportingOverflow(other.word1)
+      let (difference1, borrow1B) = partial1.subtractingReportingOverflow(borrow0 ? 1 : 0)
+      let borrow1 = borrow1A || borrow1B
+      let (partial2, borrow2A) = word2.subtractingReportingOverflow(other.word2)
+      let (difference2, borrow2B) = partial2.subtractingReportingOverflow(borrow1 ? 1 : 0)
+      let borrow2 = borrow2A || borrow2B
+      let (partial3, borrow3A) = word3.subtractingReportingOverflow(other.word3)
+      let (difference3, borrow3B) = partial3.subtractingReportingOverflow(borrow2 ? 1 : 0)
+      let borrow = borrow3A || borrow3B
+      let apply = UInt64(borrow ? 0 : 1)
+      let mask = UInt64(0) &- apply
+      word0 = (word0 & ~mask) | (difference0 & mask)
+      word1 = (word1 & ~mask) | (difference1 & mask)
+      word2 = (word2 & ~mask) | (difference2 & mask)
+      word3 = (word3 & ~mask) | (difference3 & mask)
+      return !borrow
+    }
+
+    mutating func select(_ other: Self, when selection: UInt64) {
+      let mask = UInt64(0) &- selection
+      word0 = (word0 & ~mask) | (other.word0 & mask)
+      word1 = (word1 & ~mask) | (other.word1 & mask)
+      word2 = (word2 & ~mask) | (other.word2 & mask)
+      word3 = (word3 & ~mask) | (other.word3 & mask)
+    }
+
+    var encoded: ContiguousArray<UInt8> {
+      var result = ContiguousArray<UInt8>(repeating: 0, count: 32)
+      Self.storeWord(word0, into: &result, offset: 0)
+      Self.storeWord(word1, into: &result, offset: 8)
+      Self.storeWord(word2, into: &result, offset: 16)
+      Self.storeWord(word3, into: &result, offset: 24)
+      return result
+    }
+
+    mutating func wipe() {
+      // The raw pointer borrows this initialized fixed-width value only for
+      // the synchronous erase call and cannot escape or alias another owner.
+      withUnsafeMutableBytes(of: &self) { rawBytes in
+        guard let baseAddress = rawBytes.baseAddress else { return }
+        SecureWipe.erase(baseAddress, byteCount: rawBytes.count)
       }
-      if haveHigh {
-        result.append((high << 4) | value)
-        haveHigh = false
-      } else {
-        high = value
-        haveHigh = true
+    }
+
+    private static func loadWord(_ bytes: Span<UInt8>, offset: Int) -> UInt64 {
+      var result: UInt64 = 0
+      var index = 0
+      while index < 8 {
+        result |= UInt64(bytes[offset + index]) << UInt64(index * 8)
+        index += 1
+      }
+      return result
+    }
+
+    private static func storeWord(
+      _ word: UInt64,
+      into bytes: inout ContiguousArray<UInt8>,
+      offset: Int
+    ) {
+      var index = 0
+      while index < 8 {
+        bytes[offset + index] = UInt8(truncatingIfNeeded: word >> UInt64(index * 8))
+        index += 1
       }
     }
-    return result
   }
 }
 
-private struct EdwardsPoint {
+struct EdwardsPoint: Sendable {
   let x: Field25519
   let y: Field25519
   let z: Field25519
@@ -336,6 +480,7 @@ private struct EdwardsPoint {
         bytes: hexBytes("5866666666666666666666666666666666666666666666666666666666666666").span)
   )
 
+  @inline(__always)
   func add(_ other: EdwardsPoint) -> EdwardsPoint {
     let a = (y - x) * (other.y - other.x)
     let b = (y + x) * (other.y + other.x)
@@ -348,12 +493,13 @@ private struct EdwardsPoint {
     return EdwardsPoint(x: e * f, y: g * h, z: f * g, t: e * h)
   }
 
+  @inline(__always)
   func double() -> EdwardsPoint {
-    let a = x * x
-    let b = y * y
-    let c = Field25519(constant: 2) * z * z
+    let a = x.squared()
+    let b = y.squared()
+    let c = z.squared().multiplied(bySmall: 2)
     let d = -a
-    let e = (x + y) * (x + y) - a - b
+    let e = (x + y).squared() - a - b
     let g = d + b
     let f = g - c
     let h = d - b
@@ -377,6 +523,72 @@ private struct EdwardsPoint {
     return result
   }
 
+  /// Multiplies by a public scalar using a radix-16 lookup window.
+  ///
+  /// Verification scalars are hashes of public transcript data, so branches
+  /// and table selection may depend on their digits. Secret scalar operations
+  /// continue to use `scalarMultiply` or the fixed-base constant-time table.
+  func scalarMultiplyPublic(_ scalar: Span<UInt8>) -> EdwardsPoint {
+    precondition(scalar.count == 32)
+    let window = EdwardsPublicWindow(base: self)
+    var result = EdwardsPoint.identity
+    var nibbleIndex = 63
+    while nibbleIndex >= 0 {
+      result = result.double().double().double().double()
+      let byte = scalar[nibbleIndex >> 1]
+      let digit = nibbleIndex & 1 == 0 ? byte & 0x0F : byte >> 4
+      if digit != 0 {
+        result = result.add(window.point(for: digit))
+      }
+      nibbleIndex -= 1
+    }
+    return result
+  }
+
+  /// Computes `[baseScalar]B - [scalar]point` in one public-data wNAF walk.
+  static func doubleScalarMultiplyBase(
+    baseScalar: Span<UInt8>,
+    subtracting point: EdwardsPoint,
+    scalar: Span<UInt8>
+  ) -> EdwardsPoint {
+    precondition(baseScalar.count == 32 && scalar.count == 32)
+    let baseWindow = EdwardsPublicOddWindow(base: EdwardsPoint.base)
+    let pointWindow = EdwardsPublicOddWindow(base: point)
+
+    // Unsafe boundary invariants:
+    // - The temporary owner contains exactly 512 initialized Int8 digits.
+    // - Each half is indexed only within 0..<256.
+    // - Digits are public and constrained to zero or odd values in -15...15.
+    // - The buffer is borrowed only by this synchronous closure and never escapes.
+    return withUnsafeTemporaryAllocation(of: Int8.self, capacity: 512) { digits in
+      var baseValue = EdwardsWNAFScalar(baseScalar)
+      var pointValue = EdwardsWNAFScalar(scalar)
+      baseValue.recode(into: UnsafeMutableBufferPointer(rebasing: digits[0..<256]))
+      pointValue.recode(into: UnsafeMutableBufferPointer(rebasing: digits[256..<512]))
+
+      var result = EdwardsPoint.identity
+      var bit = 255
+      while bit >= 0 {
+        result = result.double()
+        let baseDigit = digits[bit]
+        if baseDigit != 0 {
+          result = result.add(baseWindow.point(for: baseDigit))
+        }
+        let pointDigit = digits[256 + bit]
+        if pointDigit != 0 {
+          result = result.add(pointWindow.point(for: -pointDigit))
+        }
+        bit -= 1
+      }
+      return result
+    }
+  }
+
+  @inline(__always)
+  func negated() -> EdwardsPoint {
+    EdwardsPoint(x: -x, y: y, z: z, t: -t)
+  }
+
   private static func selecting(
     _ whenZero: EdwardsPoint,
     _ whenOne: EdwardsPoint,
@@ -391,7 +603,8 @@ private struct EdwardsPoint {
   }
 
   static func scalarMultiplyBase(_ scalar: Span<UInt8>) -> EdwardsPoint {
-    EdwardsPoint.base.scalarMultiply(scalar)
+    let point = X25519FixedBase.scalarMultiplyEdwards(scalar: scalar)
+    return EdwardsPoint(x: point.x, y: point.y, z: point.z, t: point.t)
   }
 
   static func decode(_ bytes: Span<UInt8>) throws(CryptoInputError) -> EdwardsPoint {
@@ -485,6 +698,189 @@ private struct EdwardsPoint {
         high = value
         haveHigh = true
       }
+    }
+    return result
+  }
+}
+
+private struct EdwardsPublicWindow {
+  let point1: EdwardsPoint
+  let point2: EdwardsPoint
+  let point3: EdwardsPoint
+  let point4: EdwardsPoint
+  let point5: EdwardsPoint
+  let point6: EdwardsPoint
+  let point7: EdwardsPoint
+  let point8: EdwardsPoint
+  let point9: EdwardsPoint
+  let point10: EdwardsPoint
+  let point11: EdwardsPoint
+  let point12: EdwardsPoint
+  let point13: EdwardsPoint
+  let point14: EdwardsPoint
+  let point15: EdwardsPoint
+
+  init(base: EdwardsPoint) {
+    point1 = base
+    point2 = base.double()
+    point3 = point2.add(base)
+    point4 = point3.add(base)
+    point5 = point4.add(base)
+    point6 = point5.add(base)
+    point7 = point6.add(base)
+    point8 = point7.add(base)
+    point9 = point8.add(base)
+    point10 = point9.add(base)
+    point11 = point10.add(base)
+    point12 = point11.add(base)
+    point13 = point12.add(base)
+    point14 = point13.add(base)
+    point15 = point14.add(base)
+  }
+
+  @inline(__always)
+  func point(for digit: UInt8) -> EdwardsPoint {
+    switch digit {
+    case 1: point1
+    case 2: point2
+    case 3: point3
+    case 4: point4
+    case 5: point5
+    case 6: point6
+    case 7: point7
+    case 8: point8
+    case 9: point9
+    case 10: point10
+    case 11: point11
+    case 12: point12
+    case 13: point13
+    case 14: point14
+    case 15: point15
+    default: EdwardsPoint.identity
+    }
+  }
+}
+
+private struct EdwardsPublicOddWindow {
+  let point1: EdwardsPoint
+  let point3: EdwardsPoint
+  let point5: EdwardsPoint
+  let point7: EdwardsPoint
+  let point9: EdwardsPoint
+  let point11: EdwardsPoint
+  let point13: EdwardsPoint
+  let point15: EdwardsPoint
+
+  init(base: EdwardsPoint) {
+    let doubled = base.double()
+    point1 = base
+    point3 = point1.add(doubled)
+    point5 = point3.add(doubled)
+    point7 = point5.add(doubled)
+    point9 = point7.add(doubled)
+    point11 = point9.add(doubled)
+    point13 = point11.add(doubled)
+    point15 = point13.add(doubled)
+  }
+
+  @inline(__always)
+  func point(for digit: Int8) -> EdwardsPoint {
+    let magnitude = digit < 0 ? -digit : digit
+    let selected: EdwardsPoint
+    switch magnitude {
+    case 1: selected = point1
+    case 3: selected = point3
+    case 5: selected = point5
+    case 7: selected = point7
+    case 9: selected = point9
+    case 11: selected = point11
+    case 13: selected = point13
+    case 15: selected = point15
+    default: preconditionFailure("Invalid wNAF digit")
+    }
+    return digit < 0 ? selected.negated() : selected
+  }
+}
+
+private struct EdwardsWNAFScalar {
+  var word0: UInt64
+  var word1: UInt64
+  var word2: UInt64
+  var word3: UInt64
+
+  init(_ scalar: Span<UInt8>) {
+    precondition(scalar.count == 32)
+    word0 = Self.loadWord(scalar, offset: 0)
+    word1 = Self.loadWord(scalar, offset: 8)
+    word2 = Self.loadWord(scalar, offset: 16)
+    word3 = Self.loadWord(scalar, offset: 24)
+  }
+
+  mutating func recode(into digits: UnsafeMutableBufferPointer<Int8>) {
+    precondition(digits.count == 256)
+    var bit = 0
+    while bit < 256 {
+      var digit: Int8 = 0
+      if word0 & 1 == 1 {
+        var value = Int8(word0 & 31)
+        if value > 16 {
+          value -= 32
+        }
+        digit = value
+        if value > 0 {
+          subtractSmall(UInt64(value))
+        } else {
+          addSmall(UInt64(-value))
+        }
+      }
+      digits[bit] = digit
+      shiftRight()
+      bit += 1
+    }
+    precondition(word0 | word1 | word2 | word3 == 0)
+  }
+
+  private mutating func addSmall(_ value: UInt64) {
+    let (sum0, carry0) = word0.addingReportingOverflow(value)
+    word0 = sum0
+    guard carry0 else { return }
+    let (sum1, carry1) = word1.addingReportingOverflow(1)
+    word1 = sum1
+    guard carry1 else { return }
+    let (sum2, carry2) = word2.addingReportingOverflow(1)
+    word2 = sum2
+    if carry2 {
+      word3 &+= 1
+    }
+  }
+
+  private mutating func subtractSmall(_ value: UInt64) {
+    let (difference0, borrow0) = word0.subtractingReportingOverflow(value)
+    word0 = difference0
+    guard borrow0 else { return }
+    let (difference1, borrow1) = word1.subtractingReportingOverflow(1)
+    word1 = difference1
+    guard borrow1 else { return }
+    let (difference2, borrow2) = word2.subtractingReportingOverflow(1)
+    word2 = difference2
+    if borrow2 {
+      word3 &-= 1
+    }
+  }
+
+  private mutating func shiftRight() {
+    word0 = (word0 >> 1) | (word1 << 63)
+    word1 = (word1 >> 1) | (word2 << 63)
+    word2 = (word2 >> 1) | (word3 << 63)
+    word3 >>= 1
+  }
+
+  private static func loadWord(_ bytes: Span<UInt8>, offset: Int) -> UInt64 {
+    var result: UInt64 = 0
+    var index = 0
+    while index < 8 {
+      result |= UInt64(bytes[offset + index]) << UInt64(index * 8)
+      index += 1
     }
     return result
   }

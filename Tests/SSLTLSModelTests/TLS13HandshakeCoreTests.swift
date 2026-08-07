@@ -945,6 +945,37 @@ final class TLS13HandshakeCoreTests: XCTestCase {
     }
   }
 
+  func testServerSelectsItsPreferredSuiteFromClientOfferVector() throws {
+    let instant = try VerificationInstant(
+      secondsSinceUnixEpoch: 1_720_000_000,
+      nanoseconds: 0
+    )
+    var server = try TLS13ServerHandshakeCore(
+      random: ContiguousArray(repeating: UInt8(0x02), count: 32).span,
+      ephemeralKey: X25519PrivateKey(
+        bytes: ContiguousArray(repeating: UInt8(0x22), count: 32).span
+      ),
+      certificateDER: deterministicCertificate().span,
+      signingKey: TLS13SigningKey(
+        ed25519: try Ed25519PrivateKey(seed: deterministicSeed().span)
+      ),
+      verificationInstant: instant
+    )
+    let clientHello = try TLS13HandshakeCodec.makeClientHello(
+      random: ContiguousArray(repeating: UInt8(0x01), count: 32).span,
+      keyShare: try X25519PrivateKey(
+        bytes: ContiguousArray(repeating: UInt8(0x11), count: 32).span
+      ).publicKey().span,
+      cipherSuites: [.chacha20Poly1305_SHA256, .aes128GCM_SHA256]
+    )
+
+    let selected = try server.prepareHelloRetryRequest(
+      for: clientHello.span
+    )
+
+    XCTAssertEqual(selected, .aes128GCM_SHA256)
+  }
+
   func testECHAcceptedPSKResumptionUsesInnerBinderAndCompletes() throws {
     var pair = try makeECHResumptionCorePair()
 
@@ -1069,8 +1100,12 @@ final class TLS13HandshakeCoreTests: XCTestCase {
     let parsedClientHello = try TLS13HandshakeCodec.parseClientHello(
       clientHelloOutput.bytes.span
     )
-    XCTAssertEqual(parsedClientHello.namedGroup, .x25519MLKEM768)
-    XCTAssertEqual(parsedClientHello.keyShare.count, 1_216)
+    XCTAssertEqual(
+      parsedClientHello.offeredNamedGroups,
+      [TLS13NamedGroup.x25519MLKEM768.rawValue]
+    )
+    XCTAssertEqual(parsedClientHello.keyShares.count, 1)
+    XCTAssertEqual(parsedClientHello.keyShares[0].keyExchange.count, 1_216)
 
     let serverOutput = try pair.server.receiveHandshakeMessage(
       clientHelloOutput.bytes.span,

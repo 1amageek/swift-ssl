@@ -215,13 +215,6 @@ public struct DTLSClientEngine<C: CryptoProvider>: Sendable {
     /// Encrypts application data into a DTLS datagram to send. Throws if the
     /// handshake is not complete or the connection is closed.
     public mutating func send(_ application: Span<UInt8>) throws(DTLSEngineError) -> [UInt8] {
-        try sendOwned(application.facadeArrayLocal())
-    }
-
-    /// Encrypts facade-owned application bytes without a second materialization.
-    public mutating func sendOwned(
-        _ application: borrowing [UInt8]
-    ) throws(DTLSEngineError) -> [UInt8] {
         guard phase != .closed else { throw .connectionClosed }
         guard phase != .failed else { throw .protocolFailure(reason: "connection in failed state") }
         guard phase == .connected else { throw .handshakeNotComplete }
@@ -235,7 +228,7 @@ public struct DTLSClientEngine<C: CryptoProvider>: Sendable {
         flights.stop()
         // RFC 5246 §7.2: close_notify (level warning = 1, description 0).
         let alertBytes: [UInt8] = [1, 0]
-        return try record.encodeRecord(contentType: .alert, plaintext: alertBytes)
+        return try record.encodeRecord(contentType: .alert, plaintext: alertBytes.span)
     }
 
     /// Handles one caller-driven timeout only when `generation` still owns the

@@ -139,6 +139,7 @@ run_sanitizer() {
         -resultBundlePath "$result_bundle" \
         -only-testing:SSLCoreTests \
         -only-testing:SSLCryptoTests \
+        -only-testing:SSLDTLSTests \
         -parallel-testing-enabled NO \
         -jobs 2 \
         -enableAddressSanitizer "$address_enabled" \

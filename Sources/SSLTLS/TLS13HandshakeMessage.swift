@@ -5,9 +5,14 @@ import SSLX509
 public struct TLS13ClientHello: Sendable, Hashable {
   public let random: OwnedBytes
   public let serverName: OwnedBytes?
-  public let namedGroup: TLS13NamedGroup
-  public let keyShare: OwnedBytes
-  public let cipherSuite: TLSCipherSuite
+  public let offeredNamedGroups: ContiguousArray<UInt16>
+  public let keyShares: ContiguousArray<TLS13ClientKeyShare>
+  /// Cipher-suite identifiers offered by the peer, in wire order.
+  ///
+  /// Unknown identifiers are preserved so GREASE and future cipher suites do
+  /// not turn a syntactically valid ClientHello into a decoding failure. The
+  /// server handshake core owns selection of a locally supported suite.
+  public let offeredCipherSuites: ContiguousArray<UInt16>
   public let signatureSchemes: ContiguousArray<TLS13SignatureScheme>
   public let clientCertificateTypes: ContiguousArray<TLS13CertificateType>
   public let serverCertificateTypes: ContiguousArray<TLS13CertificateType>
@@ -99,7 +104,7 @@ public enum TLS13HandshakeCodec {
     random: Span<UInt8>,
     namedGroup: TLS13NamedGroup = .x25519,
     keyShare: Span<UInt8>,
-    cipherSuite: TLSCipherSuite = .aes128GCM_SHA256,
+    cipherSuites: ContiguousArray<TLSCipherSuite> = [.aes128GCM_SHA256],
     serverName: OwnedBytes? = nil,
     signatureSchemes: ContiguousArray<TLS13SignatureScheme> = [
       .ecdsaP256SHA256, .rsaPSSRSAESHA256, .ed25519,
@@ -125,8 +130,10 @@ public enum TLS13HandshakeCodec {
     else {
       throw .invalidKeyShare
     }
-    guard TLSCipherSuite(rawValue: cipherSuite.rawValue) != nil else {
-      throw .unsupportedCipherSuite(cipherSuite.rawValue)
+    guard !cipherSuites.isEmpty,
+      cipherSuites.count <= Int(UInt16.max) / MemoryLayout<UInt16>.size
+    else {
+      throw .unsupportedCipherSuite(0)
     }
     guard !signatureSchemes.isEmpty else {
       throw .signatureFailure
@@ -148,8 +155,12 @@ public enum TLS13HandshakeCodec {
       if encoding.includesLegacyCookie {
         try body.append(0)
       }
-      try body.appendUInt16BigEndian(2)
-      try body.appendUInt16BigEndian(cipherSuite.rawValue)
+      try body.appendUInt16BigEndian(
+        UInt16(cipherSuites.count * MemoryLayout<UInt16>.size)
+      )
+      for cipherSuite in cipherSuites {
+        try body.appendUInt16BigEndian(cipherSuite.rawValue)
+      }
       try body.append(1)
       try body.append(0)
       var extensions = try Self.makeBuilder(
@@ -266,12 +277,29 @@ public enum TLS13HandshakeCodec {
           throw TLS13HandshakeError.malformedMessage
         }
       }
-      guard try cursor.readUInt16BigEndian() == 2,
-        let cipherSuite = TLSCipherSuite(rawValue: try cursor.readUInt16BigEndian()),
-        try cursor.readByte() == 1,
+      let cipherSuiteByteCount = Int(try cursor.readUInt16BigEndian())
+      guard cipherSuiteByteCount >= MemoryLayout<UInt16>.size,
+        cipherSuiteByteCount.isMultiple(of: MemoryLayout<UInt16>.size)
+      else {
+        throw TLS13HandshakeError.malformedMessage
+      }
+      var cipherSuiteCursor = ByteCursor(
+        try cursor.readSpan(count: cipherSuiteByteCount)
+      )
+      var offeredCipherSuites: ContiguousArray<UInt16> = []
+      offeredCipherSuites.reserveCapacity(
+        cipherSuiteByteCount / MemoryLayout<UInt16>.size
+      )
+      while !cipherSuiteCursor.isAtEnd {
+        offeredCipherSuites.append(
+          try cipherSuiteCursor.readUInt16BigEndian()
+        )
+      }
+      let compressionMethodByteCount = Int(try cursor.readByte())
+      guard compressionMethodByteCount == 1,
         try cursor.readByte() == 0
       else {
-        throw TLS13HandshakeError.unsupportedCipherSuite(0)
+        throw TLS13HandshakeError.malformedMessage
       }
       let extensionsLength = Int(try cursor.readUInt16BigEndian())
       let extensions = try cursor.readSpan(count: extensionsLength)
@@ -280,9 +308,9 @@ public enum TLS13HandshakeCodec {
       return TLS13ClientHello(
         random: random,
         serverName: parsed.serverName,
-        namedGroup: parsed.namedGroup,
-        keyShare: parsed.keyShare,
-        cipherSuite: cipherSuite,
+        offeredNamedGroups: parsed.offeredNamedGroups,
+        keyShares: parsed.keyShares,
+        offeredCipherSuites: offeredCipherSuites,
         signatureSchemes: parsed.signatureSchemes,
         clientCertificateTypes: parsed.clientCertificateTypes,
         serverCertificateTypes: parsed.serverCertificateTypes,
@@ -2060,8 +2088,8 @@ public enum TLS13HandshakeCodec {
     encoding: TLS13HandshakeEncoding
   ) throws(TLS13HandshakeError) -> (
     serverName: OwnedBytes?,
-    namedGroup: TLS13NamedGroup,
-    keyShare: OwnedBytes,
+    offeredNamedGroups: ContiguousArray<UInt16>,
+    keyShares: ContiguousArray<TLS13ClientKeyShare>,
     signatureSchemes: ContiguousArray<TLS13SignatureScheme>,
     clientCertificateTypes: ContiguousArray<TLS13CertificateType>,
     serverCertificateTypes: ContiguousArray<TLS13CertificateType>,
@@ -2078,11 +2106,10 @@ public enum TLS13HandshakeCodec {
     preSharedKey: TLS13PreSharedKeyExtension?
   ) {
     var cursor = ByteCursor(bytes)
-    var supportedGroups = ContiguousArray<TLS13NamedGroup>()
+    var supportedGroups = ContiguousArray<UInt16>()
     var serverName: OwnedBytes?
     var sawSupportedVersions = false
-    var keyShare: OwnedBytes?
-    var keyShareGroup: TLS13NamedGroup?
+    var keyShares = ContiguousArray<TLS13ClientKeyShare>()
     var signatureSchemes: ContiguousArray<TLS13SignatureScheme>?
     var clientCertificateTypes = ContiguousArray<TLS13CertificateType>()
     var serverCertificateTypes = ContiguousArray<TLS13CertificateType>()
@@ -2138,9 +2165,7 @@ public enum TLS13HandshakeCodec {
           }
           sawSupportedVersions = true
         case 0x0033:
-          let parsed = try parseClientKeyShare(value)
-          keyShareGroup = parsed.namedGroup
-          keyShare = parsed.keyShare
+          keyShares = try parseClientKeyShares(value)
         case 0x0039:
           transportParameters = OwnedBytes(copying: value)
         case 54:
@@ -2170,9 +2195,8 @@ public enum TLS13HandshakeCodec {
         }
       }
       guard sawSupportedVersions,
-        let keyShareGroup,
-        let keyShare,
-        supportedGroups.contains(keyShareGroup)
+        !keyShares.isEmpty,
+        keyShares.allSatisfy({ supportedGroups.contains($0.groupID) })
       else {
         throw TLS13HandshakeError.invalidKeyShare
       }
@@ -2184,8 +2208,8 @@ public enum TLS13HandshakeCodec {
       }
       return (
         serverName,
-        keyShareGroup,
-        keyShare,
+        supportedGroups,
+        keyShares,
         signatureSchemes,
         clientCertificateTypes,
         serverCertificateTypes,
@@ -2330,7 +2354,7 @@ public enum TLS13HandshakeCodec {
 
   private static func parseSupportedGroups(
     _ value: Span<UInt8>
-  ) throws(TLS13HandshakeError) -> ContiguousArray<TLS13NamedGroup> {
+  ) throws(TLS13HandshakeError) -> ContiguousArray<UInt16> {
     var cursor = ByteCursor(value)
     do {
       let listByteCount = Int(try cursor.readUInt16BigEndian())
@@ -2340,14 +2364,14 @@ public enum TLS13HandshakeCodec {
       else {
         throw TLS13HandshakeError.invalidKeyShare
       }
-      var groups = ContiguousArray<TLS13NamedGroup>()
+      var groups = ContiguousArray<UInt16>()
       groups.reserveCapacity(listByteCount / 2)
       while !cursor.isAtEnd {
-        if let group = TLS13NamedGroup(rawValue: try cursor.readUInt16BigEndian()) {
-          if !groups.contains(group) {
-            groups.append(group)
-          }
+        let group = try cursor.readUInt16BigEndian()
+        guard !groups.contains(group) else {
+          throw TLS13HandshakeError.invalidKeyShare
         }
+        groups.append(group)
       }
       return groups
     } catch let error as TLS13HandshakeError {
@@ -2505,21 +2529,42 @@ public enum TLS13HandshakeCodec {
     }
   }
 
-  private static func parseClientKeyShare(
+  private static func parseClientKeyShares(
     _ value: Span<UInt8>
-  ) throws(TLS13HandshakeError) -> (
-    namedGroup: TLS13NamedGroup,
-    keyShare: OwnedBytes
-  ) {
+  ) throws(TLS13HandshakeError) -> ContiguousArray<TLS13ClientKeyShare> {
     var cursor = ByteCursor(value)
     do {
       let entriesByteCount = Int(try cursor.readUInt16BigEndian())
-      guard entriesByteCount == cursor.remainingCount else {
+      guard entriesByteCount == cursor.remainingCount,
+        entriesByteCount >= 5
+      else {
         throw TLS13HandshakeError.invalidKeyShare
       }
-      let parsed = try parseKeyShareEntry(from: &cursor, client: true)
-      try cursor.requireFullyConsumed()
-      return parsed
+      var keyShares = ContiguousArray<TLS13ClientKeyShare>()
+      while !cursor.isAtEnd {
+        let groupID = try cursor.readUInt16BigEndian()
+        guard !keyShares.contains(where: { $0.groupID == groupID }) else {
+          throw TLS13HandshakeError.invalidKeyShare
+        }
+        let keyShareByteCount = Int(try cursor.readUInt16BigEndian())
+        guard keyShareByteCount > 0 else {
+          throw TLS13HandshakeError.invalidKeyShare
+        }
+        if let group = TLS13NamedGroup(rawValue: groupID) {
+          guard keyShareByteCount == group.clientShareByteCount else {
+            throw TLS13HandshakeError.invalidKeyShare
+          }
+        }
+        keyShares.append(
+          TLS13ClientKeyShare(
+            groupID: groupID,
+            keyExchange: OwnedBytes(
+              copying: try cursor.readSpan(count: keyShareByteCount)
+            )
+          )
+        )
+      }
+      return keyShares
     } catch let error as TLS13HandshakeError {
       throw error
     } catch {
@@ -2535,7 +2580,7 @@ public enum TLS13HandshakeCodec {
   ) {
     var cursor = ByteCursor(value)
     do {
-      let parsed = try parseKeyShareEntry(from: &cursor, client: false)
+      let parsed = try parseServerKeyShareEntry(from: &cursor)
       try cursor.requireFullyConsumed()
       return parsed
     } catch let error as TLS13HandshakeError {
@@ -2545,9 +2590,8 @@ public enum TLS13HandshakeCodec {
     }
   }
 
-  private static func parseKeyShareEntry(
-    from cursor: inout ByteCursor,
-    client: Bool
+  private static func parseServerKeyShareEntry(
+    from cursor: inout ByteCursor
   ) throws(TLS13HandshakeError) -> (
     namedGroup: TLS13NamedGroup,
     keyShare: OwnedBytes
@@ -2561,10 +2605,7 @@ public enum TLS13HandshakeCodec {
         throw TLS13HandshakeError.invalidKeyShare
       }
       let keyShareByteCount = Int(try cursor.readUInt16BigEndian())
-      let expectedByteCount =
-        client
-        ? namedGroup.clientShareByteCount
-        : namedGroup.serverShareByteCount
+      let expectedByteCount = namedGroup.serverShareByteCount
       guard keyShareByteCount == expectedByteCount else {
         throw TLS13HandshakeError.invalidKeyShare
       }

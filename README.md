@@ -7,7 +7,7 @@ Embedded Swift without reproducing the OpenSSL/BoringSSL C API or legacy protoco
 surface.
 
 > [!NOTE]
-> Version 0.1.0 is the initial public release of the declared Pure Swift scope.
+> Version 0.1.1 is the current public release of the declared Pure Swift scope.
 > Production deployment remains a separate security-review decision.
 
 ## Modules
@@ -131,7 +131,7 @@ Add `swift-ssl` to the package dependencies:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/1amageek/swift-ssl.git", from: "0.1.0")
+    .package(url: "https://github.com/1amageek/swift-ssl.git", from: "0.1.1")
 ]
 ```
 
@@ -178,6 +178,15 @@ promise BoringSSL API, ABI, source, or internal implementation equivalence.
 | Native ML-KEM-768/1024 operations | `1.1128x`–`1.3450x` | Pass |
 | Native ML-DSA-44/65/87 operations | `1.1534x`–`2.7822x` | Pass |
 | Native HPKE X25519 workloads | `1.1064x`–`1.1644x` | Pass |
+
+The X25519 low-level changes were also isolated with paired internal A/B runs
+before the dependent libp2p comparison. These are prior-implementation ratios,
+not BoringSSL claims:
+
+| Internal X25519 A/B workload | Optimized / prior time | Result |
+|---|---:|---|
+| Field multiplication/reduction, 20 paired runs | `0.9427x` | `5.73%` faster; 17/20 wins |
+| Fixed-base public-key derivation, 30 paired runs | `0.8429x` | `15.71%` faster; 30/30 wins |
 
 The Native one-message and independent-message batch contracts are reported
 separately. The two-way Pure Swift ARM64 batch path exceeds `1.10x` at all three

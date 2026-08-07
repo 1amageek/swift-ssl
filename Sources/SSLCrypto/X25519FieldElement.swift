@@ -160,7 +160,7 @@ struct X25519FieldElement {
   @inline(__always)
   static func * (lhs: Self, rhs: Self) -> Self {
     // Arithmetic range invariant:
-    // - Input limbs are bounded below 2^53 between ladder reductions.
+    // - Input limbs are bounded below 2^54 between point-operation reductions.
     // - Each accumulator contains five products, including at most four
     //   factors scaled by 19, and therefore remains below 2^111.
     // - UInt128 cannot overflow. Wrapping addition expresses that proven
@@ -295,6 +295,20 @@ struct X25519FieldElement {
 
   @inline(__always)
   func negated() -> Self {
+    // Subtraction accepts bounded lazy limbs, but a value may already contain
+    // the four-modulus bias from a preceding subtraction. Canonicalizing here
+    // prevents per-limb UInt64 underflow when negating that representation.
+    Self() - canonicalized()
+  }
+
+  @inline(__always)
+  func negatedAssumingBounded() -> Self {
+    // The caller must prove that every limb is no larger than the
+    // corresponding four-modulus subtraction bias. Fixed-base table values
+    // are canonical, and multiplication/squaring reduce their result below
+    // that bound. Keeping this unchecked operation internal avoids six full
+    // carry passes in each fixed-base negation without weakening the public
+    // field-element contract.
     Self() - self
   }
 
@@ -324,15 +338,28 @@ struct X25519FieldElement {
     // The multiplication bounds above also prove every carry propagation is
     // below 2^128. Wrapping additions remove redundant overflow traps without
     // changing the field result.
-    let reduced1 = accumulator1 &+ (accumulator0 >> 51)
-    let reduced2 = accumulator2 &+ (reduced1 >> 51)
-    let reduced3 = accumulator3 &+ (reduced2 >> 51)
-    let reduced4 = accumulator4 &+ (reduced3 >> 51)
-    let reduced0 = (accumulator0 & UInt128(Self.mask)) &+ (reduced4 >> 51) * 19
-    let final1 = (reduced1 & UInt128(Self.mask)) &+ (reduced0 >> 51)
+    // Every carry is proven to fit in UInt64. Truncating at each boundary
+    // communicates that bound to the optimizer, so ARM64 emits a 128-bit plus
+    // 64-bit carry instead of extending a five-limb UInt128 dependency chain.
+    let carry0 = UInt64(truncatingIfNeeded: accumulator0 >> 51)
+    let reduced1 = accumulator1 &+ UInt128(carry0)
+    let carry1 = UInt64(truncatingIfNeeded: reduced1 >> 51)
+    let reduced2 = accumulator2 &+ UInt128(carry1)
+    let carry2 = UInt64(truncatingIfNeeded: reduced2 >> 51)
+    let reduced3 = accumulator3 &+ UInt128(carry2)
+    let carry3 = UInt64(truncatingIfNeeded: reduced3 >> 51)
+    let reduced4 = accumulator4 &+ UInt128(carry3)
+    let carry4 = UInt64(truncatingIfNeeded: reduced4 >> 51)
+    var reduced0 =
+      (UInt64(truncatingIfNeeded: accumulator0) & Self.mask)
+      &+ carry4 &* 19
+    let final1 =
+      (UInt64(truncatingIfNeeded: reduced1) & Self.mask)
+      &+ (reduced0 >> 51)
+    reduced0 &= Self.mask
     return Self(
-      limb0: UInt64(truncatingIfNeeded: reduced0) & Self.mask,
-      limb1: UInt64(truncatingIfNeeded: final1),
+      limb0: reduced0,
+      limb1: final1,
       limb2: UInt64(truncatingIfNeeded: reduced2) & Self.mask,
       limb3: UInt64(truncatingIfNeeded: reduced3) & Self.mask,
       limb4: UInt64(truncatingIfNeeded: reduced4) & Self.mask

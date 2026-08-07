@@ -1,5 +1,10 @@
+import Foundation
 import SSLCore
 import XCTest
+
+#if canImport(CryptoKit)
+  import CryptoKit
+#endif
 
 @testable import SSLCrypto
 
@@ -141,6 +146,44 @@ final class ChaCha20Poly1305Tests: XCTestCase {
     XCTAssertEqual(storage, original)
   }
 
+  #if canImport(CryptoKit)
+    func testDifferentialAgainstCryptoKitAcrossBlockBoundaries() throws {
+      let key = deterministicBytes(count: 32, seed: 0x11)
+      let nonce = deterministicBytes(count: 12, seed: 0x22)
+      let lengths = [0, 1, 15, 16, 17, 63, 64, 65, 255, 256, 257, 1024]
+      let cipher = try ChaCha20Poly1305(key: key.span)
+      let referenceKey = CryptoKit.SymmetricKey(data: Data(key))
+      let referenceNonce = try CryptoKit.ChaChaPoly.Nonce(data: Data(nonce))
+
+      for length in lengths {
+        let plaintext = deterministicBytes(count: length, seed: 0x33)
+        let authenticatedData = deterministicBytes(
+          count: lengths[(length + 3) % lengths.count],
+          seed: 0x44
+        )
+        var actual = ContiguousArray<UInt8>(repeating: 0, count: length + 16)
+        try actual.withUnsafeMutableBufferPointer { buffer in
+          var output = MutableSpan(_unsafeElements: buffer)
+          try cipher.seal(
+            plaintext: plaintext.span,
+            authenticatedData: authenticatedData.span,
+            nonce: nonce.span,
+            into: &output
+          )
+        }
+
+        let reference = try CryptoKit.ChaChaPoly.seal(
+          Data(plaintext),
+          using: referenceKey,
+          nonce: referenceNonce,
+          authenticating: Data(authenticatedData)
+        )
+        let expected = ContiguousArray(reference.ciphertext + reference.tag)
+        XCTAssertEqual(actual, expected, "length: \(length)")
+      }
+    }
+  #endif
+
   private func bytes(_ value: String) -> ContiguousArray<UInt8> {
     var result = ContiguousArray<UInt8>()
     result.reserveCapacity(value.count / 2)
@@ -149,6 +192,17 @@ final class ChaCha20Poly1305Tests: XCTestCase {
       let next = value.index(index, offsetBy: 2)
       result.append(UInt8(value[index..<next], radix: 16)!)
       index = next
+    }
+    return result
+  }
+
+  private func deterministicBytes(count: Int, seed: UInt8) -> ContiguousArray<UInt8> {
+    var result = ContiguousArray<UInt8>()
+    result.reserveCapacity(count)
+    var value = UInt64(seed) | 1
+    for _ in 0..<count {
+      value = value &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+      result.append(UInt8(truncatingIfNeeded: value >> 32))
     }
     return result
   }

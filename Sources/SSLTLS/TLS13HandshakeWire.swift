@@ -4,6 +4,8 @@ import SSLX509
 
 enum TLS13HandshakeWire {
   static let handshakeContentType: UInt8 = TLS13ContentType.handshake.rawValue
+  static let changeCipherSpecContentType: UInt8 =
+    TLS13ContentType.changeCipherSpec.rawValue
   static let maximumInputByteCount = 4 * 16_384
 
   static func recordRanges(
@@ -26,6 +28,7 @@ enum TLS13HandshakeWire {
         guard
           type == TLS13ContentType.handshake.rawValue
             || type == TLS13ContentType.applicationData.rawValue
+            || type == changeCipherSpecContentType
         else {
           throw TLS13HandshakeEngineError.malformedInput
         }
@@ -98,6 +101,25 @@ enum TLS13HandshakeWire {
     return record.extracting(
       TLS13RecordProtector.recordHeaderByteCount..<record.count
     )
+  }
+
+  /// Recognizes the TLS 1.3 middlebox-compatibility ChangeCipherSpec record.
+  /// The caller owns the handshake-state check that restricts where it may be
+  /// ignored. Any CCS record with a payload other than the single byte 0x01 is
+  /// malformed and must never be treated as a compatibility record.
+  static func isCompatibilityChangeCipherSpec(
+    _ record: Span<UInt8>
+  ) throws(TLS13HandshakeEngineError) -> Bool {
+    guard record.count >= TLS13RecordProtector.recordHeaderByteCount else {
+      throw .malformedInput
+    }
+    guard record[0] == changeCipherSpecContentType else { return false }
+    guard record.count == TLS13RecordProtector.recordHeaderByteCount + 1,
+      record[TLS13RecordProtector.recordHeaderByteCount] == 0x01
+    else {
+      throw .malformedInput
+    }
+    return true
   }
 
   static func appendPlaintextRecord(

@@ -26,17 +26,6 @@ extension DTLSClientEngine {
 
     /// Feeds a received UDP datagram and returns the aggregate effects.
     public mutating func receive(_ datagram: Span<UInt8>) throws(DTLSEngineError) -> DTLSEngineOutput {
-        try receiveOwned(datagram.facadeArrayLocal())
-    }
-
-    /// Feeds one facade-owned datagram without materializing a second owner.
-    ///
-    /// The package facade uses this entry point after copying a borrowed `Span`
-    /// before it crosses the mutex closure boundary. Keeping that owner alive in
-    /// the closure is required by the Swift 6.4 WASM lifetime implementation.
-    public mutating func receiveOwned(
-        _ data: borrowing [UInt8]
-    ) throws(DTLSEngineError) -> DTLSEngineOutput {
         guard phase != .failed else { throw .protocolFailure(reason: "connection in failed state") }
         guard phase != .closed else { throw .connectionClosed }
         guard !isProcessing else {
@@ -45,13 +34,13 @@ extension DTLSClientEngine {
         isProcessing = true
         defer { isProcessing = false }
 
-        guard data.count <= Self.maxBufferSize else { throw .bufferOverflow }
+        guard datagram.count <= Self.maxBufferSize else { throw .bufferOverflow }
 
         var output = DTLSEngineOutput()
         var progress = ReceiveProgress()
 
         do {
-            try processDatagram(data, progress: &progress, into: &output)
+            try processDatagram(datagram, progress: &progress, into: &output)
         } catch {
             flights.stop()
             phase = .failed
@@ -81,7 +70,7 @@ extension DTLSClientEngine {
 
     /// Decodes and processes every record in the datagram (RFC 6347 §4.1.2.x).
     private mutating func processDatagram(
-        _ data: [UInt8],
+        _ data: Span<UInt8>,
         progress: inout ReceiveProgress,
         into output: inout DTLSEngineOutput
     ) throws(DTLSEngineError) {
@@ -125,7 +114,11 @@ extension DTLSClientEngine {
             catch { throw .from(core: error) }
             return false
         case .applicationData:
-            output.applicationData.append(contentsOf: fragment)
+            if output.applicationData.isEmpty {
+                output.applicationData = fragment
+            } else {
+                output.applicationData.append(contentsOf: fragment)
+            }
             return false
         case .alert:
             return try handleAlert(fragment, into: &output)
@@ -287,8 +280,8 @@ extension DTLSClientEngine {
         do { cvRequest = try fsm.buildClientFlight(inputs: inputs) }
         catch { throw .from(core: error) }
 
-        // Sign the CertificateVerify over the transcript hash (injected signer).
-        let signature = try sign(cvRequest.handshakeHash)
+        // The injected message-oriented signer applies SHA-256 exactly once.
+        let signature = try sign(cvRequest.transcript)
         let cv = DTLSWireCore.CertificateVerify(signatureScheme: signingScheme, signature: signature)
         let cvBody: [UInt8]
         do { cvBody = try cv.encodeBytes() }
@@ -421,23 +414,6 @@ extension DTLSClientEngine {
         case .authenticationFailed: output.anomalies.append(.authenticationFailed)
         case .malformed: output.anomalies.append(.malformed)
         case .epochMismatch: break // Expected during rekey; not surfaced.
-        }
-    }
-}
-
-// MARK: - Local Span → [UInt8] bulk copy (no Foundation)
-
-extension Span where Element == UInt8 {
-    /// Bulk `Span<UInt8>` → `[UInt8]` (one `update(from:)`), Embedded-clean.
-    @inline(__always)
-    func facadeArrayLocal() -> [UInt8] {
-        let n = count
-        guard n > 0 else { return [] }
-        return [UInt8](unsafeUninitializedCapacity: n) { destination, initializedCount in
-            withUnsafeBufferPointer { source in
-                destination.baseAddress!.update(from: source.baseAddress!, count: n)
-            }
-            initializedCount = n
         }
     }
 }

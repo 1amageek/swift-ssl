@@ -68,7 +68,8 @@ public struct DTLSKeyScheduleCore: Sendable {
     public var hasMasterSecret: Bool { masterSecret != nil }
 
     /// Configures RFC 7627 before the ECDHE secret is folded into the schedule.
-    /// The hash must cover the complete handshake transcript through ServerHelloDone.
+    /// The hash must cover the complete handshake transcript through
+    /// ClientKeyExchange (RFC 7627 section 3).
     public mutating func configureExtendedMasterSecret(sessionHash: [UInt8]) {
         self.extendedMasterSecretSessionHash = sessionHash
     }

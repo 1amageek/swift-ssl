@@ -6,44 +6,105 @@
 /// a cross-module generic record engine. The closures preserve typed failures and
 /// static provider selection at construction; they perform no I/O or fallback.
 
+import P2PCoreCrypto
+
 public struct DTLSRecordProtectionContext: Sendable {
+    private let recordOverhead: Int
     private let sealOperation: @Sendable (
-        _ plaintext: [UInt8],
+        _ plaintext: Span<UInt8>,
         _ explicitNonce: [UInt8],
-        _ aad: [UInt8]
-    ) throws(DTLSRecordProtectionError) -> [UInt8]
+        _ aad: [UInt8],
+        _ output: inout MutableSpan<UInt8>
+    ) throws(DTLSRecordProtectionError) -> Void
     private let openOperation: @Sendable (
-        _ ciphertext: [UInt8],
-        _ aad: [UInt8]
-    ) throws(DTLSRecordProtectionError) -> [UInt8]
+        _ ciphertext: Span<UInt8>,
+        _ aad: [UInt8],
+        _ output: inout MutableSpan<UInt8>
+    ) throws(DTLSRecordProtectionError) -> Void
 
     public init(
+        recordOverhead: Int,
         seal: @escaping @Sendable (
-            _ plaintext: [UInt8],
+            _ plaintext: Span<UInt8>,
             _ explicitNonce: [UInt8],
-            _ aad: [UInt8]
-        ) throws(DTLSRecordProtectionError) -> [UInt8],
+            _ aad: [UInt8],
+            _ output: inout MutableSpan<UInt8>
+        ) throws(DTLSRecordProtectionError) -> Void,
         open: @escaping @Sendable (
-            _ ciphertext: [UInt8],
-            _ aad: [UInt8]
-        ) throws(DTLSRecordProtectionError) -> [UInt8]
+            _ ciphertext: Span<UInt8>,
+            _ aad: [UInt8],
+            _ output: inout MutableSpan<UInt8>
+        ) throws(DTLSRecordProtectionError) -> Void
     ) {
+        precondition(recordOverhead > 0)
+        self.recordOverhead = recordOverhead
         self.sealOperation = seal
         self.openOperation = open
     }
 
     public func seal(
-        plaintext: [UInt8],
+        plaintext: Span<UInt8>,
         explicitNonce: [UInt8],
         aad: [UInt8]
     ) throws(DTLSRecordProtectionError) -> [UInt8] {
-        try sealOperation(plaintext, explicitNonce, aad)
+        let outputCount = try sealedByteCount(forPlaintextByteCount: plaintext.count)
+        var output = [UInt8](repeating: 0, count: outputCount)
+        try output.withUnsafeMutableBufferPointer { buffer throws(DTLSRecordProtectionError) in
+            var outputSpan = MutableSpan(_unsafeElements: buffer)
+            try seal(
+                plaintext: plaintext,
+                explicitNonce: explicitNonce,
+                aad: aad,
+                into: &outputSpan
+            )
+        }
+        return output
+    }
+
+    /// Seals directly into caller-owned record-fragment storage.
+    ///
+    /// `output` must have exactly ``sealedByteCount(forPlaintextByteCount:)``
+    /// elements. Its mutable borrow is scoped to this synchronous call and cannot
+    /// escape through the stored operation.
+    public func seal(
+        plaintext: Span<UInt8>,
+        explicitNonce: [UInt8],
+        aad: [UInt8],
+        into output: inout MutableSpan<UInt8>
+    ) throws(DTLSRecordProtectionError) {
+        let expected = try sealedByteCount(forPlaintextByteCount: plaintext.count)
+        guard output.count == expected else {
+            throw .crypto(.invalidLength(expected: expected, actual: output.count))
+        }
+        try sealOperation(plaintext, explicitNonce, aad, &output)
+    }
+
+    /// Returns the exact record-fragment size required for a plaintext length.
+    public func sealedByteCount(
+        forPlaintextByteCount plaintextByteCount: Int
+    ) throws(DTLSRecordProtectionError) -> Int {
+        guard plaintextByteCount >= 0 else {
+            throw .crypto(.invalidLength(expected: 0, actual: plaintextByteCount))
+        }
+        let (outputCount, overflow) = plaintextByteCount.addingReportingOverflow(recordOverhead)
+        guard !overflow else {
+            throw .crypto(.invalidLength(expected: Int.max, actual: plaintextByteCount))
+        }
+        return outputCount
     }
 
     public func open(
-        ciphertext: [UInt8],
+        ciphertext: Span<UInt8>,
         aad: [UInt8]
     ) throws(DTLSRecordProtectionError) -> [UInt8] {
-        try openOperation(ciphertext, aad)
+        guard ciphertext.count >= recordOverhead else {
+            throw .ciphertextTooShort(minimum: recordOverhead, actual: ciphertext.count)
+        }
+        var output = [UInt8](repeating: 0, count: ciphertext.count - recordOverhead)
+        try output.withUnsafeMutableBufferPointer { buffer throws(DTLSRecordProtectionError) in
+            var outputSpan = MutableSpan(_unsafeElements: buffer)
+            try openOperation(ciphertext, aad, &outputSpan)
+        }
+        return output
     }
 }

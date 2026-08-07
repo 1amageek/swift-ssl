@@ -1368,8 +1368,10 @@ public struct TLS13ServerHandshakeCore:
       clientHello.delegatedCredentialAlgorithms
     peerOfferedPostHandshakeAuthentication =
       clientHello.offersPostHandshakeAuthentication
+    cipherSuite = try selectCipherSuite(from: clientHello)
     let resumes = try acceptResumption(
       clientHello: clientHello,
+      cipherSuite: cipherSuite,
       encodedClientHello: processed.encoded.span,
       binderTranscriptIncludesRetry: binderTranscriptIncludesRetry
     )
@@ -1753,7 +1755,7 @@ public struct TLS13ServerHandshakeCore:
         }
         earlyDataStateStorage = .rejected
       }
-      cipherSuite = clientHello.cipherSuite
+      cipherSuite = try selectCipherSuite(from: clientHello)
       echAccepted = processed.echAccepted
       echRejected = processed.echRejected
       firstAuthenticatedClientHello = authenticatedClientHello
@@ -1903,13 +1905,7 @@ public struct TLS13ServerHandshakeCore:
     } else if clientHello.connectionID != nil {
       throw .invalidConfiguration
     }
-    guard clientHello.namedGroup == keyExchange.namedGroup else {
-      throw .keyExchange(
-        .unexpectedNamedGroup(
-          expected: keyExchange.namedGroup,
-          actual: clientHello.namedGroup
-        ))
-    }
+    let clientKeyShare = try selectKeyShare(from: clientHello)
     if let applicationProtocolSelector {
       let selected: TLS13ApplicationProtocol
       do {
@@ -1937,9 +1933,10 @@ public struct TLS13ServerHandshakeCore:
       throw .unexpectedTransportParameters
     }
     try negotiateDTLSSRTP(offer: clientHello.useSRTP)
-    cipherSuite = clientHello.cipherSuite
+    cipherSuite = try selectCipherSuite(from: clientHello)
     resumedHandshake = try acceptResumption(
       clientHello: clientHello,
+      cipherSuite: cipherSuite,
       encodedClientHello: authenticatedClientHello.span,
       binderTranscriptIncludesRetry: binderTranscriptIncludesRetry
     )
@@ -1991,7 +1988,7 @@ public struct TLS13ServerHandshakeCore:
     let keyExchangeResult: TLS13ServerKeyExchangeResult
     do {
       keyExchangeResult = try keyExchange.accept(
-        clientShare: clientHello.keyShare.span,
+        clientShare: clientKeyShare.keyExchange.span,
         using: keyExchangeEntropy
       )
     } catch let error {
@@ -2850,6 +2847,7 @@ public struct TLS13ServerHandshakeCore:
 
   private func acceptResumption(
     clientHello: TLS13ClientHello,
+    cipherSuite: TLSCipherSuite,
     encodedClientHello: Span<UInt8>,
     binderTranscriptIncludesRetry: Bool
   ) throws(TLS13HandshakeEngineError) -> Bool {
@@ -2871,12 +2869,12 @@ public struct TLS13ServerHandshakeCore:
       if binderTranscriptIncludesRetry {
         binderHash = try transcript.digest(
           appending: truncated.span,
-          for: clientHello.cipherSuite
+          for: cipherSuite
         )
       } else {
         var binderTranscript = try TLS13Transcript()
         try binderTranscript.append(truncated.span)
-        binderHash = try binderTranscript.digest(for: clientHello.cipherSuite)
+        binderHash = try binderTranscript.digest(for: cipherSuite)
       }
     } catch let error as TLS13HandshakeError {
       throw .handshake(error)
@@ -2885,6 +2883,7 @@ public struct TLS13ServerHandshakeCore:
     }
     return try verifyCoreResumption(
       clientHello: clientHello,
+      cipherSuite: cipherSuite,
       binderTranscriptHash: binderHash,
       configuredIdentity: configuredIdentity,
       preSharedKey: resumptionPSK!,
@@ -2893,6 +2892,26 @@ public struct TLS13ServerHandshakeCore:
       lifetime: lifetime,
       ageAdd: ageAdd,
       toleranceMilliseconds: resumptionAgeToleranceMilliseconds
+    )
+  }
+
+  /// Selects according to the server's implementation preference while
+  /// preserving the peer's raw offer vocabulary at the codec boundary.
+  private func selectCipherSuite(
+    from clientHello: TLS13ClientHello
+  ) throws(TLS13HandshakeEngineError) -> TLSCipherSuite {
+    let preference: ContiguousArray<TLSCipherSuite> = [
+      .aes128GCM_SHA256,
+      .aes256GCM_SHA384,
+      .chacha20Poly1305_SHA256,
+    ]
+    for candidate in preference where
+      clientHello.offeredCipherSuites.contains(candidate.rawValue)
+    {
+      return candidate
+    }
+    throw .unsupportedCipherSuite(
+      clientHello.offeredCipherSuites.first ?? 0
     )
   }
 
@@ -2942,14 +2961,7 @@ public struct TLS13ServerHandshakeCore:
     } else if clientHello.connectionID != nil {
       throw .invalidConfiguration
     }
-    guard clientHello.namedGroup == keyExchange.namedGroup else {
-      throw .keyExchange(
-        .unexpectedNamedGroup(
-          expected: keyExchange.namedGroup,
-          actual: clientHello.namedGroup
-        )
-      )
-    }
+    _ = try selectKeyShare(from: clientHello)
     guard !availableServerCertificateTypes(for: clientHello).isEmpty else {
       throw .certificateVerificationFailed
     }
@@ -2966,6 +2978,31 @@ public struct TLS13ServerHandshakeCore:
     if !usesExternalServerCredential {
       try validateServerCredentialSupport(clientHello)
     }
+  }
+
+  private func selectKeyShare(
+    from clientHello: TLS13ClientHello
+  ) throws(TLS13HandshakeEngineError) -> TLS13ClientKeyShare {
+    let groupID = keyExchange.namedGroup.rawValue
+    if clientHello.offeredNamedGroups.contains(groupID),
+      let keyShare = clientHello.keyShares.first(where: {
+        $0.groupID == groupID
+      })
+    {
+      return keyShare
+    }
+
+    if let actualGroup = clientHello.keyShares.lazy.compactMap({
+      TLS13NamedGroup(rawValue: $0.groupID)
+    }).first {
+      throw .keyExchange(
+        .unexpectedNamedGroup(
+          expected: keyExchange.namedGroup,
+          actual: actualGroup
+        ))
+    }
+
+    throw .handshake(.invalidKeyShare)
   }
 
   private func validateServerCredentialSupport(
@@ -3555,6 +3592,7 @@ private struct ECHProcessedClientHello: Sendable {
 
 private func verifyCoreResumption(
   clientHello: TLS13ClientHello,
+  cipherSuite: TLSCipherSuite,
   binderTranscriptHash: OwnedBytes,
   configuredIdentity: OwnedBytes,
   preSharedKey: borrowing SecretBytes,
@@ -3590,7 +3628,7 @@ private func verifyCoreResumption(
   do {
     return try TLS13PSKBinder.verify(
       preSharedKey: preSharedKey,
-      cipherSuite: clientHello.cipherSuite,
+      cipherSuite: cipherSuite,
       transcriptHash: binderTranscriptHash.span,
       binder: offeredBinder.span
     )

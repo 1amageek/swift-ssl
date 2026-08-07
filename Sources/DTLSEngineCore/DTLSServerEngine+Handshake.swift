@@ -29,20 +29,6 @@ extension DTLSServerEngine {
         _ datagram: Span<UInt8>,
         from remoteAddress: Span<UInt8>
     ) throws(DTLSEngineError) -> DTLSEngineOutput {
-        try receiveOwned(
-            datagram.facadeArrayLocal(),
-            from: remoteAddress.facadeArrayLocal()
-        )
-    }
-
-    /// Feeds facade-owned datagram and address bytes without a second copy.
-    ///
-    /// The owners are established before the mutex closure captures them, which
-    /// preserves the borrowed lifetime on the Swift 6.4 WASM implementation.
-    public mutating func receiveOwned(
-        _ data: borrowing [UInt8],
-        from remoteAddress: borrowing [UInt8]
-    ) throws(DTLSEngineError) -> DTLSEngineOutput {
         guard phase != .failed else { throw .protocolFailure(reason: "connection in failed state") }
         guard phase != .closed else { throw .connectionClosed }
         guard !isProcessing else {
@@ -51,14 +37,14 @@ extension DTLSServerEngine {
         isProcessing = true
         defer { isProcessing = false }
 
-        guard data.count <= Self.maxBufferSize else { throw .bufferOverflow }
+        guard datagram.count <= Self.maxBufferSize else { throw .bufferOverflow }
 
         var output = DTLSEngineOutput()
         var progress = ReceiveProgress()
 
         do {
             try processDatagram(
-                data,
+                datagram,
                 remoteAddress: remoteAddress,
                 progress: &progress,
                 into: &output
@@ -96,8 +82,8 @@ extension DTLSServerEngine {
     }
 
     private mutating func processDatagram(
-        _ data: [UInt8],
-        remoteAddress: [UInt8],
+        _ data: Span<UInt8>,
+        remoteAddress: Span<UInt8>,
         progress: inout ReceiveProgress,
         into output: inout DTLSEngineOutput
     ) throws(DTLSEngineError) {
@@ -127,7 +113,7 @@ extension DTLSServerEngine {
     private mutating func handleRecord(
         contentType: DTLSContentType,
         fragment: [UInt8],
-        remoteAddress: [UInt8],
+        remoteAddress: Span<UInt8>,
         progress: inout ReceiveProgress,
         into output: inout DTLSEngineOutput
     ) throws(DTLSEngineError) -> Bool {
@@ -146,7 +132,11 @@ extension DTLSServerEngine {
             catch { throw .from(core: error) }
             return false
         case .applicationData:
-            output.applicationData.append(contentsOf: fragment)
+            if output.applicationData.isEmpty {
+                output.applicationData = fragment
+            } else {
+                output.applicationData.append(contentsOf: fragment)
+            }
             return false
         case .alert:
             return try handleAlert(fragment, into: &output)
@@ -155,7 +145,7 @@ extension DTLSServerEngine {
 
     private mutating func ingestHandshakeRecord(
         _ recordFragment: [UInt8],
-        remoteAddress: [UInt8],
+        remoteAddress: Span<UInt8>,
         progress: inout ReceiveProgress,
         into output: inout DTLSEngineOutput
     ) throws(DTLSEngineError) {
@@ -179,20 +169,22 @@ extension DTLSServerEngine {
 
     private mutating func dispatchHandshakeMessage(
         _ rawMessage: [UInt8],
-        remoteAddress: [UInt8],
+        remoteAddress: Span<UInt8>,
         progress: inout ReceiveProgress,
         into output: inout DTLSEngineOutput
     ) throws(DTLSEngineError) {
         let (header, body) = try decodeHandshakeMessage(rawMessage)
 
-        if header.messageSeq < fsm.nextExpectedReceiveSeq {
-            progress.sawCompleteDuplicateFlight = true
+        // ClientHello is routed before the generic duplicate gate because a
+        // retransmitted initial ClientHello must receive the retained stateless
+        // HelloVerifyRequest. The handshake core validates its sequence and state.
+        if header.messageType == .clientHello {
+            try handleClientHello(header: header, body: body, rawMessage: rawMessage, remoteAddress: remoteAddress, into: &output)
             return
         }
 
-        // ClientHello is routed to the dedicated cookie path.
-        if header.messageType == .clientHello {
-            try handleClientHello(header: header, body: body, rawMessage: rawMessage, remoteAddress: remoteAddress, into: &output)
+        if header.messageSeq < fsm.nextExpectedReceiveSeq {
+            progress.sawCompleteDuplicateFlight = true
             return
         }
 
@@ -208,8 +200,8 @@ extension DTLSServerEngine {
             try applyActions(actions, into: &output)
         case .computeSharedSecret(let clientPublicKey):
             try acceptClientKeyExchange(clientPublicKey: clientPublicKey, into: &output)
-        case .verifyCertificateVerify(let handshakeHash, let rawCV):
-            try verifyClientCertificateVerify(body: body, handshakeHash: handshakeHash, rawMessage: rawCV)
+        case .verifyCertificateVerify(let transcript, let rawCV):
+            try verifyClientCertificateVerify(body: body, transcript: transcript, rawMessage: rawCV)
         }
 
         if remoteCertificateDER == nil, let der = fsm.clientCertificateDER {
@@ -235,7 +227,7 @@ extension DTLSServerEngine {
         header: DTLSHandshakeHeader,
         body: [UInt8],
         rawMessage: [UInt8],
-        remoteAddress: [UInt8],
+        remoteAddress: Span<UInt8>,
         into output: inout DTLSEngineOutput
     ) throws(DTLSEngineError) {
         let outcome: DTLSServerHandshake<C>.ClientHelloOutcome
@@ -259,7 +251,7 @@ extension DTLSServerEngine {
     /// Mints a HelloVerifyRequest cookie (injected HMAC) and emits it.
     private mutating func emitHelloVerifyRequest(
         clientHello: DTLSClientHello,
-        remoteAddress: [UInt8],
+        remoteAddress: Span<UInt8>,
         into output: inout DTLSEngineOutput
     ) throws(DTLSEngineError) {
         guard let makeCookie = configuration.makeCookie else {
@@ -284,7 +276,7 @@ extension DTLSServerEngine {
     private mutating func acceptCookieClientHello(
         clientHello: DTLSClientHello,
         rawMessage: [UInt8],
-        remoteAddress: [UInt8],
+        remoteAddress: Span<UInt8>,
         into output: inout DTLSEngineOutput
     ) throws(DTLSEngineError) {
         guard let verifyCookie = configuration.verifyCookie else {
@@ -428,7 +420,7 @@ extension DTLSServerEngine {
 
     private mutating func verifyClientCertificateVerify(
         body: [UInt8],
-        handshakeHash: [UInt8],
+        transcript: [UInt8],
         rawMessage: [UInt8]
     ) throws(DTLSEngineError) {
         var valid = false
@@ -439,7 +431,7 @@ extension DTLSServerEngine {
             guard let verify = configuration.verifyPeerSignature else {
                 throw .invalidConfiguration(reason: "no verifyPeerSignature seam")
             }
-            valid = try verify([certDER], cv.signature, handshakeHash)
+            valid = try verify([certDER], cv.signature, transcript)
         }
         // The core records the CertificateVerify into the transcript only on success
         // and fails closed on `valid == false`.
@@ -569,7 +561,7 @@ extension DTLSServerEngine {
 
     /// `clientAddress<0..2^16-1> || client_random<0..2^8-1> || cipher_suites<0..2^16-1>`.
     static func cookieBindingMaterial(
-        clientAddress: [UInt8],
+        clientAddress: Span<UInt8>,
         clientRandom: [UInt8],
         cipherSuites: [DTLSCipherSuite]
     ) -> [UInt8] {

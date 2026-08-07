@@ -61,13 +61,43 @@ final class TLS13HandshakeMessageTests: XCTestCase {
     )
     let parsed = try TLS13HandshakeCodec.parseClientHello(message.span)
 
-    XCTAssertEqual(parsed.namedGroup, .x25519)
+    XCTAssertEqual(parsed.offeredNamedGroups, [TLS13NamedGroup.x25519.rawValue])
+    XCTAssertEqual(
+      parsed.offeredCipherSuites,
+      [TLSCipherSuite.aes128GCM_SHA256.rawValue]
+    )
     XCTAssertEqual(
       parsed.signatureSchemes,
       [.ecdsaP256SHA256, .rsaPSSRSAESHA256, .ed25519]
     )
     XCTAssertEqual(copy(parsed.random.span), Array(random))
-    XCTAssertEqual(copy(parsed.keyShare.span), Array(keyShare))
+    XCTAssertEqual(parsed.keyShares.count, 1)
+    XCTAssertEqual(parsed.keyShares[0].groupID, TLS13NamedGroup.x25519.rawValue)
+    let parsedKeyExchange = parsed.keyShares[0].keyExchange
+    XCTAssertEqual(
+      parsedKeyExchange.withBorrowedBytes { copy($0) },
+      Array(keyShare)
+    )
+  }
+
+  func testClientHelloPreservesMultipleAndUnknownCipherSuiteOffers() throws {
+    let message = try TLS13HandshakeCodec.makeClientHello(
+      random: ContiguousArray(repeating: 0x11, count: 32).span,
+      keyShare: ContiguousArray(repeating: 0x22, count: 32).span,
+      cipherSuites: [.chacha20Poly1305_SHA256, .aes128GCM_SHA256]
+    )
+    var encoded = ContiguousArray(copy(message.span))
+
+    // handshake header + legacy_version + random + empty session ID + vector length
+    let firstCipherSuiteOffset = 4 + 2 + 32 + 1 + 2
+    encoded[firstCipherSuiteOffset] = 0x0A
+    encoded[firstCipherSuiteOffset + 1] = 0x0A
+
+    let parsed = try TLS13HandshakeCodec.parseClientHello(encoded.span)
+    XCTAssertEqual(
+      parsed.offeredCipherSuites,
+      [0x0A0A, TLSCipherSuite.aes128GCM_SHA256.rawValue]
+    )
   }
 
   func testRawPublicKeyCertificateTypeExtensionsRoundTrip() throws {
@@ -251,8 +281,20 @@ final class TLS13HandshakeMessageTests: XCTestCase {
       keyShare: clientShare.span
     )
     let parsedClient = try TLS13HandshakeCodec.parseClientHello(clientMessage.span)
-    XCTAssertEqual(parsedClient.namedGroup, .x25519MLKEM768)
-    XCTAssertEqual(copy(parsedClient.keyShare.span), Array(clientShare))
+    XCTAssertEqual(
+      parsedClient.offeredNamedGroups,
+      [TLS13NamedGroup.x25519MLKEM768.rawValue]
+    )
+    XCTAssertEqual(parsedClient.keyShares.count, 1)
+    XCTAssertEqual(
+      parsedClient.keyShares[0].groupID,
+      TLS13NamedGroup.x25519MLKEM768.rawValue
+    )
+    let parsedClientKeyExchange = parsedClient.keyShares[0].keyExchange
+    XCTAssertEqual(
+      parsedClientKeyExchange.withBorrowedBytes { copy($0) },
+      Array(clientShare)
+    )
 
     let encodedClient = ContiguousArray(copy(clientMessage.span))
     let supportedGroups = try extensionValue(
@@ -620,6 +662,156 @@ final class TLS13HandshakeMessageTests: XCTestCase {
       postUpdateServerOutput.bytes.span
     )
     XCTAssertEqual(copy(postUpdateServerReceived.span), Array(postUpdateServerData))
+  }
+
+  func testStreamClientIgnoresCompatibilityChangeCipherSpecInBatch() throws {
+    let verificationInstant = try VerificationInstant(
+      secondsSinceUnixEpoch: 1_720_000_000,
+      nanoseconds: 0
+    )
+    var client = try TLS13ClientHandshake(
+      random: ContiguousArray(repeating: 0x01, count: 32).span,
+      ephemeralKey: X25519PrivateKey(
+        bytes: ContiguousArray(repeating: 0x11, count: 32).span
+      ),
+      certificateValidator: try makeCertificateValidator(
+        certificateDER: deterministicCertificate()
+      ),
+      verificationInstant: verificationInstant
+    )
+    var server = try TLS13ServerHandshake(
+      random: ContiguousArray(repeating: 0x02, count: 32).span,
+      ephemeralKey: X25519PrivateKey(
+        bytes: ContiguousArray(repeating: 0x22, count: 32).span
+      ),
+      certificateDER: deterministicCertificate().span,
+      signingKey: TLS13SigningKey(
+        ed25519: try Ed25519PrivateKey(seed: deterministicSeed().span)
+      ),
+      verificationInstant: verificationInstant
+    )
+
+    let clientHello = try client.start()
+    let serverFlight = try server.receive(clientHello.bytes.span)
+    let ranges = try tlsRecordRanges(serverFlight.bytes.span)
+    XCTAssertGreaterThan(ranges.count, 1)
+
+    var compatibleFlight = ContiguousArray<UInt8>()
+    append(
+      try serverFlight.bytes.span(in: ranges[0]),
+      to: &compatibleFlight
+    )
+    compatibleFlight.append(contentsOf: compatibilityChangeCipherSpecRecord())
+    for range in ranges.dropFirst() {
+      append(try serverFlight.bytes.span(in: range), to: &compatibleFlight)
+    }
+
+    let clientFinished = try client.receive(compatibleFlight.span)
+    _ = try server.receive(clientFinished.bytes.span)
+    XCTAssertTrue(client.isEstablished)
+    XCTAssertTrue(server.isEstablished)
+  }
+
+  func testStreamRecordStepIgnoresValidCompatibilityChangeCipherSpecOnly() throws {
+    let verificationInstant = try VerificationInstant(
+      secondsSinceUnixEpoch: 1_720_000_000,
+      nanoseconds: 0
+    )
+    var client = try TLS13ClientHandshake(
+      random: ContiguousArray(repeating: 0x01, count: 32).span,
+      ephemeralKey: X25519PrivateKey(
+        bytes: ContiguousArray(repeating: 0x11, count: 32).span
+      ),
+      certificateValidator: try makeCertificateValidator(
+        certificateDER: deterministicCertificate()
+      ),
+      verificationInstant: verificationInstant
+    )
+    var server = try TLS13ServerHandshake(
+      random: ContiguousArray(repeating: 0x02, count: 32).span,
+      ephemeralKey: X25519PrivateKey(
+        bytes: ContiguousArray(repeating: 0x22, count: 32).span
+      ),
+      certificateDER: deterministicCertificate().span,
+      signingKey: TLS13SigningKey(
+        ed25519: try Ed25519PrivateKey(seed: deterministicSeed().span)
+      ),
+      verificationInstant: verificationInstant
+    )
+
+    let clientHello = try client.start()
+    let serverFlight = try server.receive(clientHello.bytes.span)
+    let ranges = try tlsRecordRanges(serverFlight.bytes.span)
+    var clientFinished: TLS13HandshakeOutput?
+    for (index, range) in ranges.enumerated() {
+      let transition = try client.receiveRecordStep(
+        try serverFlight.bytes.span(in: range)
+      )
+      guard case .output(let output) = consume transition else {
+        return XCTFail("internal trust validation unexpectedly suspended")
+      }
+      if index == 0 {
+        let ccsTransition = try client.receiveRecordStep(
+          compatibilityChangeCipherSpecRecord().span
+        )
+        guard case .output(let ccsOutput) = consume ccsTransition else {
+          return XCTFail("compatibility CCS unexpectedly suspended")
+        }
+        XCTAssertTrue(ccsOutput.bytes.isEmpty)
+      }
+      if !output.bytes.isEmpty {
+        clientFinished = output
+      }
+    }
+    guard let clientFinished else {
+      return XCTFail("client did not emit Finished")
+    }
+
+    let serverCCSTransition = try server.receiveRecordStep(
+      compatibilityChangeCipherSpecRecord().span
+    )
+    guard case .output(let serverCCSOutput) = consume serverCCSTransition else {
+      return XCTFail("server compatibility CCS unexpectedly suspended")
+    }
+    XCTAssertTrue(serverCCSOutput.bytes.isEmpty)
+    _ = try server.receive(clientFinished.bytes.span)
+    XCTAssertTrue(client.isEstablished)
+    XCTAssertTrue(server.isEstablished)
+
+    var invalidClient = try TLS13ClientHandshake(
+      random: ContiguousArray(repeating: 0x03, count: 32).span,
+      ephemeralKey: X25519PrivateKey(
+        bytes: ContiguousArray(repeating: 0x33, count: 32).span
+      ),
+      certificateValidator: try makeCertificateValidator(
+        certificateDER: deterministicCertificate()
+      ),
+      verificationInstant: verificationInstant
+    )
+    let secondClientHello = try invalidClient.start()
+    var secondServer = try TLS13ServerHandshake(
+      random: ContiguousArray(repeating: 0x04, count: 32).span,
+      ephemeralKey: X25519PrivateKey(
+        bytes: ContiguousArray(repeating: 0x44, count: 32).span
+      ),
+      certificateDER: deterministicCertificate().span,
+      signingKey: TLS13SigningKey(
+        ed25519: try Ed25519PrivateKey(seed: deterministicSeed().span)
+      ),
+      verificationInstant: verificationInstant
+    )
+    let secondServerFlight = try secondServer.receive(secondClientHello.bytes.span)
+    let secondRanges = try tlsRecordRanges(secondServerFlight.bytes.span)
+    _ = try invalidClient.receiveRecordStep(
+      try secondServerFlight.bytes.span(in: secondRanges[0])
+    )
+    let invalidCCS = ContiguousArray<UInt8>([0x14, 0x03, 0x03, 0x00, 0x01, 0x02])
+    do {
+      _ = try invalidClient.receiveRecordStep(invalidCCS.span)
+      XCTFail("invalid compatibility CCS was accepted")
+    } catch let error {
+      XCTAssertEqual(error, .malformedInput)
+    }
   }
 
   func testStreamExternalServerCredentialCompletesThroughTransitions() throws {
@@ -1374,8 +1566,12 @@ final class TLS13HandshakeMessageTests: XCTestCase {
     let parsedClientHello = try TLS13HandshakeCodec.parseClientHello(
       clientHello.bytes.span.extracting(5..<clientHello.bytes.count)
     )
-    XCTAssertEqual(parsedClientHello.namedGroup, .secp256r1)
-    XCTAssertEqual(parsedClientHello.keyShare.count, 65)
+    XCTAssertEqual(
+      parsedClientHello.offeredNamedGroups,
+      [TLS13NamedGroup.secp256r1.rawValue]
+    )
+    XCTAssertEqual(parsedClientHello.keyShares.count, 1)
+    XCTAssertEqual(parsedClientHello.keyShares[0].keyExchange.count, 65)
     let serverFlight = try server.receive(clientHello.bytes.span)
     let clientFinished = try client.receive(serverFlight.bytes.span)
     let confirmation = try server.receive(clientFinished.bytes.span)
@@ -1862,6 +2058,21 @@ final class TLS13HandshakeMessageTests: XCTestCase {
       index += 1
     }
     return result
+  }
+
+  private func append(
+    _ span: Span<UInt8>,
+    to destination: inout ContiguousArray<UInt8>
+  ) {
+    var index = 0
+    while index < span.count {
+      destination.append(span[index])
+      index += 1
+    }
+  }
+
+  private func compatibilityChangeCipherSpecRecord() -> ContiguousArray<UInt8> {
+    [0x14, 0x03, 0x03, 0x00, 0x01, 0x01]
   }
 
   private func emittedRecordBytes(

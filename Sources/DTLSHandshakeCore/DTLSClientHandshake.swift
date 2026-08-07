@@ -69,6 +69,7 @@ public struct DTLSClientHandshake<C: CryptoProvider>: Sendable {
     private var serverRandom: [UInt8]?
     private var requiredSRTPProfiles: [SRTPProtectionProfile]?
     private var selectedSRTPProfile: SRTPProtectionProfile?
+    private var certificateRequestReceived: Bool
 
     /// Server's ECDHE public key (set on ServerKeyExchange).
     private var serverPublicKey: [UInt8]?
@@ -100,6 +101,7 @@ public struct DTLSClientHandshake<C: CryptoProvider>: Sendable {
         self.serverRandom = nil
         self.requiredSRTPProfiles = nil
         self.selectedSRTPProfile = nil
+        self.certificateRequestReceived = false
         self.serverPublicKey = nil
         self.serverNamedGroup = nil
         self.serverCertificateDER = nil
@@ -232,7 +234,8 @@ public struct DTLSClientHandshake<C: CryptoProvider>: Sendable {
         }
 
         switch (state, header.messageType) {
-        case (.waitingServerHello, .helloVerifyRequest):
+        case (.waitingServerHello, .helloVerifyRequest),
+             (.waitingServerHelloWithCookie, .helloVerifyRequest):
             return try handleHelloVerifyRequest(body)
 
         case (.waitingServerHello, .serverHello),
@@ -253,6 +256,20 @@ public struct DTLSClientHandshake<C: CryptoProvider>: Sendable {
             state = .waitingServerHelloDone
             // The adapter verifies the signature (X.509) before continuing.
             return .verifyServerKeyExchange(ske)
+
+        case (.waitingServerHelloDone, .certificateRequest):
+            guard !certificateRequestReceived else {
+                throw DTLSError.handshakeFailed("Duplicate CertificateRequest")
+            }
+            let request = try decodeCertificateRequest(body)
+            guard request.certificateTypes.contains(.ecdsaSign),
+                  request.signatureAlgorithms.contains(.ecdsa_secp256r1_sha256) else {
+                throw DTLSError.handshakeFailed(
+                    "CertificateRequest does not support the configured ECDSA P-256 identity"
+                )
+            }
+            certificateRequestReceived = true
+            return .actions([])
 
         case (.waitingServerHelloDone, .serverHelloDone):
             _ = try decodeServerHelloDone(body)
@@ -276,8 +293,12 @@ public struct DTLSClientHandshake<C: CryptoProvider>: Sendable {
 
     private mutating func handleHelloVerifyRequest(_ body: [UInt8]) throws(DTLSError) -> IngestResult {
         let cookie = try decodeHelloVerifyRequestCookie(body)
-        // Reset send seq and transcript for the cookie retry.
-        messageSeq = 0
+        // RFC 6347 section 4.2.1 excludes the first ClientHello and every
+        // HelloVerifyRequest from the transcript, but the DTLS handshake message
+        // sequence remains monotonic. The cookie-bearing ClientHello therefore
+        // follows the first ClientHello at message_seq 1. A server may issue a new
+        // HelloVerifyRequest with a different cookie, in which case the next retry
+        // advances again.
         handshakeMessages = []
         state = .waitingServerHelloWithCookie
         return .rebuildClientHelloWithCookie(cookie: cookie)
@@ -366,7 +387,8 @@ public struct DTLSClientHandshake<C: CryptoProvider>: Sendable {
         /// The encoded client Certificate message body (the client's own cert chain).
         public let certificateBody: [UInt8]
         /// A closure-free request: the adapter signs the CertificateVerify over the
-        /// handshake hash the core computes; see ``buildClientFlight``.
+        /// complete transcript bytes; its signature provider applies the negotiated
+        /// hash exactly once.
         public init(sharedSecret: [UInt8], clientPublicKey: [UInt8], certificateBody: [UInt8]) {
             self.sharedSecret = sharedSecret
             self.clientPublicKey = clientPublicKey
@@ -375,10 +397,10 @@ public struct DTLSClientHandshake<C: CryptoProvider>: Sendable {
     }
 
     /// A request for the adapter to sign the client CertificateVerify over
-    /// `handshakeHash`, returning the signed CertificateVerify message body.
+    /// `transcript`, returning the signed CertificateVerify message body.
     public struct CertificateVerifyRequest: Sendable, Equatable {
-        public let handshakeHash: [UInt8]
-        public init(handshakeHash: [UInt8]) { self.handshakeHash = handshakeHash }
+        public let transcript: [UInt8]
+        public init(transcript: [UInt8]) { self.transcript = transcript }
     }
 
     /// Builds Certificate + ClientKeyExchange, then requests the CertificateVerify
@@ -406,22 +428,6 @@ public struct DTLSClientHandshake<C: CryptoProvider>: Sendable {
             throw DTLSError.invalidState("Cipher suite not negotiated")
         }
 
-        // RFC 7627 session_hash covers the handshake through ServerHelloDone.
-        let sessionHash = transcriptContext.hash(messages: handshakeMessages, cipherSuite: cipherSuite)
-        keySchedule?.configureExtendedMasterSecret(sessionHash: sessionHash)
-
-        // Derive master secret + key block (validated before any message is staged).
-        keySchedule?.deriveMasterSecret(
-            preMasterSecret: inputs.sharedSecret,
-            clientRandom: clientRandom,
-            serverRandom: serverRandom
-        )
-        // Eagerly derive the key block so a failure surfaces now (matches legacy).
-        guard let ks = keySchedule else {
-            throw DTLSError.invalidState("Key schedule not initialized")
-        }
-        _ = try ks.deriveKeyBlock()
-
         // Certificate
         let certEncoded = DTLSHandshakeHeader.encodeMessageOrTrap(
             type: .certificate,
@@ -442,9 +448,27 @@ public struct DTLSClientHandshake<C: CryptoProvider>: Sendable {
         handshakeMessages.append(contentsOf: ckeEncoded)
         pendingFlight.append(.sendMessage(ckeEncoded))
 
-        // Request the CertificateVerify signature over the current transcript hash.
-        let cvHash = transcriptContext.hash(messages: handshakeMessages, cipherSuite: cipherSuite)
-        return CertificateVerifyRequest(handshakeHash: cvHash)
+        // RFC 7627 session_hash ends at ClientKeyExchange and therefore includes
+        // the optional client Certificate plus ClientKeyExchange itself.
+        let sessionHash = transcriptContext.hash(
+            messages: handshakeMessages,
+            cipherSuite: cipherSuite
+        )
+        keySchedule?.configureExtendedMasterSecret(sessionHash: sessionHash)
+        keySchedule?.deriveMasterSecret(
+            preMasterSecret: inputs.sharedSecret,
+            clientRandom: clientRandom,
+            serverRandom: serverRandom
+        )
+        guard let ks = keySchedule else {
+            throw DTLSError.invalidState("Key schedule not initialized")
+        }
+        _ = try ks.deriveKeyBlock()
+
+        // The signature provider owns the one negotiated hash operation. Passing
+        // a digest here would make message-oriented providers hash twice and would
+        // fail interoperability with RFC 5246 implementations.
+        return CertificateVerifyRequest(transcript: handshakeMessages)
     }
 
     /// The flight actions staged by `buildClientFlight` before the CertificateVerify

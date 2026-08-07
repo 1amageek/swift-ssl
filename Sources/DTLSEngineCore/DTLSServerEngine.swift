@@ -153,13 +153,6 @@ public struct DTLSServerEngine<C: CryptoProvider>: Sendable {
     // MARK: - send / close / handleTimeout
 
     public mutating func send(_ application: Span<UInt8>) throws(DTLSEngineError) -> [UInt8] {
-        try sendOwned(application.facadeArrayLocal())
-    }
-
-    /// Encrypts facade-owned application bytes without a second materialization.
-    public mutating func sendOwned(
-        _ application: borrowing [UInt8]
-    ) throws(DTLSEngineError) -> [UInt8] {
         guard phase != .closed else { throw .connectionClosed }
         guard phase != .failed else { throw .protocolFailure(reason: "connection in failed state") }
         guard phase == .connected else { throw .handshakeNotComplete }
@@ -171,7 +164,7 @@ public struct DTLSServerEngine<C: CryptoProvider>: Sendable {
         phase = .closed
         flights.stop()
         let alertBytes: [UInt8] = [1, 0] // close_notify (warning, 0)
-        return try record.encodeRecord(contentType: .alert, plaintext: alertBytes)
+        return try record.encodeRecord(contentType: .alert, plaintext: alertBytes.span)
     }
 
     public mutating func handleTimeout(

@@ -15,11 +15,27 @@ public struct TLS13KeySchedule: ~Copyable, Sendable {
       throw .invalidPreSharedKeyLength(actual: preSharedKey.count)
     }
     let zeroSalt = ContiguousArray<UInt8>(repeating: 0, count: hashByteCount)
-    let early = try Self.extract(
-      salt: zeroSalt.span,
-      inputKeyMaterial: preSharedKey,
-      cipherSuite: cipherSuite
-    )
+    let early: SecretBytes
+    if preSharedKey.isEmpty {
+      // RFC 8446 section 7.1 defines the absent-PSK input as a string of
+      // Hash.length zero bytes. A zero-length HKDF input produces a different
+      // early secret and breaks interoperability with conforming TLS stacks.
+      let absentPSK = ContiguousArray<UInt8>(
+        repeating: 0,
+        count: hashByteCount
+      )
+      early = try Self.extract(
+        salt: zeroSalt.span,
+        inputKeyMaterial: absentPSK.span,
+        cipherSuite: cipherSuite
+      )
+    } else {
+      early = try Self.extract(
+        salt: zeroSalt.span,
+        inputKeyMaterial: preSharedKey,
+        cipherSuite: cipherSuite
+      )
+    }
     self.cipherSuite = cipherSuite
     earlySecret = early
   }

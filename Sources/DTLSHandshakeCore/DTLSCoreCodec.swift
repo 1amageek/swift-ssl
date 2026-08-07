@@ -55,6 +55,11 @@ func encodeBytesOrTrap(_ message: DTLSFinished) -> [UInt8] {
     catch { fatalError("DTLS Finished encoding exceeded a wire length bound") }
 }
 
+func encodeBytesOrTrap(_ message: DTLSCertificateRequest) -> [UInt8] {
+    do { return try message.encodeBytes() }
+    catch { fatalError("DTLS CertificateRequest encoding exceeded a wire length bound") }
+}
+
 /// Maps a wire-codec ``DTLSWireError`` onto the closed ``DTLSError`` the FSM throws.
 @inline(__always)
 func mapWireError(_ error: DTLSWireError) -> DTLSError {
@@ -80,6 +85,11 @@ func decodeCertificate(_ body: [UInt8]) throws(DTLSError) -> CertificateMessage 
 
 func decodeServerKeyExchange(_ body: [UInt8]) throws(DTLSError) -> ServerKeyExchange {
     do { return try ServerKeyExchange.decode(from: body) }
+    catch { throw mapWireError(error) }
+}
+
+func decodeCertificateRequest(_ body: [UInt8]) throws(DTLSError) -> DTLSCertificateRequest {
+    do { return try DTLSCertificateRequest.decode(from: body) }
     catch { throw mapWireError(error) }
 }
 

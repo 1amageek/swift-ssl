@@ -11,15 +11,15 @@ public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher, Sendable {
   public static let nonceByteCount = 12
   public static let tagByteCount = 16
 
-  private let keyWords: [UInt32]
+  private var keyWords: SIMD8<UInt32>
 
   public init(key: Span<UInt8>) throws(AEADError) {
     guard key.count == 32 else {
       throw .invalidKeyLength(expected: Self.supportedKeyByteCounts, actual: key.count)
     }
-    var words = [UInt32](repeating: 0, count: 8)
+    var words = SIMD8<UInt32>(repeating: 0)
     var index = 0
-    while index < words.count {
+    while index < 8 {
       words[index] = Self.readUInt32LittleEndian(key, offset: index * 4)
       index += 1
     }
@@ -36,37 +36,33 @@ public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher, Sendable {
     guard sample.count == 16 else {
       throw .invalidNonceLength(expected: 16, actual: sample.count)
     }
-    var keyWords = [UInt32](repeating: 0, count: 8)
-    defer { wipeWords(&keyWords) }
+    var keyWords = SIMD8<UInt32>(repeating: 0)
+    defer { wipeValue(&keyWords) }
     var index = 0
-    while index < keyWords.count {
+    while index < 8 {
       keyWords[index] = readUInt32LittleEndian(key, offset: index * 4)
       index += 1
     }
     let counter = readUInt32LittleEndian(sample, offset: 0)
     let nonce = sample.extracting(4..<16)
     var block = chachaBlock(counter: counter, nonce: nonce, keyWords: keyWords)
-    defer { wipe(&block) }
+    defer { wipeValue(&block) }
     var mask = ContiguousArray<UInt8>()
     mask.reserveCapacity(16)
     index = 0
     while index < 16 {
-      mask.append(block[index])
+      let word = block[index >> 2]
+      mask.append(UInt8(truncatingIfNeeded: word >> UInt32((index & 3) * 8)))
       index += 1
     }
     return mask
   }
 
   deinit {
-    // This noncopyable owner is destroyed here. The immutable buffer is
-    // uniquely owned for the duration of the wipe and never escapes.
-    keyWords.withUnsafeBufferPointer { buffer in
-      guard let baseAddress = buffer.baseAddress else { return }
-      SecureWipe.erase(
-        UnsafeMutableRawPointer(mutating: baseAddress),
-        byteCount: buffer.count * MemoryLayout<UInt32>.stride
-      )
-    }
+    // Materialize the fixed-width key in scoped mutable storage for the
+    // optimizer-resistant wipe. The temporary never escapes this deinitializer.
+    var words = keyWords
+    Self.wipeValue(&words)
   }
 
   /// Seals a message with a scoped move-only cipher owner.
@@ -221,10 +217,11 @@ public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher, Sendable {
     nonce: Span<UInt8>
   ) -> [UInt8] {
     var oneTimeKey = Self.chachaBlock(counter: 0, nonce: nonce, keyWords: keyWords)
-    defer { Self.wipe(&oneTimeKey) }
+    defer { Self.wipeValue(&oneTimeKey) }
     var poly1305: Poly1305!
-    oneTimeKey.withUnsafeBufferPointer { buffer in
-      poly1305 = Poly1305(key: Span(_unsafeElements: buffer))
+    withUnsafeBytes(of: &oneTimeKey) { rawBytes in
+      let bytes = rawBytes.bindMemory(to: UInt8.self)
+      poly1305 = Poly1305(key: Span(_unsafeElements: bytes))
     }
     poly1305.update(authenticatedData)
     poly1305.padToBlock()
@@ -251,26 +248,231 @@ public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher, Sendable {
   ) {
     var counter = initialCounter
     var offset = 0
+    let nonce0 = SIMD4<UInt32>(repeating: Self.readUInt32LittleEndian(nonce, offset: 0))
+    let nonce1 = SIMD4<UInt32>(repeating: Self.readUInt32LittleEndian(nonce, offset: 4))
+    let nonce2 = SIMD4<UInt32>(repeating: Self.readUInt32LittleEndian(nonce, offset: 8))
+    while offset + 256 <= input.count {
+      Self.cryptFourBlocks(
+        input,
+        inputOffset: offset,
+        counter: counter,
+        nonce0: nonce0,
+        nonce1: nonce1,
+        nonce2: nonce2,
+        keyWords: keyWords,
+        into: &output
+      )
+      offset += 256
+      counter &+= 4
+    }
     while offset < input.count {
       var block = Self.chachaBlock(counter: counter, nonce: nonce, keyWords: keyWords)
-      defer { Self.wipe(&block) }
       let count = min(64, input.count - offset)
       var index = 0
       while index < count {
-        output[offset + index] = input[offset + index] ^ block[index]
+        let word = block[index >> 2]
+        let keyByte = UInt8(truncatingIfNeeded: word >> UInt32((index & 3) * 8))
+        output[offset + index] = input[offset + index] ^ keyByte
         index += 1
       }
+      Self.wipeValue(&block)
       offset += count
       counter &+= 1
+    }
+  }
+
+  @inline(__always)
+  private static func cryptFourBlocks(
+    _ input: Span<UInt8>,
+    inputOffset: Int,
+    counter: UInt32,
+    nonce0: SIMD4<UInt32>,
+    nonce1: SIMD4<UInt32>,
+    nonce2: SIMD4<UInt32>,
+    keyWords: SIMD8<UInt32>,
+    into output: inout MutableSpan<UInt8>
+  ) {
+    // Four independent ChaCha blocks occupy the SIMD lanes. Every vector is
+    // fully initialized, remains in this synchronous scope, and is wiped after
+    // its 256 output bytes have been written. The counter precondition follows
+    // from the validated RFC 8439 message limit; wrapping is only reachable on
+    // the final permitted block group.
+    let constant0 = SIMD4<UInt32>(repeating: 0x6170_7865)
+    let constant1 = SIMD4<UInt32>(repeating: 0x3320_646e)
+    let constant2 = SIMD4<UInt32>(repeating: 0x7962_2d32)
+    let constant3 = SIMD4<UInt32>(repeating: 0x6b20_6574)
+    let key0 = SIMD4<UInt32>(repeating: keyWords[0])
+    let key1 = SIMD4<UInt32>(repeating: keyWords[1])
+    let key2 = SIMD4<UInt32>(repeating: keyWords[2])
+    let key3 = SIMD4<UInt32>(repeating: keyWords[3])
+    let key4 = SIMD4<UInt32>(repeating: keyWords[4])
+    let key5 = SIMD4<UInt32>(repeating: keyWords[5])
+    let key6 = SIMD4<UInt32>(repeating: keyWords[6])
+    let key7 = SIMD4<UInt32>(repeating: keyWords[7])
+    let counters = SIMD4<UInt32>(counter, counter &+ 1, counter &+ 2, counter &+ 3)
+    var x0 = constant0
+    var x1 = constant1
+    var x2 = constant2
+    var x3 = constant3
+    var x4 = key0
+    var x5 = key1
+    var x6 = key2
+    var x7 = key3
+    var x8 = key4
+    var x9 = key5
+    var x10 = key6
+    var x11 = key7
+    var x12 = counters
+    var x13 = nonce0
+    var x14 = nonce1
+    var x15 = nonce2
+
+    var round = 0
+    while round < 10 {
+      quarterRound(&x0, &x4, &x8, &x12)
+      quarterRound(&x1, &x5, &x9, &x13)
+      quarterRound(&x2, &x6, &x10, &x14)
+      quarterRound(&x3, &x7, &x11, &x15)
+      quarterRound(&x0, &x5, &x10, &x15)
+      quarterRound(&x1, &x6, &x11, &x12)
+      quarterRound(&x2, &x7, &x8, &x13)
+      quarterRound(&x3, &x4, &x9, &x14)
+      round += 1
+    }
+
+    x0 &+= constant0
+    x1 &+= constant1
+    x2 &+= constant2
+    x3 &+= constant3
+    x4 &+= key0
+    x5 &+= key1
+    x6 &+= key2
+    x7 &+= key3
+    x8 &+= key4
+    x9 &+= key5
+    x10 &+= key6
+    x11 &+= key7
+    x12 &+= counters
+    x13 &+= nonce0
+    x14 &+= nonce1
+    x15 &+= nonce2
+
+    input.withUnsafeBytes { inputBytes in
+      output.withUnsafeMutableBytes { outputBytes in
+        // Unsafe boundary invariants:
+        // - Validation guarantees 256 initialized input bytes and 256 writable
+        //   output bytes starting at `inputOffset`.
+        // - Exact same-start aliasing is supported because each 16-byte input
+        //   vector is loaded before the corresponding output vector is stored.
+        // - Unaligned loads do not bind source memory. Stores use typed access
+        //   only for aligned addresses and byte copies otherwise.
+        // - Both raw pointers are borrowed by nested synchronous closures and
+        //   cannot escape; all offsets are multiples of 16 within the group.
+        let inputBase = inputBytes.baseAddress.unsafelyUnwrapped
+        let outputBase = outputBytes.baseAddress.unsafelyUnwrapped
+        xorFourBlockWordGroup(
+          x0, x1, x2, x3,
+          wordGroup: 0,
+          input: inputBase,
+          output: outputBase,
+          inputOffset: inputOffset
+        )
+        xorFourBlockWordGroup(
+          x4, x5, x6, x7,
+          wordGroup: 1,
+          input: inputBase,
+          output: outputBase,
+          inputOffset: inputOffset
+        )
+        xorFourBlockWordGroup(
+          x8, x9, x10, x11,
+          wordGroup: 2,
+          input: inputBase,
+          output: outputBase,
+          inputOffset: inputOffset
+        )
+        xorFourBlockWordGroup(
+          x12, x13, x14, x15,
+          wordGroup: 3,
+          input: inputBase,
+          output: outputBase,
+          inputOffset: inputOffset
+        )
+      }
+    }
+
+    wipeValue(&x0)
+    wipeValue(&x1)
+    wipeValue(&x2)
+    wipeValue(&x3)
+    wipeValue(&x4)
+    wipeValue(&x5)
+    wipeValue(&x6)
+    wipeValue(&x7)
+    wipeValue(&x8)
+    wipeValue(&x9)
+    wipeValue(&x10)
+    wipeValue(&x11)
+    wipeValue(&x12)
+    wipeValue(&x13)
+    wipeValue(&x14)
+    wipeValue(&x15)
+  }
+
+  @inline(__always)
+  private static func xorFourBlockWordGroup(
+    _ word0: SIMD4<UInt32>,
+    _ word1: SIMD4<UInt32>,
+    _ word2: SIMD4<UInt32>,
+    _ word3: SIMD4<UInt32>,
+    wordGroup: Int,
+    input: UnsafeRawPointer,
+    output: UnsafeMutableRawPointer,
+    inputOffset: Int,
+  ) {
+    var lane = 0
+    while lane < 4 {
+      let offset = inputOffset + lane * 64 + wordGroup * 16
+      let keyStreamWords = SIMD4<UInt32>(
+        word0[lane], word1[lane], word2[lane], word3[lane]
+      )
+      let keyStream = unsafeBitCast(keyStreamWords, to: SIMD16<UInt8>.self)
+      let inputVector = input.loadUnaligned(
+        fromByteOffset: offset,
+        as: SIMD16<UInt8>.self
+      )
+      storePossiblyUnaligned(
+        inputVector ^ keyStream,
+        to: output.advanced(by: offset)
+      )
+      lane += 1
+    }
+  }
+
+  @inline(__always)
+  private static func storePossiblyUnaligned(
+    _ value: SIMD16<UInt8>,
+    to destination: UnsafeMutableRawPointer
+  ) {
+    if UInt(bitPattern: destination) & UInt(MemoryLayout<SIMD16<UInt8>>.alignment - 1) == 0 {
+      destination.storeBytes(of: value, as: SIMD16<UInt8>.self)
+      return
+    }
+    var value = value
+    withUnsafeBytes(of: &value) { source in
+      destination.copyMemory(from: source.baseAddress.unsafelyUnwrapped, byteCount: 16)
     }
   }
 
   private static func chachaBlock(
     counter: UInt32,
     nonce: Span<UInt8>,
-    keyWords: [UInt32]
-  ) -> [UInt8] {
-    var state = [UInt32](repeating: 0, count: 16)
+    keyWords: SIMD8<UInt32>
+  ) -> SIMD16<UInt32> {
+    // Fixed-width SIMD storage keeps the 16-word ChaCha state in value storage.
+    // It has one initialized owner per call, is wiped before return/after use,
+    // and no raw pointer or borrow escapes this function.
+    var state = SIMD16<UInt32>(repeating: 0)
     state[0] = 0x6170_7865
     state[1] = 0x3320_646e
     state[2] = 0x7962_2d32
@@ -299,20 +501,18 @@ public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher, Sendable {
       round += 1
     }
 
-    var output = [UInt8](repeating: 0, count: 64)
     index = 0
     while index < 16 {
-      writeUInt32LittleEndian(working[index] &+ state[index], into: &output, offset: index * 4)
+      working[index] &+= state[index]
       index += 1
     }
-    wipeWords(&state)
-    wipeWords(&working)
-    return output
+    wipeValue(&state)
+    return working
   }
 
   @inline(__always)
   private static func quarterRound(
-    _ state: inout [UInt32], _ a: Int, _ b: Int, _ c: Int, _ d: Int
+    _ state: inout SIMD16<UInt32>, _ a: Int, _ b: Int, _ c: Int, _ d: Int
   ) {
     state[a] &+= state[b]
     state[d] = rotateLeft(state[d] ^ state[a], by: 16)
@@ -325,8 +525,33 @@ public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher, Sendable {
   }
 
   @inline(__always)
+  private static func quarterRound(
+    _ a: inout SIMD4<UInt32>,
+    _ b: inout SIMD4<UInt32>,
+    _ c: inout SIMD4<UInt32>,
+    _ d: inout SIMD4<UInt32>
+  ) {
+    a &+= b
+    d = rotateLeft(d ^ a, by: 16)
+    c &+= d
+    b = rotateLeft(b ^ c, by: 12)
+    a &+= b
+    d = rotateLeft(d ^ a, by: 8)
+    c &+= d
+    b = rotateLeft(b ^ c, by: 7)
+  }
+
+  @inline(__always)
   private static func rotateLeft(_ value: UInt32, by amount: UInt32) -> UInt32 {
     (value << amount) | (value >> (32 - amount))
+  }
+
+  @inline(__always)
+  private static func rotateLeft(
+    _ value: SIMD4<UInt32>,
+    by amount: UInt32
+  ) -> SIMD4<UInt32> {
+    (value &<< amount) | (value &>> (32 - amount))
   }
 
   private static func validMessageLength(_ count: Int) -> Bool {
@@ -408,167 +633,171 @@ public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher, Sendable {
     }
   }
 
-  private static func wipeWords(_ words: inout [UInt32]) {
-    words.withUnsafeMutableBufferPointer { buffer in
-      guard let baseAddress = buffer.baseAddress else { return }
-      SecureWipe.erase(
-        UnsafeMutableRawPointer(baseAddress),
-        byteCount: buffer.count * MemoryLayout<UInt32>.stride
-      )
+  private static func wipeValue<T>(_ value: inout T) {
+    withUnsafeMutableBytes(of: &value) { rawBytes in
+      guard let baseAddress = rawBytes.baseAddress else { return }
+      SecureWipe.erase(baseAddress, byteCount: rawBytes.count)
     }
   }
+
 }
 
-/// Stable owner for Poly1305 state. A class is used so secret state has one
-/// identity and can be wiped from deinit without noncopyable struct mutation
-/// restrictions. It is never sent across concurrency boundaries.
+private struct Poly1305Storage {
+  var r0: UInt64
+  var r1: UInt64
+  var r2: UInt64
+  var scaledR1: UInt64
+  var scaledR2: UInt64
+  var h0: UInt64 = 0
+  var h1: UInt64 = 0
+  var h2: UInt64 = 0
+  var pad0: UInt64
+  var pad1: UInt64
+  var buffer = SIMD16<UInt8>(repeating: 0)
+  var bufferCount = 0
+}
+
+/// Stable owner for Poly1305 state. The single allocation gives the hot path
+/// direct storage access without per-property dynamic exclusivity checks. This
+/// owner never crosses a concurrency boundary.
 private final class Poly1305 {
-  private var r0: UInt64
-  private var r1: UInt64
-  private var r2: UInt64
-  private var r3: UInt64
-  private var r4: UInt64
-  private var h0: UInt64 = 0
-  private var h1: UInt64 = 0
-  private var h2: UInt64 = 0
-  private var h3: UInt64 = 0
-  private var h4: UInt64 = 0
-  private var pad0: UInt64
-  private var pad1: UInt64
-  private var buffer = [UInt8](repeating: 0, count: 16)
-  private var bufferCount = 0
+  private let storage: UnsafeMutablePointer<Poly1305Storage>
 
   init(key: Span<UInt8>) {
-    let t0 = ChaCha20Poly1305.readUInt32LittleEndian(key, offset: 0)
-    let t1 = ChaCha20Poly1305.readUInt32LittleEndian(key, offset: 4)
-    let t2 = ChaCha20Poly1305.readUInt32LittleEndian(key, offset: 8)
-    let t3 = ChaCha20Poly1305.readUInt32LittleEndian(key, offset: 12)
-    r0 = UInt64(t0) & 0x3ffffff
-    r1 = UInt64((t0 >> 26) | (t1 << 6)) & 0x3ffff03
-    r2 = UInt64((t1 >> 20) | (t2 << 12)) & 0x3ffc0ff
-    r3 = UInt64((t2 >> 14) | (t3 << 18)) & 0x3f03fff
-    r4 = UInt64(t3 >> 8) & 0x00fffff
-    pad0 = ChaCha20Poly1305.readUInt64LittleEndian(key, offset: 16)
-    pad1 = ChaCha20Poly1305.readUInt64LittleEndian(key, offset: 24)
+    // The clamped 128-bit multiplier is represented as 44/44/42-bit limbs.
+    let low = ChaCha20Poly1305.readUInt64LittleEndian(key, offset: 0)
+    let high = ChaCha20Poly1305.readUInt64LittleEndian(key, offset: 8)
+    let r0 = low & 0x0ffc_0fff_ffff
+    let r1 = ((low >> 44) | (high << 20)) & 0x0fff_ffc0_ffff
+    let r2 = (high >> 24) & 0x00ff_ffff_c0f
+    storage = .allocate(capacity: 1)
+    storage.initialize(
+      to: Poly1305Storage(
+        r0: r0,
+        r1: r1,
+        r2: r2,
+        scaledR1: r1 * 20,
+        scaledR2: r2 * 20,
+        pad0: ChaCha20Poly1305.readUInt64LittleEndian(key, offset: 16),
+        pad1: ChaCha20Poly1305.readUInt64LittleEndian(key, offset: 24)
+      )
+    )
   }
 
   deinit {
-    wipe(&r0)
-    wipe(&r1)
-    wipe(&r2)
-    wipe(&r3)
-    wipe(&r4)
-    wipe(&h0)
-    wipe(&h1)
-    wipe(&h2)
-    wipe(&h3)
-    wipe(&h4)
-    wipe(&pad0)
-    wipe(&pad1)
-    wipe(&bufferCount)
-    ChaCha20Poly1305.wipe(&buffer)
+    // Unsafe boundary invariants:
+    // - `storage` is the sole owner of one initialized value.
+    // - No pointer derived from it escapes a synchronous method call.
+    // - The complete initialized allocation is wiped before exactly-once
+    //   deinitialization and deallocation.
+    SecureWipe.erase(
+      UnsafeMutableRawPointer(storage),
+      byteCount: MemoryLayout<Poly1305Storage>.stride
+    )
+    storage.deinitialize(count: 1)
+    storage.deallocate()
   }
 
   func update(_ bytes: Span<UInt8>) {
+    let storage = storage
     var offset = 0
-    if bufferCount > 0 {
-      let count = min(16 - bufferCount, bytes.count)
+    if storage.pointee.bufferCount > 0 {
+      let count = min(16 - storage.pointee.bufferCount, bytes.count)
       var index = 0
       while index < count {
-        buffer[bufferCount + index] = bytes[offset + index]
+        storage.pointee.buffer[storage.pointee.bufferCount + index] = bytes[offset + index]
         index += 1
       }
-      bufferCount += count
+      storage.pointee.bufferCount += count
       offset += count
-      if bufferCount == 16 {
+      if storage.pointee.bufferCount == 16 {
         processFullBlock()
-        bufferCount = 0
+        storage.pointee.bufferCount = 0
       }
     }
-    while offset + 16 <= bytes.count {
-      var block = [UInt8](repeating: 0, count: 16)
-      var index = 0
-      while index < 16 {
-        block[index] = bytes[offset + index]
-        index += 1
+    if offset + 16 <= bytes.count {
+      bytes.withUnsafeBytes { rawBytes in
+        // Unsafe boundary invariants:
+        // - Every load is an unaligned read of 16 initialized bytes inside the
+        //   validated span range.
+        // - The source pointer is borrowed only by this synchronous closure.
+        // - Poly1305 storage is disjoint from the immutable source bytes.
+        let baseAddress = rawBytes.baseAddress.unsafelyUnwrapped
+        while offset + 16 <= bytes.count {
+          let block = baseAddress.advanced(by: offset)
+          let low = UInt64(littleEndian: block.loadUnaligned(as: UInt64.self))
+          let high = UInt64(
+            littleEndian: block.loadUnaligned(fromByteOffset: 8, as: UInt64.self)
+          )
+          processBlock(low: low, high: high, highBit: 1 << 40)
+          offset += 16
+        }
       }
-      block.withUnsafeBufferPointer { pointer in
-        processFullBlock(Span(_unsafeElements: pointer))
-      }
-      ChaCha20Poly1305.wipe(&block)
-      offset += 16
     }
     while offset < bytes.count {
-      buffer[bufferCount] = bytes[offset]
-      bufferCount += 1
+      storage.pointee.buffer[storage.pointee.bufferCount] = bytes[offset]
+      storage.pointee.bufferCount += 1
       offset += 1
     }
   }
 
   func padToBlock() {
-    guard bufferCount > 0 else { return }
-    while bufferCount < 16 {
-      buffer[bufferCount] = 0
-      bufferCount += 1
+    let storage = storage
+    guard storage.pointee.bufferCount > 0 else { return }
+    while storage.pointee.bufferCount < 16 {
+      storage.pointee.buffer[storage.pointee.bufferCount] = 0
+      storage.pointee.bufferCount += 1
     }
     processFullBlock()
-    bufferCount = 0
+    storage.pointee.bufferCount = 0
   }
 
   func finalize() -> [UInt8] {
-    if bufferCount > 0 {
-      var index = bufferCount
-      buffer[index] = 1
+    let storage = storage
+    if storage.pointee.bufferCount > 0 {
+      var index = storage.pointee.bufferCount
+      storage.pointee.buffer[index] = 1
       index += 1
       while index < 16 {
-        buffer[index] = 0
+        storage.pointee.buffer[index] = 0
         index += 1
       }
       processPartialBlock()
-      bufferCount = 0
+      storage.pointee.bufferCount = 0
     }
 
-    var carry = h1 >> 26
-    h1 &= 0x3ffffff
-    h2 += carry
-    carry = h2 >> 26
-    h2 &= 0x3ffffff
-    h3 += carry
-    carry = h3 >> 26
-    h3 &= 0x3ffffff
-    h4 += carry
-    carry = h4 >> 26
-    h4 &= 0x3ffffff
-    h0 += carry * 5
-    carry = h0 >> 26
-    h0 &= 0x3ffffff
-    h1 += carry
+    let mask44: UInt64 = (1 << 44) - 1
+    let mask42: UInt64 = (1 << 42) - 1
+    var h0 = storage.pointee.h0
+    var h1 = storage.pointee.h1
+    var h2 = storage.pointee.h2
+    var carry = h1 >> 44
+    h1 &= mask44
+    h2 &+= carry
+    carry = h2 >> 42
+    h2 &= mask42
+    h0 &+= carry * 5
+    carry = h0 >> 44
+    h0 &= mask44
+    h1 &+= carry
 
     var g0 = h0 + 5
-    carry = g0 >> 26
-    g0 &= 0x3ffffff
+    carry = g0 >> 44
+    g0 &= mask44
     var g1 = h1 + carry
-    carry = g1 >> 26
-    g1 &= 0x3ffffff
-    var g2 = h2 + carry
-    carry = g2 >> 26
-    g2 &= 0x3ffffff
-    var g3 = h3 + carry
-    carry = g3 >> 26
-    g3 &= 0x3ffffff
-    let g4 = (h4 + carry) &- (1 << 26)
-    let mask = (g4 >> 63) &- 1
+    carry = g1 >> 44
+    g1 &= mask44
+    let g2 = (h2 + carry) &- (1 << 42)
+    let mask = (g2 >> 63) &- 1
     let inverseMask = ~mask
     h0 = (h0 & inverseMask) | (g0 & mask)
     h1 = (h1 & inverseMask) | (g1 & mask)
     h2 = (h2 & inverseMask) | (g2 & mask)
-    h3 = (h3 & inverseMask) | (g3 & mask)
-    h4 = (h4 & inverseMask) | (g4 & mask)
 
-    let word0 = h0 | (h1 << 26) | (h2 << 52)
-    let word1 = (h2 >> 12) | (h3 << 14) | (h4 << 40)
-    let (low, overflow) = word0.addingReportingOverflow(pad0)
-    var high = word1 &+ pad1
+    let word0 = h0 | (h1 << 44)
+    let word1 = (h1 >> 20) | (h2 << 24)
+    let (low, overflow) = word0.addingReportingOverflow(storage.pointee.pad0)
+    var high = word1 &+ storage.pointee.pad1
     if overflow { high &+= 1 }
     var result = [UInt8](repeating: 0, count: 16)
     ChaCha20Poly1305.writeUInt64LittleEndian(low, into: &result, offset: 0)
@@ -577,78 +806,81 @@ private final class Poly1305 {
   }
 
   private func processFullBlock() {
-    buffer.withUnsafeBufferPointer { pointer in
-      processFullBlock(Span(_unsafeElements: pointer))
-    }
-  }
-
-  private func processFullBlock(_ block: Span<UInt8>) {
-    let t0 = ChaCha20Poly1305.readUInt32LittleEndian(block, offset: 0)
-    let t1 = ChaCha20Poly1305.readUInt32LittleEndian(block, offset: 4)
-    let t2 = ChaCha20Poly1305.readUInt32LittleEndian(block, offset: 8)
-    let t3 = ChaCha20Poly1305.readUInt32LittleEndian(block, offset: 12)
-    addAndMultiply(
-      UInt64(t0) & 0x3ffffff,
-      UInt64((t0 >> 26) | (t1 << 6)) & 0x3ffffff,
-      UInt64((t1 >> 20) | (t2 << 12)) & 0x3ffffff,
-      UInt64((t2 >> 14) | (t3 << 18)) & 0x3ffffff,
-      UInt64(t3 >> 8) & 0x3ffffff,
-      hibit: 1 << 24
-    )
-  }
-
-  private func processPartialBlock() {
-    buffer.withUnsafeBufferPointer { pointer in
-      let block = Span(_unsafeElements: pointer)
-      let t0 = ChaCha20Poly1305.readUInt32LittleEndian(block, offset: 0)
-      let t1 = ChaCha20Poly1305.readUInt32LittleEndian(block, offset: 4)
-      let t2 = ChaCha20Poly1305.readUInt32LittleEndian(block, offset: 8)
-      let t3 = ChaCha20Poly1305.readUInt32LittleEndian(block, offset: 12)
-      addAndMultiply(
-        UInt64(t0) & 0x3ffffff,
-        UInt64((t0 >> 26) | (t1 << 6)) & 0x3ffffff,
-        UInt64((t1 >> 20) | (t2 << 12)) & 0x3ffffff,
-        UInt64((t2 >> 14) | (t3 << 18)) & 0x3ffffff,
-        UInt64(t3 >> 8) & 0x3ffffff,
-        hibit: 0
+    var buffer = storage.pointee.buffer
+    withUnsafeBytes(of: &buffer) { rawBytes in
+      let baseAddress = rawBytes.baseAddress.unsafelyUnwrapped
+      processBlock(
+        low: UInt64(littleEndian: baseAddress.loadUnaligned(as: UInt64.self)),
+        high: UInt64(
+          littleEndian: baseAddress.loadUnaligned(fromByteOffset: 8, as: UInt64.self)
+        ),
+        highBit: 1 << 40
       )
     }
+    wipe(&buffer)
+  }
+
+
+  private func processPartialBlock() {
+    var buffer = storage.pointee.buffer
+    withUnsafeBytes(of: &buffer) { rawBytes in
+      let baseAddress = rawBytes.baseAddress.unsafelyUnwrapped
+      processBlock(
+        low: UInt64(littleEndian: baseAddress.loadUnaligned(as: UInt64.self)),
+        high: UInt64(
+          littleEndian: baseAddress.loadUnaligned(fromByteOffset: 8, as: UInt64.self)
+        ),
+        highBit: 0
+      )
+    }
+    wipe(&buffer)
   }
 
   @inline(__always)
-  private func addAndMultiply(
-    _ m0: UInt64, _ m1: UInt64, _ m2: UInt64, _ m3: UInt64, _ m4: UInt64,
-    hibit: UInt64
-  ) {
-    h0 += m0
-    h1 += m1
-    h2 += m2
-    h3 += m3
-    h4 += m4 + hibit
-    let d0 = h0 * r0 + h1 * (5 * r4) + h2 * (5 * r3) + h3 * (5 * r2) + h4 * (5 * r1)
-    let d1 = h0 * r1 + h1 * r0 + h2 * (5 * r4) + h3 * (5 * r3) + h4 * (5 * r2)
-    let d2 = h0 * r2 + h1 * r1 + h2 * r0 + h3 * (5 * r4) + h4 * (5 * r3)
-    let d3 = h0 * r3 + h1 * r2 + h2 * r1 + h3 * r0 + h4 * (5 * r4)
-    let d4 = h0 * r4 + h1 * r3 + h2 * r2 + h3 * r1 + h4 * r0
-    var carry = d0 >> 26
-    h0 = d0 & 0x3ffffff
-    var value = d1 + carry
-    carry = value >> 26
-    h1 = value & 0x3ffffff
-    value = d2 + carry
-    carry = value >> 26
-    h2 = value & 0x3ffffff
-    value = d3 + carry
-    carry = value >> 26
-    h3 = value & 0x3ffffff
-    value = d4 + carry
-    carry = value >> 26
-    h4 = value & 0x3ffffff
-    h0 += carry * 5
-    carry = h0 >> 26
-    h0 &= 0x3ffffff
-    h1 += carry
+  private func processBlock(low: UInt64, high: UInt64, highBit: UInt64) {
+    // The accumulator remains below 2^44/2^44/2^42 after every reduction.
+    // Each UInt128 product is therefore below 2^91, including all three-term
+    // sums, so wrapping operators cannot actually wrap. Local accumulation
+    // avoids dynamic exclusivity checks on each storage field.
+    let mask44: UInt64 = (1 << 44) - 1
+    let mask42: UInt64 = (1 << 42) - 1
+    let state = storage
+    let h0 = state.pointee.h0 &+ (low & mask44)
+    let h1 = state.pointee.h1 &+ (((low >> 44) | (high << 20)) & mask44)
+    let h2 = state.pointee.h2 &+ (((high >> 24) & mask42) | highBit)
+    let r0 = state.pointee.r0
+    let r1 = state.pointee.r1
+    let r2 = state.pointee.r2
+    let scaledR1 = state.pointee.scaledR1
+    let scaledR2 = state.pointee.scaledR2
+
+    var product0 = UInt128(h0) &* UInt128(r0)
+    product0 &+= UInt128(h1) &* UInt128(scaledR2)
+    product0 &+= UInt128(h2) &* UInt128(scaledR1)
+    var product1 = UInt128(h0) &* UInt128(r1)
+    product1 &+= UInt128(h1) &* UInt128(r0)
+    product1 &+= UInt128(h2) &* UInt128(scaledR2)
+    var product2 = UInt128(h0) &* UInt128(r2)
+    product2 &+= UInt128(h1) &* UInt128(r1)
+    product2 &+= UInt128(h2) &* UInt128(r0)
+
+    var carry = UInt64(truncatingIfNeeded: product0 >> 44)
+    var reducedH0 = UInt64(truncatingIfNeeded: product0) & mask44
+    product1 &+= UInt128(carry)
+    carry = UInt64(truncatingIfNeeded: product1 >> 44)
+    var reducedH1 = UInt64(truncatingIfNeeded: product1) & mask44
+    product2 &+= UInt128(carry)
+    carry = UInt64(truncatingIfNeeded: product2 >> 42)
+    let reducedH2 = UInt64(truncatingIfNeeded: product2) & mask42
+    reducedH0 &+= carry * 5
+    carry = reducedH0 >> 44
+    reducedH0 &= mask44
+    reducedH1 &+= carry
+    state.pointee.h0 = reducedH0
+    state.pointee.h1 = reducedH1
+    state.pointee.h2 = reducedH2
   }
+
 
   private func wipe<T>(_ value: inout T) {
     withUnsafeMutableBytes(of: &value) { rawBytes in

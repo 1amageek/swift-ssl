@@ -5,7 +5,6 @@ import XCTest
 
 final class TLS13KeyScheduleTests: XCTestCase {
   func testRFC8448SimpleHandshakeKnownAnswers() throws {
-    let zeroPSK = ContiguousArray<UInt8>(repeating: 0, count: 32)
     let sharedSecret = bytes(
       "8bd4054fb55b9d63fdfbacf9f04b9f0d35e6d63f537563efd46272900f89492d"
     )
@@ -21,7 +20,7 @@ final class TLS13KeyScheduleTests: XCTestCase {
 
     let schedule = try TLS13KeySchedule(
       cipherSuite: .aes128GCM_SHA256,
-      preSharedKey: zeroPSK.span
+      preSharedKey: Span<UInt8>()
     )
     let handshake = try schedule.makeHandshakeSecrets(
       ecdheSharedSecret: sharedSecret.span,

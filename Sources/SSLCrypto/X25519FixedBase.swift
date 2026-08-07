@@ -13,7 +13,23 @@ enum X25519FixedBase {
     scalar: Span<UInt8>,
     into destination: inout MutableSpan<UInt8>
   ) {
-    X25519BasepointTable.limbs.withUnsafeBufferPointer { table in
+    scalarMultiplyEdwards(scalar: scalar, clampsForX25519: true)
+      .montgomeryUCoordinate.encode(into: &destination)
+  }
+
+  /// Constant-time Ed25519 base-point multiplication using the shared table.
+  /// Ed25519 callers pass already reduced or RFC 8032-clamped scalars, so this
+  /// path applies radix-16 recoding without X25519's additional clamp.
+  static func scalarMultiplyEdwards(scalar: Span<UInt8>) -> X25519ExtendedPoint {
+    scalarMultiplyEdwards(scalar: scalar, clampsForX25519: false)
+  }
+
+  private static func scalarMultiplyEdwards(
+    scalar: Span<UInt8>,
+    clampsForX25519: Bool
+  ) -> X25519ExtendedPoint {
+    precondition(scalar.count == 32)
+    return X25519BasepointTable.limbs.withUnsafeBufferPointer { table in
       // Unsafe boundary invariants:
       // - The temporary allocation contains exactly 64 initialized Int8 digits.
       // - Every digit is in -8...8 after radix-16 recoding.
@@ -24,7 +40,7 @@ enum X25519FixedBase {
       // The generated table has exactly 3,840 limbs. All lookup offsets
       // below are bounded by 32 positions, 8 candidates, and 15 limbs.
       let tableBase = table.baseAddress!
-      withUnsafeTemporaryAllocation(of: Int8.self, capacity: 64) { digits in
+      return withUnsafeTemporaryAllocation(of: Int8.self, capacity: 64) { digits in
         defer {
           if let baseAddress = digits.baseAddress {
             SecureWipe.erase(
@@ -41,8 +57,10 @@ enum X25519FixedBase {
           digits[byteIndex * 2 + 1] = Int8(byte >> 4)
           byteIndex += 1
         }
-        digits[0] &= 8
-        digits[63] = (digits[63] & 3) | 4
+        if clampsForX25519 {
+          digits[0] &= 8
+          digits[63] = (digits[63] & 3) | 4
+        }
 
         var carry: Int16 = 0
         var digitIndex = 0
@@ -84,7 +102,7 @@ enum X25519FixedBase {
           digitIndex += 2
         }
 
-        point.montgomeryUCoordinate.encode(into: &destination)
+        return point
       }
     }
   }
@@ -122,7 +140,7 @@ enum X25519FixedBase {
     let negative = X25519PrecomputedPoint(
       yPlusX: selected.yMinusX,
       yMinusX: selected.yPlusX,
-      xyTwoD: selected.xyTwoD.negated()
+      xyTwoD: selected.xyTwoD.negatedAssumingBounded()
     )
     return X25519PrecomputedPoint.selecting(
       selected,
@@ -138,7 +156,7 @@ enum X25519FixedBase {
   }
 }
 
-private struct X25519PrecomputedPoint {
+struct X25519PrecomputedPoint {
   let yPlusX: X25519FieldElement
   let yMinusX: X25519FieldElement
   let xyTwoD: X25519FieldElement
@@ -196,7 +214,7 @@ private struct X25519PrecomputedPoint {
   }
 }
 
-private struct X25519ExtendedPoint {
+struct X25519ExtendedPoint {
   let x: X25519FieldElement
   let y: X25519FieldElement
   let z: X25519FieldElement
@@ -234,7 +252,7 @@ private struct X25519ExtendedPoint {
     let xx = x.squared()
     let yy = y.squared()
     let zzTwo = z.squared().multiplied(bySmall: 2)
-    let negativeXX = xx.negated()
+    let negativeXX = xx.negatedAssumingBounded()
     let xy = (x + y).squared() - xx - yy
     let yMinusX = negativeXX + yy
     let zDifference = yMinusX - zzTwo

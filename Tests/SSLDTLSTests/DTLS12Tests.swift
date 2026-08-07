@@ -53,4 +53,100 @@ final class DTLS12Tests: XCTestCase {
       XCTAssertTrue(error is DTLS12RecordError)
     }
   }
+
+  func testRawAEADWritesIntoCallerOwnedBuffers() throws {
+    let key = ContiguousArray(repeating: UInt8(0x31), count: 16)
+    let iv = ContiguousArray(repeating: UInt8(0x42), count: 4)
+    let protector = try DTLS12AESGCMRecordProtector(
+      key: key.span,
+      fixedIV: iv.span,
+      epoch: 1
+    )
+    let message = ContiguousArray("borrowed DTLS record".utf8)
+    let explicitNonce = ContiguousArray<UInt8>([0, 1, 0, 0, 0, 0, 0, 7])
+    let authenticatedData = ContiguousArray(repeating: UInt8(0xA5), count: 13)
+    var sealed = ContiguousArray<UInt8>(
+      repeating: 0,
+      count: explicitNonce.count + message.count + DTLS12AESGCMRecordProtector.tagByteCount
+    )
+    try sealed.withUnsafeMutableBufferPointer { sealedBuffer in
+      var sealedSpan = MutableSpan(_unsafeElements: sealedBuffer)
+      try protector.sealRaw(
+        plaintext: message.span,
+        explicitNonce: explicitNonce.span,
+        authenticatedData: authenticatedData.span,
+        into: &sealedSpan
+      )
+    }
+
+    var opened = ContiguousArray<UInt8>(repeating: 0, count: message.count)
+    try opened.withUnsafeMutableBufferPointer { openedBuffer in
+      var openedSpan = MutableSpan(_unsafeElements: openedBuffer)
+      try protector.openRaw(
+        recordFragment: sealed.span,
+        authenticatedData: authenticatedData.span,
+        into: &openedSpan
+      )
+    }
+    XCTAssertEqual(opened, message)
+  }
+
+  func testRawAEADRejectsWrongOutputSizeAndTamperBeforePlaintextWrite() throws {
+    let key = ContiguousArray(repeating: UInt8(0x51), count: 16)
+    let iv = ContiguousArray(repeating: UInt8(0x62), count: 4)
+    let protector = try DTLS12AESGCMRecordProtector(
+      key: key.span,
+      fixedIV: iv.span,
+      epoch: 1
+    )
+    let message = ContiguousArray("authenticated before output".utf8)
+    let explicitNonce = ContiguousArray<UInt8>([0, 1, 0, 0, 0, 0, 0, 9])
+    let authenticatedData = ContiguousArray(repeating: UInt8(0xB6), count: 13)
+    var sealed = ContiguousArray<UInt8>(
+      repeating: 0,
+      count: explicitNonce.count + message.count + DTLS12AESGCMRecordProtector.tagByteCount
+    )
+    try sealed.withUnsafeMutableBufferPointer { sealedBuffer in
+      var sealedSpan = MutableSpan(_unsafeElements: sealedBuffer)
+      try protector.sealRaw(
+        plaintext: message.span,
+        explicitNonce: explicitNonce.span,
+        authenticatedData: authenticatedData.span,
+        into: &sealedSpan
+      )
+    }
+
+    var tooSmall = ContiguousArray<UInt8>(repeating: 0, count: message.count - 1)
+    XCTAssertThrowsError(
+      try tooSmall.withUnsafeMutableBufferPointer { buffer in
+        var output = MutableSpan(_unsafeElements: buffer)
+        try protector.openRaw(
+          recordFragment: sealed.span,
+          authenticatedData: authenticatedData.span,
+          into: &output
+        )
+      }
+    ) { error in
+      XCTAssertEqual(
+        error as? DTLS12RecordError,
+        .aead(.outputTooSmall(required: message.count, actual: message.count - 1))
+      )
+    }
+
+    sealed[sealed.count - 1] ^= 1
+    var untouched = ContiguousArray<UInt8>(repeating: 0xCD, count: message.count)
+    XCTAssertThrowsError(
+      try untouched.withUnsafeMutableBufferPointer { buffer in
+        var output = MutableSpan(_unsafeElements: buffer)
+        try protector.openRaw(
+          recordFragment: sealed.span,
+          authenticatedData: authenticatedData.span,
+          into: &output
+        )
+      }
+    ) { error in
+      XCTAssertEqual(error as? DTLS12RecordError, .aead(.authenticationFailed))
+    }
+    XCTAssertEqual(untouched, ContiguousArray(repeating: 0xCD, count: message.count))
+  }
 }

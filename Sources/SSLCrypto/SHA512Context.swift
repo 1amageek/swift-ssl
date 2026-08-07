@@ -207,8 +207,16 @@ public struct SHA512Context: ~Copyable, HashContext, HMACSHA2Context, Sendable {
     state[5] &+= f
     state[6] &+= g
     state[7] &+= h
-    SecureWipe.erase(
-      schedule.withUnsafeMutableBytes { $0.baseAddress! }, byteCount: schedule.count * 8)
+    // Unsafe boundary invariants:
+    // - `schedule` owns 80 initialized UInt64 words and is exclusively mutable
+    //   for this synchronous closure.
+    // - The byte count comes from the buffer itself, so it covers exactly the
+    //   initialized allocation without relying on an unchecked multiplication.
+    // - The raw pointer remains inside the closure and never escapes its borrow.
+    schedule.withUnsafeMutableBytes { bytes in
+      guard let baseAddress = bytes.baseAddress else { return }
+      SecureWipe.erase(baseAddress, byteCount: bytes.count)
+    }
   }
 
   private static func writeBigEndian(

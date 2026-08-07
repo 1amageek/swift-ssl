@@ -153,6 +153,47 @@ public struct DTLSServerHandshake<C: CryptoProvider>: Sendable {
         guard clientHello.extendedMasterSecret, clientHello.renegotiationInfo else {
             throw DTLSError.handshakeFailed("DTLS WebRTC profile requires EMS and secure renegotiation")
         }
+
+        switch state {
+        case .idle:
+            guard header.messageSeq == nextReceiveSeq else {
+                throw DTLSError.outOfOrderMessage(
+                    expected: nextReceiveSeq,
+                    received: header.messageSeq
+                )
+            }
+            nextReceiveSeq = header.messageSeq &+ 1
+
+        case .waitingClientHelloWithCookie:
+            if header.messageSeq < nextReceiveSeq {
+                // A retransmitted initial ClientHello means that the peer did not
+                // receive our stateless HelloVerifyRequest. Returning `needCookie`
+                // makes the adapter resend the retained response without changing
+                // either sequence space.
+                guard header.messageSeq == 0, clientHello.cookie.isEmpty else {
+                    throw DTLSError.outOfOrderMessage(
+                        expected: nextReceiveSeq,
+                        received: header.messageSeq
+                    )
+                }
+                return .needCookie(clientHello)
+            }
+            guard header.messageSeq == nextReceiveSeq else {
+                throw DTLSError.outOfOrderMessage(
+                    expected: nextReceiveSeq,
+                    received: header.messageSeq
+                )
+            }
+            if !clientHello.cookie.isEmpty {
+                nextReceiveSeq = header.messageSeq &+ 1
+            }
+
+        case .waitingClientKeyExchange,
+             .waitingChangeCipherSpec,
+             .waitingFinished,
+             .connected:
+            throw DTLSError.invalidState("ClientHello received after cookie negotiation")
+        }
         if clientHello.cookie.isEmpty {
             return .needCookie(clientHello)
         }
@@ -248,10 +289,9 @@ public struct DTLSServerHandshake<C: CryptoProvider>: Sendable {
         handshakeMessages.append(contentsOf: rawMessage)
         helloVerifyRequestMessage = nil
 
-        // The cookie ClientHello is the client's message_seq 0 (the client resets its
-        // send seq after the HelloVerifyRequest). The next message we expect is the
-        // client's Certificate at seq 1.
-        nextReceiveSeq = 1
+        // `ingestClientHello` advanced the peer sequence after accepting the
+        // cookie-bearing ClientHello. RFC 6347 keeps message_seq monotonic across
+        // the stateless cookie exchange even though the transcript is reset.
 
         var actions: [DTLSCoreAction] = []
 
@@ -291,6 +331,21 @@ public struct DTLSServerHandshake<C: CryptoProvider>: Sendable {
         handshakeMessages.append(contentsOf: skeEncoded)
         actions.append(.sendMessage(skeEncoded))
 
+        if requireClientCertificate {
+            let request = DTLSCertificateRequest(
+                certificateTypes: [.ecdsaSign],
+                signatureAlgorithms: [.ecdsa_secp256r1_sha256]
+            )
+            let requestBody = encodeBytesOrTrap(request)
+            let requestEncoded = DTLSHandshakeHeader.encodeMessageOrTrap(
+                type: .certificateRequest,
+                messageSeq: nextMessageSeq(),
+                body: requestBody
+            )
+            handshakeMessages.append(contentsOf: requestEncoded)
+            actions.append(.sendMessage(requestEncoded))
+        }
+
         // ServerHelloDone.
         let shd = ServerHelloDone()
         let shdBody = encodeBytesOrTrap(shd)
@@ -301,12 +356,6 @@ public struct DTLSServerHandshake<C: CryptoProvider>: Sendable {
         )
         handshakeMessages.append(contentsOf: shdEncoded)
         actions.append(.sendMessage(shdEncoded))
-
-        // RFC 7627 session_hash covers the complete initial handshake through
-        // ServerHelloDone, before ClientKeyExchange is processed.
-        keySchedule?.configureExtendedMasterSecret(
-            sessionHash: transcriptContext.hash(messages: handshakeMessages, cipherSuite: selectedSuite)
-        )
 
         state = .waitingClientKeyExchange
         return actions
@@ -332,9 +381,9 @@ public struct DTLSServerHandshake<C: CryptoProvider>: Sendable {
         /// Nothing further required; emit these actions.
         case actions([DTLSCoreAction])
         /// A client CertificateVerify arrived: the adapter must verify its signature
-        /// against the presented certificate (X.509) over `handshakeHash`, then call
+        /// against the presented certificate (X.509) over `transcript`, then call
         /// ``acceptClientCertificateVerify``.
-        case verifyCertificateVerify(handshakeHash: [UInt8], rawMessage: [UInt8])
+        case verifyCertificateVerify(transcript: [UInt8], rawMessage: [UInt8])
         /// A client ClientKeyExchange arrived: the adapter must run ECDHE against
         /// `clientPublicKey` and call ``acceptClientKeyExchange``.
         case computeSharedSecret(clientPublicKey: [UInt8])
@@ -379,8 +428,10 @@ public struct DTLSServerHandshake<C: CryptoProvider>: Sendable {
                 // violation — no key to verify possession against.
                 throw DTLSError.unexpectedMessage(expected: .certificate, received: .certificateVerify)
             }
-            let hash = transcriptContext.hash(messages: handshakeMessages, cipherSuite: cipherSuite)
-            return .verifyCertificateVerify(handshakeHash: hash, rawMessage: rawMessage)
+            return .verifyCertificateVerify(
+                transcript: handshakeMessages,
+                rawMessage: rawMessage
+            )
 
         case (.waitingFinished, .finished):
             return try handleClientFinished(body, rawMessage: rawMessage)
@@ -406,6 +457,14 @@ public struct DTLSServerHandshake<C: CryptoProvider>: Sendable {
         guard let clientRandom, let serverRandom else {
             throw DTLSError.invalidState("Missing randoms")
         }
+        // `ingest` recorded ClientKeyExchange before requesting the ECDHE shared
+        // secret, so this is the exact RFC 7627 session_hash boundary.
+        keySchedule?.configureExtendedMasterSecret(
+            sessionHash: transcriptContext.hash(
+                messages: handshakeMessages,
+                cipherSuite: cipherSuite
+            )
+        )
         keySchedule?.deriveMasterSecret(
             preMasterSecret: sharedSecret,
             clientRandom: clientRandom,

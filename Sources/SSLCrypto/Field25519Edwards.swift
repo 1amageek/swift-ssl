@@ -12,22 +12,22 @@ extension Field25519 {
     bytes[0] & 1 == 1
   }
 
-  static var edwardsD: Field25519 {
+  static let edwardsD: Field25519 = {
     Field25519(
       bytes: Self.hexBytes("a3785913ca4deb75abd841414d0a700098e879777940c78c73fe6f2bee6c0352").span)
-  }
+  }()
 
-  static var edwardsTwoD: Field25519 {
+  static let edwardsTwoD: Field25519 = {
     Self.edwardsD + Self.edwardsD
-  }
+  }()
 
-  static var edwardsSqrtM1: Field25519 {
+  static let edwardsSqrtM1: Field25519 = {
     Field25519(
       bytes: Self.hexBytes("b0a00e4a271beec478e42fad0618432fa7d7fb3d99004d2b0bdfc14f8024832b").span)
-  }
+  }()
 
   static prefix func - (value: Field25519) -> Field25519 {
-    Field25519(constant: 0) - value
+    value.negated()
   }
 
   private static func hexBytes(_ string: String) -> ContiguousArray<UInt8> {

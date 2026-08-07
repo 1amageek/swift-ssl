@@ -62,23 +62,23 @@ public struct DTLSRecordProtector<C: CryptoProvider, A: AEAD>: Sendable {
             fixedIV: fixedIV,
             authenticationTagLength: A.tagLength,
             seal: { @Sendable (
-                plaintext: [UInt8],
+                plaintext: Span<UInt8>,
                 nonce: [UInt8],
                 aad: [UInt8]
             ) throws(CryptoError) -> [UInt8] in
                 try aead.seal(
-                    plaintext.span,
+                    plaintext,
                     nonce: nonce.span,
                     aad: aad.span
                 )
             },
             open: { @Sendable (
-                ciphertext: [UInt8],
+                ciphertext: Span<UInt8>,
                 nonce: [UInt8],
                 aad: [UInt8]
             ) throws(CryptoError) -> [UInt8] in
                 try aead.open(
-                    ciphertext.span,
+                    ciphertext,
                     nonce: nonce.span,
                     aad: aad.span
                 )
@@ -92,7 +92,7 @@ public struct DTLSRecordProtector<C: CryptoProvider, A: AEAD>: Sendable {
     ///
     /// - Returns: `explicit_nonce (8) || ciphertext || tag (16)`.
     public func seal(
-        plaintext: [UInt8],
+        plaintext: Span<UInt8>,
         explicitNonce: [UInt8],
         aad: [UInt8]
     ) throws(DTLSRecordProtectionError) -> [UInt8] {
@@ -111,7 +111,7 @@ public struct DTLSRecordProtector<C: CryptoProvider, A: AEAD>: Sendable {
     /// Throws ``DTLSRecordProtectionError/decryptionFailed(_:)`` on any AEAD-open
     /// failure — no silent fallback, never a garbage plaintext.
     public func open(
-        ciphertext: [UInt8],
+        ciphertext: Span<UInt8>,
         aad: [UInt8]
     ) throws(DTLSRecordProtectionError) -> [UInt8] {
         try implementation.open(ciphertext: ciphertext, aad: aad)

@@ -9,13 +9,13 @@ import P2PCoreCrypto
 
 package struct DTLSAEADRecordProtector: Sendable {
     package typealias SealOperation = @Sendable (
-        _ plaintext: [UInt8],
+        _ plaintext: Span<UInt8>,
         _ nonce: [UInt8],
         _ aad: [UInt8]
     ) throws(CryptoError) -> [UInt8]
 
     package typealias OpenOperation = @Sendable (
-        _ ciphertext: [UInt8],
+        _ ciphertext: Span<UInt8>,
         _ nonce: [UInt8],
         _ aad: [UInt8]
     ) throws(CryptoError) -> [UInt8]
@@ -47,7 +47,7 @@ package struct DTLSAEADRecordProtector: Sendable {
     }
 
     package func seal(
-        plaintext: [UInt8],
+        plaintext: Span<UInt8>,
         explicitNonce: [UInt8],
         aad: [UInt8]
     ) throws(DTLSRecordProtectionError) -> [UInt8] {
@@ -93,7 +93,7 @@ package struct DTLSAEADRecordProtector: Sendable {
     }
 
     package func open(
-        ciphertext: [UInt8],
+        ciphertext: Span<UInt8>,
         aad: [UInt8]
     ) throws(DTLSRecordProtectionError) -> [UInt8] {
         let minimum = Self.explicitNonceLength + authenticationTagLength
@@ -101,17 +101,17 @@ package struct DTLSAEADRecordProtector: Sendable {
             throw .ciphertextTooShort(minimum: minimum, actual: ciphertext.count)
         }
 
-        let explicitNonce = Array(ciphertext[0..<Self.explicitNonceLength])
-        let encryptedWithTag = Array(ciphertext[Self.explicitNonceLength...])
+        let explicitNonceBytes = ciphertext.extracting(0..<Self.explicitNonceLength)
+        let encryptedWithTag = ciphertext.extracting(Self.explicitNonceLength..<ciphertext.count)
         var nonce = [UInt8](
             repeating: 0,
-            count: fixedIV.count + explicitNonce.count
+            count: fixedIV.count + explicitNonceBytes.count
         )
         for index in fixedIV.indices {
             nonce[index] = fixedIV[index]
         }
-        for index in explicitNonce.indices {
-            nonce[fixedIV.count + index] = explicitNonce[index]
+        for index in 0..<explicitNonceBytes.count {
+            nonce[fixedIV.count + index] = explicitNonceBytes[index]
         }
 
         do {

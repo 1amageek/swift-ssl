@@ -36,11 +36,16 @@ public final class DTLS12AESGCMRecordProtector: Sendable {
     guard fixedIV.count == Self.fixedIVByteCount else {
       throw .invalidFixedIVLength(actual: fixedIV.count)
     }
-    // The lengths above are positive and below SecretByteCount's hard limit;
-    // allocation failure is therefore an internal invariant failure, not a
-    // protocol fallback. SecretBytes still owns and wipes both allocations.
-    self.key = try! SecretBytes(copying: key)
-    self.fixedIV = try! SecretBytes(copying: fixedIV)
+    do {
+      self.key = try SecretBytes(copying: key)
+    } catch {
+      throw .invalidKeyLength(actual: key.count)
+    }
+    do {
+      self.fixedIV = try SecretBytes(copying: fixedIV)
+    } catch {
+      throw .invalidFixedIVLength(actual: fixedIV.count)
+    }
     self.epoch = epoch
   }
 
@@ -69,8 +74,7 @@ public final class DTLS12AESGCMRecordProtector: Sendable {
     )
     let outputCount = Self.explicitNonceByteCount + plaintext.count + Self.tagByteCount
     var output = ContiguousArray<UInt8>(repeating: 0, count: outputCount)
-    do {
-      try output.withUnsafeMutableBufferPointer { buffer throws(DTLS12RecordError) in
+    try output.withUnsafeMutableBufferPointer { buffer throws(DTLS12RecordError) in
         guard let base = buffer.baseAddress else { throw .recordTooLarge(actual: 0) }
         var index = 0
         while index < explicitNonce.count {
@@ -100,11 +104,6 @@ public final class DTLS12AESGCMRecordProtector: Sendable {
             }
           }
         }
-      }
-    } catch let error as DTLS12RecordError {
-      throw error
-    } catch {
-      throw DTLS12RecordError.aead(.authenticationFailed)
     }
     return OwnedBytes(consuming: output)
   }
@@ -136,8 +135,7 @@ public final class DTLS12AESGCMRecordProtector: Sendable {
       plaintextByteCount: plaintextByteCount
     )
     var output = ContiguousArray<UInt8>(repeating: 0, count: plaintextByteCount)
-    do {
-      try output.withUnsafeMutableBufferPointer { buffer throws(DTLS12RecordError) in
+    try output.withUnsafeMutableBufferPointer { buffer throws(DTLS12RecordError) in
         var plaintext = MutableSpan(_unsafeElements: buffer)
         try key.withBorrowedBytes { keyBytes throws(DTLS12RecordError) in
           try nonce.withUnsafeBufferPointer { nonceBuffer throws(DTLS12RecordError) in
@@ -158,11 +156,6 @@ public final class DTLS12AESGCMRecordProtector: Sendable {
             }
           }
         }
-      }
-    } catch let error as DTLS12RecordError {
-      throw error
-    } catch {
-      throw DTLS12RecordError.aead(.authenticationFailed)
     }
     return OwnedBytes(consuming: output)
   }
@@ -177,55 +170,69 @@ public final class DTLS12AESGCMRecordProtector: Sendable {
     explicitNonce: Span<UInt8>,
     authenticatedData: Span<UInt8>
   ) throws(DTLS12RecordError) -> OwnedBytes {
+    let outputCount = Self.explicitNonceByteCount + plaintext.count + Self.tagByteCount
+    var output = ContiguousArray<UInt8>(repeating: 0, count: outputCount)
+    try output.withUnsafeMutableBufferPointer { buffer throws(DTLS12RecordError) in
+      var outputSpan = MutableSpan(_unsafeElements: buffer)
+      try sealRaw(
+        plaintext: plaintext,
+        explicitNonce: explicitNonce,
+        authenticatedData: authenticatedData,
+        into: &outputSpan
+      )
+    }
+    return OwnedBytes(consuming: output)
+  }
+
+  /// Seals directly into caller-owned record-fragment storage.
+  ///
+  /// The caller exclusively owns `output` for this synchronous call. All input
+  /// spans and the mutable output borrow remain scoped to the call and cannot
+  /// escape. Every output byte is initialized before return.
+  public func sealRaw(
+    plaintext: Span<UInt8>,
+    explicitNonce: Span<UInt8>,
+    authenticatedData: Span<UInt8>,
+    into output: inout MutableSpan<UInt8>
+  ) throws(DTLS12RecordError) {
     guard explicitNonce.count == Self.explicitNonceByteCount else {
       throw .invalidExplicitNonceLength(actual: explicitNonce.count)
     }
     guard plaintext.count <= Self.maximumPlaintextByteCount else {
       throw .recordTooLarge(actual: plaintext.count)
     }
+    let requiredOutputCount = Self.explicitNonceByteCount + plaintext.count + Self.tagByteCount
+    guard output.count == requiredOutputCount else {
+      throw .aead(.outputTooSmall(required: requiredOutputCount, actual: output.count))
+    }
     let nonce = try makeNonce(explicitNonce: explicitNonce)
-    var output = ContiguousArray<UInt8>(
-      repeating: 0,
-      count: Self.explicitNonceByteCount + plaintext.count + Self.tagByteCount
+    var index = 0
+    while index < explicitNonce.count {
+      output[index] = explicitNonce[index]
+      index += 1
+    }
+    var sealed = output._mutatingExtracting(
+      Self.explicitNonceByteCount..<requiredOutputCount
     )
-    do {
-      try output.withUnsafeMutableBufferPointer { buffer throws(DTLS12RecordError) in
-        guard let base = buffer.baseAddress else { throw .recordTooLarge(actual: 0) }
-        var index = 0
-        while index < explicitNonce.count {
-          base[index] = explicitNonce[index]
-          index += 1
-        }
-        var sealed = MutableSpan(
-          _unsafeStart: base.advanced(by: Self.explicitNonceByteCount),
-          count: plaintext.count + Self.tagByteCount
-        )
-        try key.withBorrowedBytes { keyBytes throws(DTLS12RecordError) in
-          try nonce.withUnsafeBufferPointer { nonceBuffer throws(DTLS12RecordError) in
-            try authenticatedData.withUnsafeBufferPointer { aadBuffer throws(DTLS12RecordError) in
-              do {
-                try AESGCM.seal(
-                  key: keyBytes,
-                  plaintext: plaintext,
-                  authenticatedData: Span(_unsafeElements: aadBuffer),
-                  nonce: Span(_unsafeElements: nonceBuffer),
-                  into: &sealed
-                )
-              } catch let error as AEADError {
-                throw DTLS12RecordError.aead(error)
-              } catch {
-                throw DTLS12RecordError.aead(.authenticationFailed)
-              }
-            }
+    try key.withBorrowedBytes { keyBytes throws(DTLS12RecordError) in
+      try nonce.withUnsafeBufferPointer { nonceBuffer throws(DTLS12RecordError) in
+        try authenticatedData.withUnsafeBufferPointer { aadBuffer throws(DTLS12RecordError) in
+          do {
+            try AESGCM.seal(
+              key: keyBytes,
+              plaintext: plaintext,
+              authenticatedData: Span(_unsafeElements: aadBuffer),
+              nonce: Span(_unsafeElements: nonceBuffer),
+              into: &sealed
+            )
+          } catch let error as AEADError {
+            throw DTLS12RecordError.aead(error)
+          } catch {
+            throw DTLS12RecordError.aead(.authenticationFailed)
           }
         }
       }
-    } catch let error as DTLS12RecordError {
-      throw error
-    } catch {
-      throw DTLS12RecordError.aead(.authenticationFailed)
     }
-    return OwnedBytes(consuming: output)
   }
 
   /// Opens a record fragment when the sans-IO engine has already constructed
@@ -239,43 +246,61 @@ public final class DTLS12AESGCMRecordProtector: Sendable {
     guard recordFragment.count >= minimum else {
       throw .ciphertextTooShort(actual: recordFragment.count)
     }
+    let plaintextByteCount = recordFragment.count - minimum
+    var output = ContiguousArray<UInt8>(repeating: 0, count: plaintextByteCount)
+    try output.withUnsafeMutableBufferPointer { buffer throws(DTLS12RecordError) in
+      var outputSpan = MutableSpan(_unsafeElements: buffer)
+      try openRaw(
+        recordFragment: recordFragment,
+        authenticatedData: authenticatedData,
+        into: &outputSpan
+      )
+    }
+    return OwnedBytes(consuming: output)
+  }
+
+  /// Authenticates and opens directly into caller-owned plaintext storage.
+  ///
+  /// The record remains borrowed throughout authentication. The caller owns the
+  /// exactly-sized output buffer, whose mutable borrow cannot escape this call.
+  public func openRaw(
+    recordFragment: Span<UInt8>,
+    authenticatedData: Span<UInt8>,
+    into output: inout MutableSpan<UInt8>
+  ) throws(DTLS12RecordError) {
+    let minimum = Self.explicitNonceByteCount + Self.tagByteCount
+    guard recordFragment.count >= minimum else {
+      throw .ciphertextTooShort(actual: recordFragment.count)
+    }
     let explicitNonce = recordFragment.extracting(0..<Self.explicitNonceByteCount)
     let ciphertextAndTag = recordFragment.extracting(Self.explicitNonceByteCount..<recordFragment.count)
     let plaintextByteCount = ciphertextAndTag.count - Self.tagByteCount
     guard plaintextByteCount <= Self.maximumPlaintextByteCount else {
       throw .recordTooLarge(actual: plaintextByteCount)
     }
+    guard output.count == plaintextByteCount else {
+      throw .aead(.outputTooSmall(required: plaintextByteCount, actual: output.count))
+    }
     let nonce = try makeNonce(explicitNonce: explicitNonce)
-    var output = ContiguousArray<UInt8>(repeating: 0, count: plaintextByteCount)
-    do {
-      try output.withUnsafeMutableBufferPointer { buffer throws(DTLS12RecordError) in
-        var plaintext = MutableSpan(_unsafeElements: buffer)
-        try key.withBorrowedBytes { keyBytes throws(DTLS12RecordError) in
-          try nonce.withUnsafeBufferPointer { nonceBuffer throws(DTLS12RecordError) in
-            try authenticatedData.withUnsafeBufferPointer { aadBuffer throws(DTLS12RecordError) in
-              do {
-                try AESGCM.open(
-                  key: keyBytes,
-                  ciphertextAndTag: ciphertextAndTag,
-                  authenticatedData: Span(_unsafeElements: aadBuffer),
-                  nonce: Span(_unsafeElements: nonceBuffer),
-                  into: &plaintext
-                )
-              } catch let error as AEADError {
-                throw DTLS12RecordError.aead(error)
-              } catch {
-                throw DTLS12RecordError.aead(.authenticationFailed)
-              }
-            }
+    try key.withBorrowedBytes { keyBytes throws(DTLS12RecordError) in
+      try nonce.withUnsafeBufferPointer { nonceBuffer throws(DTLS12RecordError) in
+        try authenticatedData.withUnsafeBufferPointer { aadBuffer throws(DTLS12RecordError) in
+          do {
+            try AESGCM.open(
+              key: keyBytes,
+              ciphertextAndTag: ciphertextAndTag,
+              authenticatedData: Span(_unsafeElements: aadBuffer),
+              nonce: Span(_unsafeElements: nonceBuffer),
+              into: &output
+            )
+          } catch let error as AEADError {
+            throw DTLS12RecordError.aead(error)
+          } catch {
+            throw DTLS12RecordError.aead(.authenticationFailed)
           }
         }
       }
-    } catch let error as DTLS12RecordError {
-      throw error
-    } catch {
-      throw DTLS12RecordError.aead(.authenticationFailed)
     }
-    return OwnedBytes(consuming: output)
   }
 
   private static let maximumSequenceNumber: UInt64 = 0x0000_FFFF_FFFF_FFFF

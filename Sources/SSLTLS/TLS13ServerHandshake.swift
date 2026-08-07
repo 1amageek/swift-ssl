@@ -483,6 +483,10 @@ public struct TLS13ServerHandshake: TLS13ServerHandshaking, ~Copyable, Sendable 
       }
       while index < ranges.count {
         let record = try inputSpan(input, range: ranges[index])
+        if try TLS13HandshakeWire.isCompatibilityChangeCipherSpec(record) {
+          index += 1
+          continue
+        }
         if earlyRead != nil {
           do {
             let opened = try openEarlyRecord(record)
@@ -586,6 +590,14 @@ public struct TLS13ServerHandshake: TLS13ServerHandshaking, ~Copyable, Sendable 
         throw TLS13HandshakeEngineError.malformedInput
       }
       let record = try inputSpan(input, range: recordRanges[0])
+      if try TLS13HandshakeWire.isCompatibilityChangeCipherSpec(record) {
+        guard handshakeRead != nil else {
+          throw TLS13HandshakeEngineError.malformedInput
+        }
+        return .output(
+          try TLS13HandshakeWire.makeOutput(bytes: OwnedBytes())
+        )
+      }
       var recordBytes = ContiguousArray<UInt8>()
       var actions = ContiguousArray<TLSStreamAction>()
       let request: TLS13CapabilityRequest?

@@ -159,6 +159,18 @@ public struct ByteWriter: Sendable {
         storage.append(contentsOf: payload)
     }
 
+    /// Writes a borrowed payload preceded by its length as a big-endian `UInt16`.
+    ///
+    /// The caller's storage remains borrowed for this synchronous append. No
+    /// intermediate payload owner is created.
+    public mutating func writeVector16(_ payload: Span<UInt8>) throws(ByteError) {
+        guard payload.count <= 0xFFFF else {
+            throw ByteError.lengthOutOfRange
+        }
+        writeUInt16(UInt16(payload.count))
+        writeSpan(payload)
+    }
+
     /// Writes `payload` preceded by its length as a big-endian `UInt24` (TLS).
     ///
     /// - Throws: ``ByteError/lengthOutOfRange`` if the payload is longer than `0xFFFFFF`.
