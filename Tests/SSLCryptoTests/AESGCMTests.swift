@@ -97,6 +97,66 @@ final class AESGCMTests: XCTestCase {
     XCTAssertEqual(recovered, plaintext)
   }
 
+  func testNISTAES128VariableLengthNonce() throws {
+    let key = bytes("b67b1a6efdd40d37080fbe8f8047aeb9")
+    let nonce = bytes("fa294b129972f7fc5bbd5b96bba837c9")
+    let expectedTag = "a2cf26481517ec25085c5b17d0786183"
+    var sealed = ContiguousArray<UInt8>(repeating: 0, count: AESGCM.tagByteCount)
+    let cipher = try AESGCM(key: key.span)
+    let empty = UnsafeBufferPointer<UInt8>(start: nil, count: 0)
+
+    try sealed.withUnsafeMutableBufferPointer { buffer in
+      var output = MutableSpan(_unsafeElements: buffer)
+      try cipher.seal(
+        plaintext: Span(_unsafeElements: empty),
+        authenticatedData: Span(_unsafeElements: empty),
+        nonce: nonce.span,
+        into: &output
+      )
+    }
+    XCTAssertEqual(hex(sealed), expectedTag)
+
+    try sealed.withUnsafeMutableBufferPointer { sealedBuffer in
+      var recovered = ContiguousArray<UInt8>()
+      try recovered.withUnsafeMutableBufferPointer { recoveredBuffer in
+        var output = MutableSpan(_unsafeElements: recoveredBuffer)
+        try cipher.open(
+          ciphertextAndTag: Span(_unsafeElements: sealedBuffer),
+          authenticatedData: Span(_unsafeElements: empty),
+          nonce: nonce.span,
+          into: &output
+        )
+      }
+    }
+  }
+
+  func testEmptyNonceIsRejectedWithoutWritingOutput() throws {
+    let key = bytes("00000000000000000000000000000000")
+    let cipher = try AESGCM(key: key.span)
+    let empty = UnsafeBufferPointer<UInt8>(start: nil, count: 0)
+    var output = ContiguousArray<UInt8>(repeating: 0xA5, count: AESGCM.tagByteCount)
+    let original = output
+
+    try output.withUnsafeMutableBufferPointer { buffer in
+      var outputSpan = MutableSpan(_unsafeElements: buffer)
+      XCTAssertThrowsError(
+        try cipher.seal(
+          plaintext: Span(_unsafeElements: empty),
+          authenticatedData: Span(_unsafeElements: empty),
+          nonce: Span(_unsafeElements: empty),
+          into: &outputSpan
+        )
+      ) { error in
+        XCTAssertEqual(
+          error as? AEADError,
+          .invalidNonceLength(expected: AESGCM.nonceByteCount, actual: 0)
+        )
+      }
+    }
+
+    XCTAssertEqual(output, original)
+  }
+
   func testNISTAdditionalAuthenticatedDataVector() throws {
     let key = bytes("feffe9928665731c6d6a8f9467308308")
     let nonce = bytes("cafebabefacedbaddecaf888")

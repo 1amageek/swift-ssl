@@ -83,7 +83,7 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
     nonce: Span<UInt8>,
     into output: inout MutableSpan<UInt8>
   ) throws(AEADError) {
-    guard nonce.count == Self.nonceByteCount else {
+    guard Self.validNonceLength(nonce.count) else {
       throw .invalidNonceLength(expected: Self.nonceByteCount, actual: nonce.count)
     }
     guard Self.validMessageLength(plaintext.count), Self.validMessageLength(authenticatedData.count)
@@ -103,14 +103,15 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
       throw .overlappingInputAndOutput
     }
 
-    var counter = Self.j0(nonce)
+    let initialCounter = initialCounter(for: nonce)
+    var counter = initialCounter
     Self.incrementCounter(&counter)
     gctr(plaintext, counter: counter, into: &output)
 
     let tag = authenticationTag(
       authenticatedData: authenticatedData,
       ciphertext: output.span.extracting(0..<plaintext.count),
-      initialCounter: Self.j0(nonce)
+      initialCounter: initialCounter
     )
     var index = 0
     while index < Self.tagByteCount {
@@ -125,7 +126,7 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
     nonce: Span<UInt8>,
     into output: inout MutableSpan<UInt8>
   ) throws(AEADError) {
-    guard nonce.count == Self.nonceByteCount else {
+    guard Self.validNonceLength(nonce.count) else {
       throw .invalidNonceLength(expected: Self.nonceByteCount, actual: nonce.count)
     }
     guard ciphertextAndTag.count >= Self.tagByteCount else {
@@ -147,10 +148,11 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
 
     let ciphertext = ciphertextAndTag.extracting(0..<ciphertextCount)
     let tag = ciphertextAndTag.extracting(ciphertextCount..<ciphertextAndTag.count)
+    let initialCounter = initialCounter(for: nonce)
     var calculated = authenticationTag(
       authenticatedData: authenticatedData,
       ciphertext: ciphertext,
-      initialCounter: Self.j0(nonce)
+      initialCounter: initialCounter
     )
     let valid = withUnsafeBytes(of: &calculated) { calculatedBuffer in
       ConstantTime.equal(
@@ -162,7 +164,7 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
       throw .authenticationFailed
     }
 
-    var counter = Self.j0(nonce)
+    var counter = initialCounter
     Self.incrementCounter(&counter)
     gctr(ciphertext, counter: counter, into: &output)
   }
@@ -407,6 +409,21 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
     return counter
   }
 
+  private func initialCounter(for nonce: Span<UInt8>) -> SIMD16<UInt8> {
+    if nonce.count == Self.nonceByteCount {
+      return Self.j0(nonce)
+    }
+
+    var accumulator = updateGHASH((0, 0), bytes: nonce)
+    accumulator = multiply(
+      accumulator.0,
+      accumulator.1 ^ (UInt64(nonce.count) * 8)
+    )
+    var counter = SIMD16<UInt8>(repeating: 0)
+    Self.writePair(accumulator.0, accumulator.1, into: &counter)
+    return counter
+  }
+
   private static func incrementCounter(_ counter: inout SIMD16<UInt8>) {
     var index = 15
     while index >= 12 {
@@ -420,6 +437,10 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
 
   private static func validMessageLength(_ count: Int) -> Bool {
     count >= 0 && UInt64(count) <= ((UInt64(1) << 39) - 256)
+  }
+
+  private static func validNonceLength(_ count: Int) -> Bool {
+    count > 0 && UInt64(count) <= UInt64.max / 8
   }
 
   // Unsafe boundary invariants:
