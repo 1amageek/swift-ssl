@@ -166,9 +166,12 @@ public struct P521PrivateKey: InPlacePublicKeyDerivation, ~Copyable, Sendable {
     catch { preconditionFailure("P-521 private-key size is a compile-time constant") }
     var attempt = 0
     while attempt < maximumGenerationAttempts {
-      let candidate: SecretBytes
+      var candidate: SecretBytes
       do { candidate = try SecretBytes(randomByteCount: byteCount, using: entropy) }
       catch let error { throw .entropy(error) }
+      candidate.withMutableBorrowedBytes { bytes in
+        bytes[0] &= 0x01
+      }
       let accepted = candidate.withBorrowedBytes { bytes in
         WeierstrassECDSA.isValidSecretScalar(bytes, curve: .p521)
       }

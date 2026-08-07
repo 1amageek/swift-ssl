@@ -84,6 +84,24 @@ final class WeierstrassKeyTests: XCTestCase {
     )
   }
 
+  func testP521GenerationMasksUnusedHighBits() throws {
+    var entropyBytes = ContiguousArray<UInt8>(
+      repeating: 0,
+      count: P521PrivateKey.byteCount
+    )
+    entropyBytes[0] = 0xFE
+    entropyBytes[P521PrivateKey.byteCount - 1] = 0x01
+    let privateKey = try P521PrivateKey.generate(
+      using: FixedEntropy(bytes: entropyBytes)
+    )
+
+    let generatedBytes = privateKey.withBorrowedBytes { bytes in
+      copySpan(bytes)
+    }
+    entropyBytes[0] &= 0x01
+    XCTAssertEqual(generatedBytes, Array(entropyBytes))
+  }
+
   private func scalar(count: Int, value: UInt8) -> ContiguousArray<UInt8> {
     var result = ContiguousArray<UInt8>(repeating: 0, count: count)
     result[count - 1] = value
@@ -126,5 +144,20 @@ final class WeierstrassKeyTests: XCTestCase {
       index = next
     }
     return result
+  }
+
+  private struct FixedEntropy: EntropySource {
+    let bytes: ContiguousArray<UInt8>
+
+    func fill(_ destination: inout MutableSpan<UInt8>) throws(EntropyError) {
+      guard destination.count == bytes.count else {
+        throw .partialFill(expected: destination.count, actual: bytes.count)
+      }
+      var index = 0
+      while index < bytes.count {
+        destination[index] = bytes[index]
+        index += 1
+      }
+    }
   }
 }
