@@ -510,15 +510,20 @@ enum WeierstrassECDSA {
       // fixed bound also protects this internal routine from accidental loops.
       var pass = 0
       while carry != 0 && pass < 3 {
-        normalized[0] = UInt32(truncatingIfNeeded: Int64(normalized[0]) + carry)
-        normalized[4] = UInt32(truncatingIfNeeded: Int64(normalized[4]) + carry)
-        normalized[3] = UInt32(truncatingIfNeeded: Int64(normalized[3]) + carry)
-        normalized[1] = UInt32(truncatingIfNeeded: Int64(normalized[1]) - carry)
+        i = 0
+        while i < 12 {
+          product[i] = Int64(normalized[i])
+          i += 1
+        }
+        product[0] += carry
+        product[4] += carry
+        product[3] += carry
+        product[1] -= carry
 
         var nextCarry: Int64 = 0
         i = 0
         while i < 12 {
-          let value = Int64(normalized[i]) + nextCarry
+          let value = product[i] + nextCarry
           if value >= 0 {
             normalized[i] = UInt32(truncatingIfNeeded: value)
             nextCarry = value >> 32
@@ -532,6 +537,7 @@ enum WeierstrassECDSA {
         carry = nextCarry
         pass += 1
       }
+      precondition(carry == 0, "P-384 reduction carry did not converge")
 
       var result = FixedUInt(words: normalized)
       while result >= Curve.p384Prime {

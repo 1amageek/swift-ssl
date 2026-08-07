@@ -58,6 +58,32 @@ final class WeierstrassKeyTests: XCTestCase {
     XCTAssertTrue(try P521ECDSA.verify(signature: p521Signature.span, messageHash: p521Digest.span, using: p521.publicKey()))
   }
 
+  func testP384EdgeCaseSharedSecretReduction() throws {
+    let privateKey = try P384PrivateKey(
+      bytes: bytes(
+        "A2B6442A37F8A3759D2CB91DF5ECA75B14F5A6766DA8035CC1943B15A8E4EBB6025F373BE334080F22AB821A3535A6A7"
+      ).span
+    )
+    let publicKey = try P384PublicKey(
+      bytes: bytes(
+        "04F63208E34E7E90BB5FB036432467A89981444010663B8533B47BFA94BD2BC16F38AA516B930A4726E3876D3091BFB72EC783ED4DA0CAC06320817DC8BC64F59CCF06F48ABC4386A150913FA95743A7B4601190E1C6EE8F8BF6354B254ECACE45"
+      ).span
+    )
+    let sharedSecret = try P384KeyAgreement.sharedSecret(
+      privateKey: privateKey,
+      peerPublicKey: publicKey
+    )
+
+    XCTAssertEqual(
+      copy(sharedSecret),
+      Array(
+        bytes(
+          "00000000FFFFFFFF00000000FFFFFFFF00000000FFFFFFFF00000000FFFFFFFF00000000FFFFFFFF00000000FFFFFFFF"
+        )
+      )
+    )
+  }
+
   private func scalar(count: Int, value: UInt8) -> ContiguousArray<UInt8> {
     var result = ContiguousArray<UInt8>(repeating: 0, count: count)
     result[count - 1] = value
