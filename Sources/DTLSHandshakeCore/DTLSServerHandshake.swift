@@ -82,6 +82,15 @@ public struct DTLSServerHandshake: Sendable {
     /// retransmitted initial ClientHello can receive the same HVR message_seq. It is
     /// never armed as a timed flight by the engine.
     private var helloVerifyRequestMessage: [UInt8]?
+    private var challengedClientHelloSequence: UInt16?
+    private var challengedClientHelloBody: [UInt8]?
+    /// The cookie-bearing ClientHello is retained only until the adapter validates
+    /// its cookie. A later retransmission must match both its message sequence and
+    /// complete body before the engine resends the authenticated server flight.
+    private var pendingClientHelloSequence: UInt16?
+    private var pendingClientHelloBody: [UInt8]?
+    private var acceptedClientHelloSequence: UInt16?
+    private var acceptedClientHelloBody: [UInt8]?
 
     // MARK: - Initialization
 
@@ -105,6 +114,12 @@ public struct DTLSServerHandshake: Sendable {
         self.nextReceiveSeq = 0
         self.handshakeMessages = []
         self.helloVerifyRequestMessage = nil
+        self.challengedClientHelloSequence = nil
+        self.challengedClientHelloBody = nil
+        self.pendingClientHelloSequence = nil
+        self.pendingClientHelloBody = nil
+        self.acceptedClientHelloSequence = nil
+        self.acceptedClientHelloBody = nil
     }
 
     // MARK: - Accessors
@@ -135,6 +150,10 @@ public struct DTLSServerHandshake: Sendable {
         /// A cookie was presented: the adapter verifies it (HMAC, fail-closed) and
         /// then calls ``serverFlight(acceptingCookieFrom:rawMessage:cookieValid:selectedSuite:inputs:)``.
         case verifyCookie(DTLSClientHello)
+        /// The complete, cookie-bearing ClientHello exactly matches the one that
+        /// started the current server flight. The engine must resend its retained
+        /// flight without changing the transcript or handshake sequence space.
+        case duplicateVerifiedClientHello
     }
 
     /// Decodes a received ClientHello and decides the cookie path. Does NOT touch
@@ -160,14 +179,19 @@ public struct DTLSServerHandshake: Sendable {
                 )
             }
             nextReceiveSeq = header.messageSeq &+ 1
+            if clientHello.cookie.isEmpty {
+                challengedClientHelloSequence = header.messageSeq
+                challengedClientHelloBody = body
+            }
 
         case .waitingClientHelloWithCookie:
-            if header.messageSeq < nextReceiveSeq {
+            if clientHello.cookie.isEmpty {
                 // A retransmitted initial ClientHello means that the peer did not
                 // receive our stateless HelloVerifyRequest. Returning `needCookie`
                 // makes the adapter resend the retained response without changing
                 // either sequence space.
-                guard header.messageSeq == 0, clientHello.cookie.isEmpty else {
+                guard header.messageSeq == challengedClientHelloSequence,
+                      body == challengedClientHelloBody else {
                     throw DTLSError.outOfOrderMessage(
                         expected: nextReceiveSeq,
                         received: header.messageSeq
@@ -181,19 +205,35 @@ public struct DTLSServerHandshake: Sendable {
                     received: header.messageSeq
                 )
             }
-            if !clientHello.cookie.isEmpty {
-                nextReceiveSeq = header.messageSeq &+ 1
-            }
+            nextReceiveSeq = header.messageSeq &+ 1
 
         case .waitingClientKeyExchange,
              .waitingChangeCipherSpec,
              .waitingFinished,
              .connected:
-            throw DTLSError.invalidState("ClientHello received after cookie negotiation")
+            if header.messageSeq == challengedClientHelloSequence,
+               clientHello.cookie.isEmpty,
+               body == challengedClientHelloBody,
+               helloVerifyRequestMessage != nil {
+                // The peer retransmitted its initial ClientHello because the
+                // stateless HVR was delayed. Resend only that small response; do
+                // not expose the larger authenticated server flight.
+                return .needCookie(clientHello)
+            }
+            if header.messageSeq == acceptedClientHelloSequence,
+               body == acceptedClientHelloBody {
+                return .duplicateVerifiedClientHello
+            }
+            throw DTLSError.outOfOrderMessage(
+                expected: nextReceiveSeq,
+                received: header.messageSeq
+            )
         }
         if clientHello.cookie.isEmpty {
             return .needCookie(clientHello)
         }
+        pendingClientHelloSequence = header.messageSeq
+        pendingClientHelloBody = body
         return .verifyCookie(clientHello)
     }
 
@@ -202,8 +242,7 @@ public struct DTLSServerHandshake: Sendable {
     public mutating func emitHelloVerifyRequest(
         helloVerifyRequestBody: [UInt8]
     ) throws(DTLSError) -> [DTLSCoreAction] {
-        if state == .waitingClientHelloWithCookie,
-           let helloVerifyRequestMessage {
+        if let helloVerifyRequestMessage {
             return [.sendMessage(helloVerifyRequestMessage)]
         }
         guard state == .idle else {
@@ -260,6 +299,11 @@ public struct DTLSServerHandshake: Sendable {
         guard cookieValid else {
             throw DTLSError.cookieMismatch
         }
+        guard let pendingClientHelloSequence,
+              let pendingClientHelloBody,
+              state == .idle || state == .waitingClientHelloWithCookie else {
+            throw DTLSError.invalidState("Server flight accepted without a pending ClientHello")
+        }
 
         if let selectedSRTP {
             guard selectedSRTP.protectionProfiles.count == 1,
@@ -284,7 +328,10 @@ public struct DTLSServerHandshake: Sendable {
         // Reset and record the cookie ClientHello (peer's raw bytes).
         handshakeMessages = []
         handshakeMessages.append(contentsOf: rawMessage)
-        helloVerifyRequestMessage = nil
+        acceptedClientHelloSequence = pendingClientHelloSequence
+        acceptedClientHelloBody = pendingClientHelloBody
+        self.pendingClientHelloSequence = nil
+        self.pendingClientHelloBody = nil
 
         // `ingestClientHello` advanced the peer sequence after accepting the
         // cookie-bearing ClientHello. RFC 6347 keeps message_seq monotonic across

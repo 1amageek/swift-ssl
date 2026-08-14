@@ -178,7 +178,14 @@ extension DTLSServerEngine {
         // retransmitted initial ClientHello must receive the retained stateless
         // HelloVerifyRequest. The handshake core validates its sequence and state.
         if header.messageType == .clientHello {
-            try handleClientHello(header: header, body: body, rawMessage: rawMessage, remoteAddress: remoteAddress, into: &output)
+            try handleClientHello(
+                header: header,
+                body: body,
+                rawMessage: rawMessage,
+                remoteAddress: remoteAddress,
+                progress: &progress,
+                into: &output
+            )
             return
         }
 
@@ -227,6 +234,7 @@ extension DTLSServerEngine {
         body: [UInt8],
         rawMessage: [UInt8],
         remoteAddress: Span<UInt8>,
+        progress: inout ReceiveProgress,
         into output: inout DTLSEngineOutput
     ) throws(DTLSEngineError) {
         let outcome: DTLSServerHandshake.ClientHelloOutcome
@@ -244,6 +252,9 @@ extension DTLSServerEngine {
                 remoteAddress: remoteAddress,
                 into: &output
             )
+
+        case .duplicateVerifiedClientHello:
+            progress.sawCompleteDuplicateFlight = true
         }
     }
 

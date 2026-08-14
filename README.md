@@ -7,7 +7,7 @@ Embedded Swift without reproducing the OpenSSL/BoringSSL C API or legacy protoco
 surface.
 
 > [!NOTE]
-> Version 0.2.0 is the current public release of the declared Pure Swift scope.
+> Version 0.3.0 is the current public release of the declared Pure Swift scope.
 > Production deployment remains a separate security-review decision.
 
 ## Modules
@@ -134,7 +134,7 @@ Add `swift-ssl` to the package dependencies:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/1amageek/swift-ssl.git", from: "0.2.0")
+    .package(url: "https://github.com/1amageek/swift-ssl.git", from: "0.3.0")
 ]
 ```
 
