@@ -2,7 +2,8 @@
 ///
 /// DTLS uses inverted version numbers: DTLS 1.2 = {254, 253} = 0xFEFD
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 
 /// DTLS protocol version
 public struct DTLSVersion: Sendable, Equatable, Hashable {
@@ -32,13 +33,13 @@ public struct DTLSVersion: Sendable, Equatable, Hashable {
     }
 
     /// Encode to wire format
-    public func encode(writer: inout ByteWriter) {
+    public func encode(writer: inout TLSWireWriter) {
         writer.writeUInt8(major)
         writer.writeUInt8(minor)
     }
 
     /// Decode from wire format
-    public static func decode(reader: inout ByteReader) throws(DTLSWireError) -> DTLSVersion {
+    public static func decode(reader: inout TLSWireReader) throws(DTLSWireError) -> DTLSVersion {
         let major = try reader.dReadUInt8()
         let minor = try reader.dReadUInt8()
         return DTLSVersion(major: major, minor: minor)

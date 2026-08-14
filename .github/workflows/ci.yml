@@ -1,0 +1,135 @@
+name: CI
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  SWIFT_SNAPSHOT: swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a
+  SWIFT_COMPILER_COMMIT: ef761e567dc94ee
+  TOOLCHAINS: org.swift.64202607231a
+  STANDARD_WASM_SDK: swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm
+  EMBEDDED_WASM_SDK: swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - name: Reject local package dependencies
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import pathlib
+          import re
+
+          manifest = pathlib.Path("Package.swift").read_text(encoding="utf-8")
+          if re.search(r"\.package\s*\(\s*path\s*:", manifest):
+              raise SystemExit("Package.swift contains a local path dependency")
+          PYTHON
+      - name: Install pinned Swift toolchain
+        run: |
+          set -euo pipefail
+          toolchain="$HOME/Library/Developer/Toolchains/${SWIFT_SNAPSHOT}.xctoolchain"
+          if [[ ! -d "$toolchain" ]]; then
+            package="$RUNNER_TEMP/${SWIFT_SNAPSHOT}-osx.pkg"
+            curl -fsSL --retry 3 \
+              "https://download.swift.org/swift-6.4.x-branch/xcode/${SWIFT_SNAPSHOT}/${SWIFT_SNAPSHOT}-osx.pkg" \
+              -o "$package"
+            installer -pkg "$package" -target CurrentUserHomeDirectory
+          fi
+          ln -sfn \
+            "$(/usr/bin/xcrun --toolchain XcodeDefault --find ld)" \
+            "$toolchain/usr/bin/ld"
+          xcrun swiftc --version | tee "$RUNNER_TEMP/swift-version.txt"
+          grep -F "Swift ${SWIFT_COMPILER_COMMIT}" "$RUNNER_TEMP/swift-version.txt"
+      - name: Test package with Xcode
+        run: |
+          set -euo pipefail
+          python3 -c \
+            'import subprocess,sys; sys.exit(subprocess.run(sys.argv[2:], timeout=int(sys.argv[1])).returncode)' \
+            1800 xcodebuild test \
+              -scheme swift-ssl-Package \
+              -destination 'platform=macOS' \
+              -parallel-testing-enabled NO \
+              "LD_RUNPATH_SEARCH_PATHS=\$(inherited) $HOME/Library/Developer/Toolchains/${SWIFT_SNAPSHOT}.xctoolchain/usr/lib/swift/macosx/testing"
+
+  wasm:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned Swift toolchain and matching WebAssembly SDK
+        run: |
+          set -euo pipefail
+          toolchain="$HOME/Library/Developer/Toolchains/${SWIFT_SNAPSHOT}.xctoolchain"
+          if [[ ! -d "$toolchain" ]]; then
+            package="$RUNNER_TEMP/${SWIFT_SNAPSHOT}-osx.pkg"
+            curl -fsSL --retry 3 \
+              "https://download.swift.org/swift-6.4.x-branch/xcode/${SWIFT_SNAPSHOT}/${SWIFT_SNAPSHOT}-osx.pkg" \
+              -o "$package"
+            installer -pkg "$package" -target CurrentUserHomeDirectory
+          fi
+          metadata="$(curl -fsSL --retry 3 https://www.swift.org/api/v1/install/dev/6.4.x/wasm-sdk.json)"
+          entry="$(jq -cer --arg snapshot "$SWIFT_SNAPSHOT" '.[] | select(.dir == $snapshot)' <<< "$metadata")"
+          download="$(jq -er '.download' <<< "$entry")"
+          checksum="$(jq -er '.checksum' <<< "$entry")"
+          xcrun swift sdk install \
+            --swift-sdks-path "$RUNNER_TEMP/swift-sdks" \
+            "https://download.swift.org/swift-6.4.x-branch/wasm-sdk/${SWIFT_SNAPSHOT}/${download}" \
+            --checksum "$checksum"
+          echo "SWIFT_SDKS_PATH=$RUNNER_TEMP/swift-sdks" >> "$GITHUB_ENV"
+      - name: Build and run standard WebAssembly validation
+        run: |
+          set -euo pipefail
+          scratch="$RUNNER_TEMP/build-$STANDARD_WASM_SDK"
+          xcrun swift build \
+            --swift-sdk "$STANDARD_WASM_SDK" \
+            --swift-sdks-path "$SWIFT_SDKS_PATH" \
+            --configuration release \
+            --scratch-path "$scratch"
+          for product in \
+            swift-ssl-target-validation \
+            swift-ssl-hybrid-target-validation \
+            swift-ssl-facade-validation
+          do
+            xcrun swift run --skip-build \
+              --swift-sdk "$STANDARD_WASM_SDK" \
+              --swift-sdks-path "$SWIFT_SDKS_PATH" \
+              --configuration release \
+              --scratch-path "$scratch" \
+              "$product"
+          done
+      - name: Build and run Embedded WebAssembly validation
+        run: |
+          set -euo pipefail
+          scratch="$RUNNER_TEMP/build-$EMBEDDED_WASM_SDK"
+          resources="$(xcrun swift sdk configure \
+            --swift-sdks-path "$SWIFT_SDKS_PATH" \
+            --show-configuration "$EMBEDDED_WASM_SDK" \
+            | awk -F': ' '$1 == "swiftResourcesPath" { print $2 }')"
+          unicode_tables="$resources/embedded/wasm32-unknown-wasip1/libswiftUnicodeDataTables.a"
+          test -f "$unicode_tables"
+          xcrun swift build \
+            --swift-sdk "$EMBEDDED_WASM_SDK" \
+            --swift-sdks-path "$SWIFT_SDKS_PATH" \
+            --configuration release \
+            --scratch-path "$scratch" \
+            -Xlinker "$unicode_tables"
+          for product in \
+            swift-ssl-target-validation \
+            swift-ssl-hybrid-target-validation \
+            swift-ssl-facade-validation
+          do
+            xcrun swift run --skip-build \
+              --swift-sdk "$EMBEDDED_WASM_SDK" \
+              --swift-sdks-path "$SWIFT_SDKS_PATH" \
+              --configuration release \
+              --scratch-path "$scratch" \
+              -Xlinker "$unicode_tables" \
+              "$product"
+          done

@@ -9,7 +9,8 @@
 ///   Extension extensions<0..2^16-1>;
 /// } ServerHello;
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 
 /// DTLS 1.2 ServerHello message
 public struct DTLSServerHello: Sendable {
@@ -54,7 +55,7 @@ public struct DTLSServerHello: Sendable {
 
     /// Encode the ServerHello body
     public func encodeBytes() throws(DTLSWireError) -> [UInt8] {
-        var writer = ByteWriter()
+        var writer = TLSWireWriter()
 
         serverVersion.encode(writer: &writer)
         writer.writeBytes(random)
@@ -63,9 +64,9 @@ public struct DTLSServerHello: Sendable {
         writer.writeUInt8(0x00) // compression_method: null
 
         // ec_point_formats extension
-        var extWriter = ByteWriter()
+        var extWriter = TLSWireWriter()
         extWriter.writeUInt16(0x000B) // ec_point_formats
-        var ecWriter = ByteWriter()
+        var ecWriter = TLSWireWriter()
         try ecWriter.dWriteVector8([0x00]) // uncompressed
         try extWriter.dWriteVector16(ecWriter.finishArray())
 
@@ -91,7 +92,7 @@ public struct DTLSServerHello: Sendable {
 
     /// Decode a ServerHello from body data
     public static func decode(from data: [UInt8]) throws(DTLSWireError) -> DTLSServerHello {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
 
         let version = try DTLSVersion.decode(reader: &reader)
         let random = try reader.dReadBytes(32)
@@ -104,7 +105,7 @@ public struct DTLSServerHello: Sendable {
         var renegotiationInfo = false
         if !reader.isAtEnd {
             let extensionBytes = try reader.dReadVector16()
-            var extensionReader = ByteReader(extensionBytes)
+            var extensionReader = TLSWireReader(extensionBytes)
             while !extensionReader.isAtEnd {
                 let extensionType = try extensionReader.dReadUInt16()
                 let extensionBody = try extensionReader.dReadVector16()

@@ -3,7 +3,8 @@
 /// The message carries client certificate kinds, signature/hash pairs, and an
 /// optional vector of distinguished names for acceptable certificate authorities.
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 import TLSWireCore
 
 /// The decoded DTLS 1.2 CertificateRequest body.
@@ -23,7 +24,7 @@ public struct DTLSCertificateRequest: Sendable {
     }
 
     public func encodeBytes() throws(DTLSWireError) -> [UInt8] {
-        var writer = ByteWriter()
+        var writer = TLSWireWriter()
         var certificateTypeBytes: [UInt8] = []
         certificateTypeBytes.reserveCapacity(certificateTypes.count)
         for certificateType in certificateTypes {
@@ -31,13 +32,13 @@ public struct DTLSCertificateRequest: Sendable {
         }
         try writer.dWriteVector8(certificateTypeBytes)
 
-        var schemes = ByteWriter()
+        var schemes = TLSWireWriter()
         for scheme in signatureAlgorithms {
             schemes.writeUInt16(scheme.rawValue)
         }
         try writer.dWriteVector16(schemes.finishArray())
 
-        var authorities = ByteWriter()
+        var authorities = TLSWireWriter()
         for authority in certificateAuthorities {
             try authorities.dWriteVector16(authority)
         }
@@ -46,7 +47,7 @@ public struct DTLSCertificateRequest: Sendable {
     }
 
     public static func decode(from data: [UInt8]) throws(DTLSWireError) -> DTLSCertificateRequest {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         let certificateTypeBytes = try reader.dReadVector8()
         let signatureAlgorithmBytes = try reader.dReadVector16()
         guard signatureAlgorithmBytes.count >= 2,
@@ -54,7 +55,7 @@ public struct DTLSCertificateRequest: Sendable {
             throw .dtls(.invalidFormat("Invalid CertificateRequest signature algorithms"))
         }
 
-        var signatureReader = ByteReader(signatureAlgorithmBytes)
+        var signatureReader = TLSWireReader(signatureAlgorithmBytes)
         var signatureAlgorithms: [SignatureScheme] = []
         while !signatureReader.isAtEnd {
             let rawValue = try signatureReader.dReadUInt16()
@@ -67,7 +68,7 @@ public struct DTLSCertificateRequest: Sendable {
         guard reader.isAtEnd else {
             throw .dtls(.invalidFormat("CertificateRequest contains trailing bytes"))
         }
-        var authorityReader = ByteReader(authorityBytes)
+        var authorityReader = TLSWireReader(authorityBytes)
         var certificateAuthorities: [[UInt8]] = []
         while !authorityReader.isAtEnd {
             certificateAuthorities.append(try authorityReader.dReadVector16())

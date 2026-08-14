@@ -6,7 +6,7 @@
 /// a cross-module generic record engine. The closures preserve typed failures and
 /// static provider selection at construction; they perform no I/O or fallback.
 
-import P2PCoreCrypto
+import NetworkingCore
 
 public struct DTLSRecordProtectionContext: Sendable {
     private let recordOverhead: Int
@@ -74,7 +74,7 @@ public struct DTLSRecordProtectionContext: Sendable {
     ) throws(DTLSRecordProtectionError) {
         let expected = try sealedByteCount(forPlaintextByteCount: plaintext.count)
         guard output.count == expected else {
-            throw .crypto(.invalidLength(expected: expected, actual: output.count))
+            throw .invalidOutputLength(expected: expected, actual: output.count)
         }
         try sealOperation(plaintext, explicitNonce, aad, &output)
     }
@@ -84,11 +84,14 @@ public struct DTLSRecordProtectionContext: Sendable {
         forPlaintextByteCount plaintextByteCount: Int
     ) throws(DTLSRecordProtectionError) -> Int {
         guard plaintextByteCount >= 0 else {
-            throw .crypto(.invalidLength(expected: 0, actual: plaintextByteCount))
+            throw .invalidPlaintextLength(actual: plaintextByteCount)
         }
         let (outputCount, overflow) = plaintextByteCount.addingReportingOverflow(recordOverhead)
         guard !overflow else {
-            throw .crypto(.invalidLength(expected: Int.max, actual: plaintextByteCount))
+            throw .outputLengthOverflow(
+                plaintextByteCount: plaintextByteCount,
+                recordOverhead: recordOverhead
+            )
         }
         return outputCount
     }

@@ -7,7 +7,8 @@
 /// verify_data = PRF(master_secret, finished_label, Hash(handshake_messages))
 ///   where finished_label = "client finished" or "server finished"
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 
 /// DTLS 1.2 Finished message
 public struct DTLSFinished: Sendable {

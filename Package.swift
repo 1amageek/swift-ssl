@@ -19,7 +19,27 @@ let cryptoSettings = ownershipSettings + [
 
 let tlsTypesDependency: Target.Dependency = .product(
   name: "TLSTypes",
-  package: "swift-tls-types"
+  package: "swift-networking"
+)
+
+let networkingCoreDependency: Target.Dependency = .product(
+  name: "NetworkingCore",
+  package: "swift-networking"
+)
+
+let networkingTimeDependency: Target.Dependency = .product(
+  name: "NetworkingTime",
+  package: "swift-networking"
+)
+
+let networkingPOSIXDependency: Target.Dependency = .product(
+  name: "NetworkingPOSIX",
+  package: "swift-networking"
+)
+
+let networkingWASIDependency: Target.Dependency = .product(
+  name: "NetworkingWASI",
+  package: "swift-networking"
 )
 
 var nistValidationSettings = ownershipSettings
@@ -43,6 +63,7 @@ case let invalidSelection?:
 var products: [Product] = [
   .library(name: "SSL", targets: ["SSL"]),
   .library(name: "SSLCore", targets: ["SSLCore"]),
+  .library(name: "SSLCryptoContracts", targets: ["SSLCryptoContracts"]),
   .library(name: "SSLCrypto", targets: ["SSLCrypto"]),
   .library(name: "SSLASN1", targets: ["SSLASN1"]),
   .library(name: "SSLX509", targets: ["SSLX509"]),
@@ -53,8 +74,6 @@ var products: [Product] = [
   .library(name: "DTLSWire", targets: ["DTLSWireCore"]),
   .library(name: "DTLSHandshake", targets: ["DTLSHandshakeCore"]),
   .library(name: "DTLSRecord", targets: ["DTLSRecordCore"]),
-  .library(name: "P2PCoreBytes", targets: ["P2PCoreBytes"]),
-  .library(name: "P2PCoreCrypto", targets: ["P2PCoreCrypto"]),
   .library(name: "SSLQUIC", targets: ["SSLQUIC"]),
   .executable(
     name: "swift-ssl-target-validation",
@@ -75,63 +94,58 @@ var products: [Product] = [
 ]
 
 var targets: [Target] = [
-  // Shared byte/crypto capability contracts are hosted by swift-ssl so the
-  // DTLS mechanism and P2P adapters have one module identity and no package
-  // dependency cycle.
-  .target(
-    name: "P2PCoreBytes",
-    path: "Sources/P2PCoreBytes",
-    swiftSettings: ownershipSettings
-  ),
-  .target(
-    name: "P2PCoreCrypto",
-    dependencies: ["P2PCoreBytes"],
-    path: "Sources/P2PCoreCrypto",
-    swiftSettings: ownershipSettings
-  ),
   .target(
     name: "TLSWireCore",
-    dependencies: ["P2PCoreBytes"],
+    dependencies: [networkingCoreDependency],
     path: "Sources/TLSWireCore",
     swiftSettings: ownershipSettings
   ),
   .target(
     name: "DTLSWireCore",
-    dependencies: ["P2PCoreBytes", "TLSWireCore"],
+    dependencies: [networkingCoreDependency, "TLSWireCore"],
     path: "Sources/DTLSWireCore",
     swiftSettings: ownershipSettings
   ),
   .target(
     name: "DTLSHandshakeCore",
-    dependencies: ["P2PCoreBytes", "P2PCoreCrypto", "TLSWireCore", "DTLSWireCore"],
+    dependencies: [networkingCoreDependency, "TLSWireCore", "DTLSWireCore"],
     path: "Sources/DTLSHandshakeCore",
     swiftSettings: ownershipSettings
   ),
   .target(
     name: "DTLSRecordCore",
-    dependencies: ["P2PCoreBytes", "P2PCoreCrypto"],
+    dependencies: [networkingCoreDependency, "SSLCryptoContracts"],
     path: "Sources/DTLSRecordCore",
     swiftSettings: ownershipSettings
   ),
   .target(
     name: "SSLDTLSMechanism",
     dependencies: [
-      "P2PCoreBytes", "P2PCoreCrypto", "TLSWireCore", "DTLSWireCore",
+      networkingCoreDependency, "TLSWireCore", "DTLSWireCore",
       "DTLSHandshakeCore", "DTLSRecordCore",
     ],
     path: "Sources/DTLSEngineCore",
     swiftSettings: ownershipSettings
   ),
   .target(
+    name: "SSLCryptoContracts",
+    swiftSettings: ownershipSettings
+  ),
+  .target(
     name: "SSLCore",
-    dependencies: [tlsTypesDependency],
+    dependencies: [
+      networkingCoreDependency,
+      networkingTimeDependency,
+      "SSLCryptoContracts",
+      tlsTypesDependency,
+    ],
     swiftSettings: ownershipSettings + [
       .enableExperimentalFeature("Volatile")
     ]
   ),
   .target(
     name: "SSLCrypto",
-    dependencies: ["SSLCore", tlsTypesDependency],
+    dependencies: ["SSLCore", "SSLCryptoContracts", "SSLASN1", tlsTypesDependency],
     swiftSettings: cryptoSettings
   ),
   .target(
@@ -170,6 +184,8 @@ var targets: [Target] = [
       "SSLTLS",
       "SSLDTLS",
       "SSLQUIC",
+      networkingPOSIXDependency,
+      networkingWASIDependency,
     ],
     swiftSettings: ownershipSettings
   ),
@@ -364,8 +380,8 @@ let package = Package(
   products: products,
   dependencies: [
     .package(
-      url: "https://github.com/1amageek/swift-tls-types.git",
-      from: "0.1.0"
+      url: "https://github.com/1amageek/swift-networking.git",
+      .upToNextMinor(from: "0.1.0")
     ),
   ],
   targets: targets

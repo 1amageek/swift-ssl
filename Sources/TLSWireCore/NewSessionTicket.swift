@@ -17,7 +17,7 @@
 /// `SymmetricKey` and the receive `Date`) lives in the `TLSCore` adapter; this
 /// core file carries only the pure wire types.
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - NewSessionTicket Message
 
@@ -61,7 +61,7 @@ public struct NewSessionTicket: Sendable {
 
     /// Encode the message content (without handshake header)
     public func encodeBytes() throws(TLSWireError) -> [UInt8] {
-        var writer = ByteWriter(reservingCapacity: 256)
+        var writer = TLSWireWriter(reservingCapacity: 256)
 
         // ticket_lifetime (4 bytes)
         writer.writeUInt32(ticketLifetime)
@@ -95,7 +95,7 @@ public struct NewSessionTicket: Sendable {
 
     /// Decode from message content (without handshake header)
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> NewSessionTicket {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
 
         // ticket_lifetime
         let ticketLifetime = try reader.wReadUInt32()
@@ -116,7 +116,7 @@ public struct NewSessionTicket: Sendable {
         var extensions: [TLSExtension] = []
         let extensionsData = try reader.wReadVector16()
         if !extensionsData.isEmpty {
-            var extReader = ByteReader(extensionsData)
+            var extReader = TLSWireReader(extensionsData)
             while !extReader.isAtEnd {
                 let ext = try TLSExtension.decode(from: &extReader, context: .newSessionTicket)
                 extensions.append(ext)
@@ -148,7 +148,7 @@ public struct EarlyDataIndication: Sendable {
 
     public func encodeBytes() -> [UInt8] {
         if let size = maxEarlyDataSize {
-            var writer = ByteWriter(reservingCapacity: 4)
+            var writer = TLSWireWriter(reservingCapacity: 4)
             writer.writeUInt32(size)
             return writer.finishArray()
         } else {
@@ -161,7 +161,7 @@ public struct EarlyDataIndication: Sendable {
             return EarlyDataIndication(maxEarlyDataSize: nil)
         }
 
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         let size = try reader.wReadUInt32()
         return EarlyDataIndication(maxEarlyDataSize: size)
     }

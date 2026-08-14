@@ -516,6 +516,22 @@ class RunnerContractTests(unittest.TestCase):
             with self.subTest(instruction=instruction):
                 self.assertTrue(runner.is_return_instruction(instruction))
 
+    def test_direct_call_contract_accepts_migrated_symbol_variants(self) -> None:
+        evidence = runner.validate_direct_call_contract(
+            [
+                (0x100, "bl CryptoInputErrorOACs0E0AAWl", ""),
+            ],
+            label="synthetic typed-error witness",
+            required_calls=(
+                (
+                    "typed-error witness",
+                    ("CryptoInputErrorOACs0D0AAWl", "CryptoInputErrorOACs0E0AAWl"),
+                    1,
+                ),
+            ),
+        )
+        self.assertEqual(evidence[0]["expectedCount"], 1)
+
     def test_backedge_detection_includes_unconditional_branch(self) -> None:
         self.assertEqual(
             runner.find_backedges(
@@ -561,15 +577,134 @@ class RunnerContractTests(unittest.TestCase):
             runner.is_callee_saved_simd_restore("ldp q9, q8, [sp, #0x10]")
         )
 
-    def test_multiblock_gate_rejects_vector_reload_inside_loop(self) -> None:
-        kernel = self.synthetic_kernel(extra_loop_instruction="ldr q2, [x9]")
+    def test_multiblock_gate_accepts_aligned_one_shot_path(self) -> None:
+        kernel = self.synthetic_kernel(extra_loop_instruction="nop")
+        one_shot = self.synthetic_one_shot()
         context = self.synthetic_context_update()
         finalize = self.synthetic_finalize()
 
         with mock.patch.object(
             runner,
             "load_macho_text_function",
-            side_effect=[kernel, context, finalize],
+            side_effect=[kernel, one_shot, context, finalize],
+        ):
+            result = runner.analyze_sha256_multiblock_codegen(
+                Path("/synthetic/worker"),
+                toolchain={},
+            )
+
+        self.assertEqual(
+            result["roundConstantResidency"],
+            "direct-table-pair-loads-per-block",
+        )
+        self.assertEqual(
+            result["constantVectorPairLoadBaseRegisters"],
+            ["x3"],
+        )
+        self.assertEqual(result["oneShotAlignedKernelCallSites"], 1)
+
+    def test_multiblock_gate_accepts_hoisted_round_constants(self) -> None:
+        kernel = self.synthetic_kernel(
+            extra_loop_instruction="nop",
+            hoisted_constants=True,
+        )
+        one_shot = self.synthetic_one_shot()
+        context = self.synthetic_context_update()
+        finalize = self.synthetic_finalize()
+
+        with mock.patch.object(
+            runner,
+            "load_macho_text_function",
+            side_effect=[kernel, one_shot, context, finalize],
+        ):
+            result = runner.analyze_sha256_multiblock_codegen(
+                Path("/synthetic/worker"),
+                toolchain={},
+            )
+
+        self.assertEqual(
+            result["roundConstantResidency"],
+            "hoisted-outside-block-loop",
+        )
+        self.assertEqual(result["constantVectorPairLoadsPerBlock"], 0)
+
+    def test_multiblock_gate_rejects_mixed_constant_load_bases(self) -> None:
+        kernel = self.synthetic_kernel(
+            extra_loop_instruction="nop",
+            second_constant_base="x4",
+        )
+        one_shot = self.synthetic_one_shot()
+        context = self.synthetic_context_update()
+        finalize = self.synthetic_finalize()
+
+        with mock.patch.object(
+            runner,
+            "load_macho_text_function",
+            side_effect=[kernel, one_shot, context, finalize],
+        ):
+            with self.assertRaises(runner.BenchmarkError):
+                runner.analyze_sha256_multiblock_codegen(
+                    Path("/synthetic/worker"),
+                    toolchain={},
+                )
+
+    def test_multiblock_gate_rejects_move_between_state_updates(self) -> None:
+        kernel = self.synthetic_kernel(
+            extra_loop_instruction="nop",
+            interpose_state_move=True,
+        )
+        one_shot = self.synthetic_one_shot()
+        context = self.synthetic_context_update()
+        finalize = self.synthetic_finalize()
+
+        with mock.patch.object(
+            runner,
+            "load_macho_text_function",
+            side_effect=[kernel, one_shot, context, finalize],
+        ):
+            with self.assertRaisesRegex(
+                runner.BenchmarkError,
+                "state updates adjacent",
+            ):
+                runner.analyze_sha256_multiblock_codegen(
+                    Path("/synthetic/worker"),
+                    toolchain={},
+                )
+
+    def test_multiblock_gate_rejects_duplicate_aligned_kernel_call(self) -> None:
+        kernel = self.synthetic_kernel(extra_loop_instruction="nop")
+        one_shot = self.synthetic_one_shot()
+        one_shot["instructions"].append(
+            (
+                0x304,
+                "bl compressMultipleBlocksAndAlignedPadding",
+                "bl compressMultipleBlocksAndAlignedPadding",
+            )
+        )
+        context = self.synthetic_context_update()
+        finalize = self.synthetic_finalize()
+
+        with mock.patch.object(
+            runner,
+            "load_macho_text_function",
+            side_effect=[kernel, one_shot, context, finalize],
+        ):
+            with self.assertRaises(runner.BenchmarkError):
+                runner.analyze_sha256_multiblock_codegen(
+                    Path("/synthetic/worker"),
+                    toolchain={},
+                )
+
+    def test_multiblock_gate_rejects_vector_reload_inside_loop(self) -> None:
+        kernel = self.synthetic_kernel(extra_loop_instruction="ldr q2, [x9]")
+        one_shot = self.synthetic_one_shot()
+        context = self.synthetic_context_update()
+        finalize = self.synthetic_finalize()
+
+        with mock.patch.object(
+            runner,
+            "load_macho_text_function",
+            side_effect=[kernel, one_shot, context, finalize],
         ):
             with self.assertRaises(runner.BenchmarkError):
                 runner.analyze_sha256_multiblock_codegen(
@@ -583,13 +718,14 @@ class RunnerContractTests(unittest.TestCase):
         kernel = self.synthetic_kernel(
             extra_loop_instruction="ldnp q2, q3, [x9]"
         )
+        one_shot = self.synthetic_one_shot()
         context = self.synthetic_context_update()
         finalize = self.synthetic_finalize()
 
         with mock.patch.object(
             runner,
             "load_macho_text_function",
-            side_effect=[kernel, context, finalize],
+            side_effect=[kernel, one_shot, context, finalize],
         ):
             with self.assertRaises(runner.BenchmarkError):
                 runner.analyze_sha256_multiblock_codegen(
@@ -603,13 +739,14 @@ class RunnerContractTests(unittest.TestCase):
                 kernel = self.synthetic_kernel(
                     extra_loop_instruction=memory_instruction
                 )
+                one_shot = self.synthetic_one_shot()
                 context = self.synthetic_context_update()
                 finalize = self.synthetic_finalize()
 
                 with mock.patch.object(
                     runner,
                     "load_macho_text_function",
-                    side_effect=[kernel, context, finalize],
+                    side_effect=[kernel, one_shot, context, finalize],
                 ):
                     with self.assertRaises(runner.BenchmarkError):
                         runner.analyze_sha256_multiblock_codegen(
@@ -619,6 +756,7 @@ class RunnerContractTests(unittest.TestCase):
 
     def test_multiblock_gate_rejects_duplicate_state_store(self) -> None:
         kernel = self.synthetic_kernel(extra_loop_instruction="nop")
+        one_shot = self.synthetic_one_shot()
         context = self.synthetic_context_update()
         context["instructions"].append(
             (0x550, "stp q0, q1, [x20]", "stp q0, q1, [x20]")
@@ -628,7 +766,7 @@ class RunnerContractTests(unittest.TestCase):
         with mock.patch.object(
             runner,
             "load_macho_text_function",
-            side_effect=[kernel, context, finalize],
+            side_effect=[kernel, one_shot, context, finalize],
         ):
             with self.assertRaises(runner.BenchmarkError):
                 runner.analyze_sha256_multiblock_codegen(
@@ -643,6 +781,7 @@ class RunnerContractTests(unittest.TestCase):
         ):
             with self.subTest(store_instruction=store_instruction):
                 kernel = self.synthetic_kernel(extra_loop_instruction="nop")
+                one_shot = self.synthetic_one_shot()
                 context = self.synthetic_context_update()
                 context["instructions"].append(
                     (0x550, store_instruction, store_instruction)
@@ -652,7 +791,7 @@ class RunnerContractTests(unittest.TestCase):
                 with mock.patch.object(
                     runner,
                     "load_macho_text_function",
-                    side_effect=[kernel, context, finalize],
+                    side_effect=[kernel, one_shot, context, finalize],
                 ):
                     with self.assertRaises(runner.BenchmarkError):
                         runner.analyze_sha256_multiblock_codegen(
@@ -722,6 +861,26 @@ class RunnerContractTests(unittest.TestCase):
 
             with self.assertRaises(runner.BenchmarkError):
                 runner.reject_source_snapshot_symlinks(root)
+
+    def test_llvm_snapshot_allows_only_bounded_relative_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            target = root / "fixtures/target"
+            target.parent.mkdir()
+            target.write_text("fixture", encoding="utf-8")
+            bounded = root / "fixtures/link"
+            bounded.symlink_to("target")
+
+            result = runner.validate_bounded_relative_symlinks(root)
+
+            self.assertEqual(result["symlinkCount"], 1)
+            escaping = root / "escaping"
+            escaping.symlink_to("../../outside")
+            with self.assertRaisesRegex(
+                runner.BenchmarkError,
+                "escaping symlinks",
+            ):
+                runner.validate_bounded_relative_symlinks(root)
 
     def test_tool_binding_rejects_retargeted_invocation_symlink(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -1148,6 +1307,235 @@ class RunnerContractTests(unittest.TestCase):
                     clang_resource_directory=fixture["clang_resource"],
                 )
 
+    def test_sha256_llvm_backend_requires_pinned_version_shape(self) -> None:
+        metadata = {
+            "path": "/trusted/llc",
+            "invocationPath": "/trusted/llc",
+            "sha256": "synthetic",
+        }
+        completed = subprocess.CompletedProcess(
+            args=["/trusted/llc", "--version"],
+            returncode=0,
+            stdout=(
+                "LLVM version 21.1.5\n"
+                "  Optimized build with assertions.\n"
+                "  aarch64    - AArch64 (little endian)\n"
+            ),
+            stderr="",
+        )
+        with (
+            mock.patch.object(
+                runner,
+                "executable_metadata",
+                return_value=metadata,
+            ),
+            mock.patch.object(
+                runner,
+                "run_command",
+                return_value=completed,
+            ),
+            self.assertRaisesRegex(
+                runner.BenchmarkError,
+                "pinned llc contract",
+            ),
+        ):
+            runner.collect_sha256_llvm_llc_metadata(
+                Path("/trusted/llc"),
+                timeout_seconds=10,
+            )
+
+    def test_sha256_ir_command_binds_verified_source_set(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            release_root = root / "release"
+            release_root.mkdir()
+            compiler = str((root / "toolchain/swiftc").resolve())
+            sdk = str((root / "SDK").resolve())
+            sources = [
+                root / "Sources/SSLCrypto/First.swift",
+                root / "Sources/SSLCrypto/Second.swift",
+            ]
+            for source in sources:
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text("enum Fixture {}\n", encoding="utf-8")
+            description = {
+                "swiftTargetScanArgs": {
+                    "SSLCrypto": [
+                        compiler,
+                        "-module-name",
+                        "SSLCrypto",
+                        "-c",
+                        *(str(source.resolve()) for source in sources),
+                        "-target",
+                        runner.SWIFT_COMPILE_TARGET,
+                        "-whole-module-optimization",
+                        "-O",
+                        "-sdk",
+                        sdk,
+                        "-serialize-diagnostics",
+                        "-parseable-output",
+                        "-emit-objc-header",
+                        "-emit-objc-header-path",
+                        str(release_root / "SSLCrypto-Swift.h"),
+                        "-num-threads",
+                        "2",
+                        "-driver-use-frontend-path",
+                        compiler,
+                    ]
+                }
+            }
+            (release_root / "description.json").write_text(
+                json.dumps(description),
+                encoding="utf-8",
+            )
+
+            command, contract = runner.sha256_module_ir_command(
+                release_root=release_root,
+                swift_build_contract={
+                    "validatedSourceLists": {
+                        "SSLCrypto": {
+                            "sources": [
+                                str(source.resolve()) for source in sources
+                            ]
+                        }
+                    }
+                },
+                toolchain={
+                    "swiftCompiler": compiler,
+                    "macOSSDKPath": sdk,
+                },
+                output_path=release_root / "SSLCrypto.ll",
+            )
+
+            self.assertNotIn("-c", command)
+            self.assertNotIn("-emit-objc-header", command)
+            self.assertNotIn("-driver-use-frontend-path", command)
+            self.assertEqual(command[-3:], ["-emit-ir", "-o", str(release_root / "SSLCrypto.ll")])
+            self.assertEqual(contract["verifiedSourceCount"], 2)
+
+    def test_swift_worker_link_command_replaces_only_owned_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            compiler = str((root / "toolchain/swiftc").resolve())
+            original_worker = root / "release/original-worker"
+            original_link_file = root / "release/Objects.LinkFileList"
+            output_worker = root / "patched/worker"
+            output_link_file = root / "patched/Objects.LinkFileList"
+            command = [
+                compiler,
+                "-L",
+                "/trusted/library",
+                "-o",
+                str(original_worker),
+                "-module-name",
+                "swift_ssl_sha256_benchmark",
+                "-emit-executable",
+                "-Xlinker",
+                "@loader_path",
+                f"@{original_link_file}",
+                "-target",
+                runner.SWIFT_COMPILE_TARGET,
+            ]
+            completed = subprocess.CompletedProcess(
+                args=["swift", "build"],
+                returncode=0,
+                stdout="builtin-SwiftDriver -- " + " ".join(command),
+                stderr="",
+            )
+
+            rewritten = runner.swift_worker_link_command(
+                completed=completed,
+                toolchain={"swiftCompiler": compiler},
+                original_worker=original_worker,
+                original_link_file=original_link_file,
+                output_worker=output_worker,
+                output_link_file=output_link_file,
+            )
+
+            expected = list(command)
+            expected[expected.index(str(original_worker))] = str(output_worker)
+            expected[expected.index(f"@{original_link_file}")] = (
+                f"@{output_link_file}"
+            )
+            self.assertEqual(rewritten, expected)
+
+            poisoned_command = [*command, "@/untrusted/extra.rsp"]
+            poisoned_completed = subprocess.CompletedProcess(
+                args=["swift", "build"],
+                returncode=0,
+                stdout=(
+                    "builtin-SwiftDriver -- "
+                    + " ".join(poisoned_command)
+                ),
+                stderr="",
+            )
+            with self.assertRaisesRegex(
+                runner.BenchmarkError,
+                "unexpected @ arguments",
+            ):
+                runner.swift_worker_link_command(
+                    completed=poisoned_completed,
+                    toolchain={"swiftCompiler": compiler},
+                    original_worker=original_worker,
+                    original_link_file=original_link_file,
+                    output_worker=output_worker,
+                    output_link_file=output_link_file,
+                )
+
+    def test_parity_floor_is_distinct_from_aspirational_target(self) -> None:
+        interval = {"lower": 1.001, "upper": 1.01}
+
+        self.assertEqual(
+            runner.threshold_decision(
+                interval,
+                minimum_speedup=runner.PARITY_FLOOR,
+            ),
+            "pass",
+        )
+        self.assertEqual(runner.target_decision(interval), "fail")
+
+    def test_sha256_llvm_repository_requires_pinned_identity(self) -> None:
+        metadata = {
+            "path": "/verified/llvm-project",
+            "commit": runner.EXPECTED_SHA256_LLVM_COMMIT,
+            "origin": "https://github.com/swiftlang/llvm-project.git",
+            "statusPorcelain": " M ignored-live-change",
+            "isClean": False,
+        }
+        with (
+            mock.patch.object(
+                runner,
+                "git_metadata",
+                return_value=metadata,
+            ),
+            mock.patch.object(
+                runner,
+                "git_value",
+                return_value=runner.EXPECTED_SHA256_LLVM_TREE,
+            ),
+        ):
+            result = runner.validate_sha256_llvm_repository(
+                Path("/verified/llvm-project")
+            )
+
+        self.assertEqual(result["tree"], runner.EXPECTED_SHA256_LLVM_TREE)
+        self.assertTrue(result["archiveUsesCommittedTreeOnly"])
+
+    def test_sha256_llvm_backend_options_are_mutually_exclusive(self) -> None:
+        with mock.patch("sys.stderr"):
+            with self.assertRaises(SystemExit) as context:
+                runner.main(
+                    [
+                        "--boringssl-source",
+                        "/synthetic/boringssl",
+                        "--sha256-llvm-llc",
+                        "/synthetic/llc",
+                        "--sha256-llvm-source",
+                        "/synthetic/llvm-project",
+                    ]
+                )
+        self.assertEqual(context.exception.code, 2)
+
     def test_odd_sample_count_is_rejected(self) -> None:
         with mock.patch("sys.stderr"):
             with self.assertRaises(SystemExit) as context:
@@ -1556,25 +1944,36 @@ class RunnerContractTests(unittest.TestCase):
     def synthetic_kernel(
         *,
         extra_loop_instruction: str,
+        hoisted_constants: bool = False,
+        second_constant_base: str | None = None,
+        interpose_state_move: bool = False,
     ) -> dict[str, object]:
         instructions: list[tuple[int, str, str]] = []
         loop_start = 0x100
         loop_instructions = [
-            "ldr w8, [x3]",
             "ld1.4s { v16, v17, v18, v19 }, [x0], #0x40",
             extra_loop_instruction,
         ]
-        for offset in range(0, 256, 32):
-            suffix = "" if offset == 0 else f", #0x{offset:x}"
-            loop_instructions.append(f"ldp q20, q21, [x8{suffix}]")
+        if not hoisted_constants:
+            for index, offset in enumerate(range(0, 256, 32)):
+                suffix = "" if offset == 0 else f", #0x{offset:x}"
+                base = (
+                    second_constant_base
+                    if index == 1 and second_constant_base is not None
+                    else "x3"
+                )
+                loop_instructions.append(f"ldp q20, q21, [{base}{suffix}]")
         loop_instructions.extend(
             "sha256su0.4s v2, v3" for _ in range(12)
         )
         loop_instructions.extend(
             "sha256su1.4s v2, v3, v4" for _ in range(12)
         )
-        loop_instructions.extend("sha256h.4s q0, q1, v2" for _ in range(16))
-        loop_instructions.extend("sha256h2.4s q1, q0, v2" for _ in range(16))
+        for round_index in range(16):
+            loop_instructions.append("sha256h.4s q0, q1, v2")
+            if interpose_state_move and round_index == 0:
+                loop_instructions.append("mov.16b v4, v1")
+            loop_instructions.append("sha256h2.4s q1, q0, v2")
         address = loop_start
         for instruction in loop_instructions:
             instructions.append((address, instruction, instruction))
@@ -1591,6 +1990,21 @@ class RunnerContractTests(unittest.TestCase):
             "functionStart": 0x40,
             "functionEnd": address + 4,
             "instructions": instructions,
+        }
+
+    @staticmethod
+    def synthetic_one_shot() -> dict[str, object]:
+        return {
+            "symbol": "synthetic SHA256Context.hashOneShot",
+            "functionStart": 0x300,
+            "functionEnd": 0x400,
+            "instructions": [
+                (
+                    0x300,
+                    "bl compressMultipleBlocksAndAlignedPadding",
+                    "bl compressMultipleBlocksAndAlignedPadding",
+                )
+            ],
         }
 
     @staticmethod

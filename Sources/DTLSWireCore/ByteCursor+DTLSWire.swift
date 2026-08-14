@@ -1,13 +1,14 @@
-/// Typed-throws wrappers over `P2PCoreBytes` reader/writer for the DTLS wire codec.
+/// Typed-throws wrappers over `NetworkingCore` reader/writer for the DTLS wire codec.
 ///
-/// `ByteReader`/`ByteWriter` throw ``ByteError``; the DTLS wire codec throws
+/// `TLSWireReader`/`TLSWireWriter` throw ``ByteError``; the DTLS wire codec throws
 /// ``DTLSWireError``. Embedded Swift requires typed throws end-to-end (no
 /// `any Error`), and typed-throws does not auto-convert between error types, so
 /// these thin wrappers rewrap `ByteError` as `DTLSWireError.bytes` at each call.
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 
-extension ByteReader {
+extension TLSWireReader {
     @inline(__always)
     mutating func dReadUInt8() throws(DTLSWireError) -> UInt8 {
         do { return try readUInt8() } catch { throw .bytes(error) }
@@ -49,7 +50,7 @@ extension ByteReader {
     }
 }
 
-extension ByteWriter {
+extension TLSWireWriter {
     @inline(__always)
     mutating func dWriteUInt24(_ value: UInt32) throws(DTLSWireError) {
         do { try writeUInt24(value) } catch { throw .bytes(error) }

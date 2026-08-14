@@ -15,7 +15,7 @@
 ///
 /// TLS 1.3 supports psk_ke and psk_dhe_ke modes.
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - PSK Key Exchange Mode
 
@@ -53,7 +53,7 @@ public struct PskKeyExchangeModesExtension: Sendable, TLSExtensionValue {
     // MARK: - Encoding
 
     public func encodeBytes() throws(TLSWireError) -> [UInt8] {
-        var writer = ByteWriter(reservingCapacity: keModes.count + 1)
+        var writer = TLSWireWriter(reservingCapacity: keModes.count + 1)
 
         // ke_modes<1..255>
         var modesData = [UInt8]()
@@ -68,7 +68,7 @@ public struct PskKeyExchangeModesExtension: Sendable, TLSExtensionValue {
     // MARK: - Decoding
 
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> PskKeyExchangeModesExtension {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
 
         let modesData = try reader.wReadVector8()
         guard !modesData.isEmpty else {

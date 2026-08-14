@@ -5,7 +5,8 @@
 /// handshake state machines enforce that contextual rule and that the selected
 /// profile was offered.
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 
 /// An extensible 16-bit SRTP protection-profile registry value.
 public struct SRTPProtectionProfile: RawRepresentable, Sendable, Hashable {
@@ -61,12 +62,12 @@ public struct DTLSUseSRTP: Sendable, Equatable {
 
     /// Encodes `SRTPProtectionProfiles<2..2^16-1> || srtp_mki<0..255>`.
     public func encodeBytes() throws(DTLSWireError) -> [UInt8] {
-        var profileWriter = ByteWriter()
+        var profileWriter = TLSWireWriter()
         for profile in protectionProfiles {
             profileWriter.writeUInt16(profile.rawValue)
         }
 
-        var writer = ByteWriter()
+        var writer = TLSWireWriter()
         try writer.dWriteVector16(profileWriter.finishArray())
         try writer.dWriteVector8(mki)
         return writer.finishArray()
@@ -74,13 +75,13 @@ public struct DTLSUseSRTP: Sendable, Equatable {
 
     /// Decodes and validates a `use_srtp` extension payload.
     public static func decode(from bytes: [UInt8]) throws(DTLSWireError) -> DTLSUseSRTP {
-        var reader = ByteReader(bytes)
+        var reader = TLSWireReader(bytes)
         let profileBytes = try reader.dReadVector16()
         guard profileBytes.count >= 2, profileBytes.count.isMultiple(of: 2) else {
             throw .dtls(.invalidFormat("use_srtp protection-profile vector must contain complete 16-bit values"))
         }
 
-        var profileReader = ByteReader(profileBytes)
+        var profileReader = TLSWireReader(profileBytes)
         var profiles: [SRTPProtectionProfile] = []
         profiles.reserveCapacity(profileBytes.count / 2)
         while !profileReader.isAtEnd {

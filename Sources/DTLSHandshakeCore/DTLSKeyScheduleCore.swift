@@ -17,10 +17,11 @@
 /// ``DTLSWireCore/DTLSError`` (no silent fallback).
 ///
 /// The concrete provider is selected by the adapter when it creates the immutable
-/// PRF context. Embedded-clean: no Foundation, no `any`, no Mutex, no
-/// swift-crypto, typed throws.
+/// PRF context. Embedded-clean: no Foundation, no `any`, no Mutex, no concrete
+/// crypto, typed throws.
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 import DTLSWireCore
 
 /// Key block derived from the DTLS 1.2 master secret (raw `[UInt8]`).

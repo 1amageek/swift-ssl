@@ -50,10 +50,8 @@ public struct RFC5280ServerPathPolicy: X509PathPolicyEvaluating, Sendable {
         if let hostname {
             do {
                 try path[0].verifyDNSName(hostname)
-            } catch let error as X509IdentityError {
+            } catch let error {
                 throw .identity(error)
-            } catch {
-                throw .identity(.malformedSubjectAlternativeName)
             }
         }
     }

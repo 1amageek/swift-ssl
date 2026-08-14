@@ -9,7 +9,7 @@
 /// } CertificateRequest;
 /// ```
 
-import P2PCoreBytes
+import NetworkingCore
 
 /// TLS 1.3 CertificateRequest message
 public struct CertificateRequest: Sendable {

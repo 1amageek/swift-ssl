@@ -82,6 +82,21 @@ final class SHA256Tests: XCTestCase {
     )
   }
 
+  func testDefaultProviderStreamsIntoPrimitiveContext() throws {
+    let input = makePattern(byteCount: 16_384)
+    let splitOffsets = [0, 1, 63, 64, 4_095, 8_192, input.count]
+    var provider = DefaultProviderSHA256()
+
+    for index in 0..<(splitOffsets.count - 1) {
+      provider.update(
+        input.span.extracting(splitOffsets[index]..<splitOffsets[index + 1])
+      )
+    }
+
+    let actual = provider.finalize()
+    XCTAssertEqual(hexString(ContiguousArray(actual)), try digestHex(of: input))
+  }
+
   func testClonedContextsDivergeWithoutSharingState() throws {
     let prefix = ContiguousArray("prefix:".utf8)
     let leftSuffix = ContiguousArray("left".utf8)
@@ -350,14 +365,14 @@ final class SHA256Tests: XCTestCase {
   }
 
   func testBatchPreferredWidthMatchesTargetCapability() {
-    #if os(macOS) && arch(arm64) && canImport(simd)
+    #if os(macOS) && arch(arm64) && canImport(simd) && !SWIFT_SSL_TSAN
       XCTAssertEqual(SHA256.preferredBatchWidth, 2)
     #else
       XCTAssertEqual(SHA256.preferredBatchWidth, 1)
     #endif
   }
 
-  #if os(macOS) && arch(arm64) && canImport(simd)
+  #if os(macOS) && arch(arm64) && canImport(simd) && !SWIFT_SSL_TSAN
     func testARM64KernelMatchesScalarKernel() {
       var seed: UInt64 = 0x9E37_79B9_7F4A_7C15
 

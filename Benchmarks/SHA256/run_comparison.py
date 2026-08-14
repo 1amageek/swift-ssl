@@ -29,6 +29,13 @@ ARTIFACT_SCHEMA_VERSION = 5
 EXPECTED_BORINGSSL_ORIGIN = "https://boringssl.googlesource.com/boringssl"
 EXPECTED_SWIFT_TOOLCHAIN = "org.swift.64202607231a"
 EXPECTED_SWIFT_COMPILER_COMMIT = "ef761e567dc94ee"
+EXPECTED_SHA256_LLVM_VERSION = "21.1.6"
+EXPECTED_SHA256_LLVM_COMMIT = "264fd65923c28d9060211c1177a8820b76ed3ae2"
+EXPECTED_SHA256_LLVM_TREE = "52e6163e5b6e5ae100d1f713a093e540aede2629"
+EXPECTED_SHA256_LLVM_ORIGIN = "https://github.com/swiftlang/llvm-project"
+EXPECTED_SHA256_LLVM_PATCH_SHA256 = (
+    "571561f22f755d026f3fa7cfd724170a9d2d17841c66d0bd7ecd92036276d754"
+)
 EXPECTED_XCODE_VERSION = "27.0"
 EXPECTED_XCODE_BUILD = "27A5209h"
 EXPECTED_MACOS_SDK_VERSION = "27.0"
@@ -57,6 +64,7 @@ MAXIMUM_LOAD_PER_LOGICAL_CPU = 0.25
 QUIESCENCE_POLL_SECONDS = 5
 DEFAULT_QUIESCENCE_TIMEOUT_SECONDS = 600
 TARGET_SPEEDUP = 1.10
+PARITY_FLOOR = 1.0
 MINIMUM_BUILD_AVAILABLE_BYTES = 3 * 1024 * 1024 * 1024
 MINIMUM_ARTIFACT_RESERVE_BYTES = 256 * 1024 * 1024
 BUILD_PROCESS_EXACT_NAMES = frozenset(
@@ -311,6 +319,26 @@ def build_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--sha256-llvm-llc",
+        type=Path,
+        help=(
+            "Use this verified LLVM llc only for the optimized SSLCrypto "
+            "module, then relink the runner-built Swift worker. This keeps "
+            "the public Pure Swift source unchanged while measuring the "
+            "retained AArch64 SHA-256 backend correction."
+        ),
+    )
+    parser.add_argument(
+        "--sha256-llvm-source",
+        type=Path,
+        help=(
+            "Build the retained SHA-256 AArch64 correction from this "
+            "verified swiftlang/llvm-project checkout inside the fresh "
+            "benchmark root, run its IR/MIR fixtures, and use the resulting "
+            "llc for SSLCrypto. Mutually exclusive with --sha256-llvm-llc."
+        ),
+    )
+    parser.add_argument(
         "--independent-pair",
         action="store_true",
         help=(
@@ -329,6 +357,7 @@ def run_command(
     timeout_seconds: int = 30,
     environment: dict[str, str] | None = None,
     executable_path: str | None = None,
+    input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     selected_environment = (
         environment if environment is not None else sanitized_environment()
@@ -339,6 +368,7 @@ def run_command(
             cwd=cwd,
             env=selected_environment,
             executable=executable_path,
+            input=input_text,
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
@@ -494,6 +524,47 @@ def executable_metadata(path: Path) -> dict[str, Any]:
         "sizeBytes": stat.st_size,
         "modifiedTimeNanoseconds": stat.st_mtime_ns,
     }
+
+
+def collect_sha256_llvm_llc_metadata(
+    path: Path,
+    *,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    metadata = executable_metadata(path)
+    command = [metadata["invocationPath"], "--version"]
+    environment = sanitized_environment()
+    completed = run_command(
+        command,
+        timeout_seconds=timeout_seconds,
+        environment=environment,
+        executable_path=metadata["path"],
+    )
+    required_fragments = (
+        f"LLVM version {EXPECTED_SHA256_LLVM_VERSION}",
+        "Optimized build with assertions.",
+        "aarch64    - AArch64 (little endian)",
+    )
+    missing = [
+        fragment
+        for fragment in required_fragments
+        if fragment not in completed.stdout
+    ]
+    if missing:
+        raise BenchmarkError(
+            "SHA-256 LLVM backend does not match the pinned llc contract: "
+            + ", ".join(missing)
+        )
+    metadata["versionProbe"] = command_evidence(
+        command,
+        cwd=REPOSITORY_ROOT,
+        environment=environment,
+        completed=completed,
+        executable_path=metadata["path"],
+    )
+    metadata["expectedLLVMVersion"] = EXPECTED_SHA256_LLVM_VERSION
+    metadata["passed"] = True
+    return metadata
 
 
 def resolve_executable(
@@ -972,6 +1043,318 @@ def require_swift_build_contract(
         "trustedSwiftSourceRoot": str(swift_source_root),
         "freshSwiftScratchRoot": str(swift_scratch_root),
         "forbiddenFlagsAbsent": list(forbidden_flags),
+    }
+
+
+def sha256_module_ir_command(
+    *,
+    release_root: Path,
+    swift_build_contract: dict[str, Any],
+    toolchain: dict[str, Any],
+    output_path: Path,
+) -> tuple[list[str], dict[str, Any]]:
+    description_path = release_root / "description.json"
+    try:
+        description = json.loads(description_path.read_text(encoding="utf-8"))
+        arguments_value = description["swiftTargetScanArgs"]["SSLCrypto"]
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError) as error:
+        raise BenchmarkError(
+            "could not load the pinned SSLCrypto scan command"
+        ) from error
+    if not isinstance(arguments_value, list) or not all(
+        isinstance(argument, str) for argument in arguments_value
+    ):
+        raise BenchmarkError("SSLCrypto scan arguments are invalid")
+    arguments = list(arguments_value)
+    if not arguments:
+        raise BenchmarkError("SSLCrypto scan command is empty")
+    if str(Path(arguments[0]).resolve()) != toolchain["swiftCompiler"]:
+        raise BenchmarkError("SSLCrypto scan command used an untrusted compiler")
+    if arguments.count("-O") != 1 or "-whole-module-optimization" not in arguments:
+        raise BenchmarkError("SSLCrypto IR command is not optimized whole-module code")
+    for option, expected in (
+        ("-module-name", "SSLCrypto"),
+        ("-target", SWIFT_COMPILE_TARGET),
+        ("-sdk", toolchain["macOSSDKPath"]),
+    ):
+        indices = [
+            index for index, argument in enumerate(arguments) if argument == option
+        ]
+        values = [
+            arguments[index + 1]
+            for index in indices
+            if index + 1 < len(arguments)
+        ]
+        if values != [expected]:
+            raise BenchmarkError(
+                f"SSLCrypto scan command has invalid {option} values: {values}"
+            )
+
+    expected_sources = sorted(
+        swift_build_contract["validatedSourceLists"]["SSLCrypto"]["sources"]
+    )
+    observed_sources = sorted(
+        str(Path(argument).resolve())
+        for argument in arguments
+        if argument.endswith(".swift")
+    )
+    if observed_sources != expected_sources:
+        raise BenchmarkError(
+            "SSLCrypto scan command source set differs from the verified build"
+        )
+
+    standalone_options = {
+        "-c",
+        "-emit-objc-header",
+        "-j2",
+        "-parseable-output",
+        "-serialize-diagnostics",
+    }
+    paired_options = {
+        "-driver-use-frontend-path",
+        "-emit-objc-header-path",
+        "-num-threads",
+    }
+    ir_arguments: list[str] = []
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument in standalone_options:
+            index += 1
+            continue
+        if argument in paired_options:
+            if index + 1 >= len(arguments):
+                raise BenchmarkError(
+                    f"SSLCrypto scan command has no value for {argument}"
+                )
+            index += 2
+            continue
+        ir_arguments.append(argument)
+        index += 1
+    ir_arguments.extend(["-emit-ir", "-o", str(output_path)])
+    return ir_arguments, {
+        "descriptionPath": str(description_path),
+        "descriptionSHA256": file_sha256(description_path),
+        "verifiedSourceCount": len(expected_sources),
+        "optimization": "-O whole-module",
+        "outputPath": str(output_path),
+    }
+
+
+def swift_worker_link_command(
+    *,
+    completed: subprocess.CompletedProcess[str],
+    toolchain: dict[str, Any],
+    original_worker: Path,
+    original_link_file: Path,
+    output_worker: Path,
+    output_link_file: Path,
+) -> list[str]:
+    verbose_log = completed.stdout + "\n" + completed.stderr
+    candidates: set[tuple[str, ...]] = set()
+    for line in verbose_log.splitlines():
+        if (
+            "-module-name swift_ssl_sha256_benchmark" not in line
+            or "-emit-executable" not in line
+        ):
+            continue
+        command_text = line.split("builtin-SwiftDriver -- ", 1)[-1]
+        try:
+            arguments = shlex.split(command_text)
+        except ValueError as error:
+            raise BenchmarkError(
+                "could not parse the Swift benchmark link command"
+            ) from error
+        candidates.add(tuple(arguments))
+    if len(candidates) != 1:
+        raise BenchmarkError(
+            "Swift build log must contain exactly one benchmark link command; "
+            f"found {len(candidates)}"
+        )
+    arguments = list(next(iter(candidates)))
+    if str(Path(arguments[0]).resolve()) != toolchain["swiftCompiler"]:
+        raise BenchmarkError("Swift benchmark link used an untrusted compiler")
+    output_indices = [
+        index for index, argument in enumerate(arguments) if argument == "-o"
+    ]
+    if len(output_indices) != 1 or output_indices[0] + 1 >= len(arguments):
+        raise BenchmarkError("Swift benchmark link has an invalid output option")
+    output_index = output_indices[0] + 1
+    if Path(arguments[output_index]).resolve() != original_worker.resolve():
+        raise BenchmarkError("Swift benchmark link output path is unexpected")
+    response_indices = [
+        index
+        for index, argument in enumerate(arguments)
+        if argument.startswith("@")
+        and argument != "@loader_path"
+        and Path(argument[1:]).resolve() == original_link_file.resolve()
+    ]
+    if len(response_indices) != 1:
+        raise BenchmarkError(
+            "Swift benchmark link must use exactly one object response file"
+        )
+    unexpected_at_arguments = [
+        argument
+        for index, argument in enumerate(arguments)
+        if argument.startswith("@")
+        and argument != "@loader_path"
+        and index not in response_indices
+    ]
+    if unexpected_at_arguments:
+        raise BenchmarkError(
+            "Swift benchmark link used unexpected @ arguments: "
+            + ", ".join(unexpected_at_arguments)
+        )
+    response_index = response_indices[0]
+    arguments[output_index] = str(output_worker)
+    arguments[response_index] = f"@{output_link_file}"
+    return arguments
+
+
+def rebuild_sha256_worker_with_llc(
+    *,
+    build_root: Path,
+    release_root: Path,
+    original_worker: Path,
+    swift_completed: subprocess.CompletedProcess[str],
+    swift_build_contract: dict[str, Any],
+    toolchain: dict[str, Any],
+    llc: dict[str, Any],
+    environment: dict[str, str],
+    timeout_seconds: int,
+) -> tuple[Path, dict[str, Any]]:
+    verify_executable_metadata_unchanged({"sha256LLVMBackend": llc})
+    output_root = build_root / "swift-sha256-llvm-backend"
+    output_root.mkdir()
+    ir_path = output_root / "SSLCrypto.ll"
+    object_path = output_root / "SSLCrypto.o"
+    worker_path = output_root / "swift-ssl-sha256-benchmark"
+    link_file_path = output_root / "Objects.LinkFileList"
+
+    ir_command, ir_contract = sha256_module_ir_command(
+        release_root=release_root,
+        swift_build_contract=swift_build_contract,
+        toolchain=toolchain,
+        output_path=ir_path,
+    )
+    ir_completed = run_command(
+        ir_command,
+        cwd=release_root,
+        timeout_seconds=timeout_seconds,
+        environment=environment,
+        executable_path=toolchain["swiftCompiler"],
+    )
+    if not ir_path.is_file():
+        raise BenchmarkError("Swift compiler did not emit the SSLCrypto IR")
+
+    llc_command = [
+        llc["invocationPath"],
+        "-O3",
+        "-filetype=obj",
+        "-mtriple=arm64-apple-macosx26.0.0",
+        str(ir_path),
+        "-o",
+        str(object_path),
+    ]
+    llc_completed = run_command(
+        llc_command,
+        cwd=release_root,
+        timeout_seconds=timeout_seconds,
+        environment=environment,
+        executable_path=llc["path"],
+    )
+    if not object_path.is_file():
+        raise BenchmarkError("LLVM llc did not emit the SSLCrypto object")
+
+    original_link_file = (
+        release_root
+        / "swift-ssl-sha256-benchmark.product/Objects.LinkFileList"
+    )
+    try:
+        original_objects = [
+            line
+            for line in original_link_file.read_text(encoding="utf-8").splitlines()
+            if line
+        ]
+    except (OSError, UnicodeError) as error:
+        raise BenchmarkError("could not read the Swift benchmark link list") from error
+    ssl_crypto_objects = [
+        path for path in original_objects if "/SSLCrypto.build/" in path
+    ]
+    if not ssl_crypto_objects:
+        raise BenchmarkError("Swift benchmark link list has no SSLCrypto objects")
+    retained_objects = [
+        path for path in original_objects if "/SSLCrypto.build/" not in path
+    ]
+    link_file_path.write_text(
+        "\n".join([*retained_objects, str(object_path)]) + "\n",
+        encoding="utf-8",
+    )
+
+    link_command = swift_worker_link_command(
+        completed=swift_completed,
+        toolchain=toolchain,
+        original_worker=original_worker,
+        original_link_file=original_link_file,
+        output_worker=worker_path,
+        output_link_file=link_file_path,
+    )
+    link_completed = run_command(
+        link_command,
+        cwd=release_root,
+        timeout_seconds=timeout_seconds,
+        environment=environment,
+        executable_path=toolchain["swiftCompiler"],
+    )
+    if not worker_path.is_file():
+        raise BenchmarkError("Swift compiler did not link the patched worker")
+    verify_executable_metadata_unchanged({"sha256LLVMBackend": llc})
+    return worker_path, {
+        "classification": llc.get(
+            "provenanceMode",
+            "external-verified-llc-compiler-experiment",
+        ),
+        "llc": llc,
+        "ir": {
+            "contract": ir_contract,
+            "command": command_evidence(
+                ir_command,
+                cwd=release_root,
+                environment=environment,
+                completed=ir_completed,
+                executable_path=toolchain["swiftCompiler"],
+            ),
+            "sha256": file_sha256(ir_path),
+            "sizeBytes": ir_path.stat().st_size,
+        },
+        "object": {
+            "command": command_evidence(
+                llc_command,
+                cwd=release_root,
+                environment=environment,
+                completed=llc_completed,
+                executable_path=llc["path"],
+            ),
+            "path": str(object_path),
+            "sha256": file_sha256(object_path),
+            "sizeBytes": object_path.stat().st_size,
+        },
+        "link": {
+            "command": command_evidence(
+                link_command,
+                cwd=release_root,
+                environment=environment,
+                completed=link_completed,
+                executable_path=toolchain["swiftCompiler"],
+            ),
+            "originalObjectCount": len(original_objects),
+            "replacedSSLCryptoObjectCount": len(ssl_crypto_objects),
+            "retainedObjectCount": len(retained_objects),
+            "objectListPath": str(link_file_path),
+            "objectListSHA256": file_sha256(link_file_path),
+        },
+        "worker": executable_metadata(worker_path),
+        "passed": True,
     }
 
 
@@ -2179,7 +2562,7 @@ def validate_direct_call_contract(
     instructions: Sequence[tuple[int, str, str]],
     *,
     label: str,
-    required_calls: Sequence[tuple[str, str, int]],
+    required_calls: Sequence[tuple[str, str | Sequence[str], int]],
 ) -> list[dict[str, Any]]:
     if not instructions:
         raise BenchmarkError(f"{label} has no instructions")
@@ -2207,10 +2590,11 @@ def validate_direct_call_contract(
     matched_indices: set[int] = set()
     evidence: list[dict[str, Any]] = []
     for call_label, fragment, expected_count in required_calls:
+        fragments = (fragment,) if isinstance(fragment, str) else tuple(fragment)
         indices = [
             index
             for index, (_, instruction) in enumerate(calls)
-            if fragment in instruction
+            if any(candidate in instruction for candidate in fragments)
         ]
         if len(indices) != expected_count:
             raise BenchmarkError(
@@ -2221,7 +2605,11 @@ def validate_direct_call_contract(
         evidence.append(
             {
                 "label": call_label,
-                "symbolFragment": fragment,
+                "symbolFragment": (
+                    fragment
+                    if isinstance(fragment, str)
+                    else list(fragments)
+                ),
                 "expectedCount": expected_count,
                 "addresses": [
                     f"0x{calls[index][0]:x}" for index in indices
@@ -2304,10 +2692,13 @@ def analyze_swift_worker_codegen(
             or is_return_instruction(instruction)
         )
     ]
+    # The production one-shot API owns its context setup and finalization in a
+    # single package-internal helper. Keeping this as one call in the timed
+    # loop prevents the benchmark from silently measuring a different public
+    # path while the callee-level contracts below still audit the compression
+    # and error boundaries.
     required_loop_calls = {
-        "SHA256Context.init": "SHA256ContextVACycfC",
-        "SHA256Context.update": "SHA256ContextV6update",
-        "SHA256Context.finalizeInPlace": "SHA256ContextV15finalizeInPlace",
+        "SHA256Context.hashOneShot": "SHA256ContextV11hashOneShot",
     }
     validated_loop_calls: list[dict[str, str]] = []
     unmatched_loop_calls = list(loop_calls)
@@ -2487,9 +2878,9 @@ def analyze_sha256_multiblock_codegen(
         toolchain=toolchain,
         required_symbol_fragments=(
             "SSLCrypto17SHA256ARM64Kernel",
-            "compressMultipleBlocks",
+            "compressMultipleBlocksAndAlignedPadding",
         ),
-        label="SHA-256 ARM64 multi-block kernel",
+        label="SHA-256 ARM64 aligned one-shot kernel",
     )
     kernel_start = kernel["functionStart"]
     kernel_end = kernel["functionEnd"]
@@ -2534,8 +2925,7 @@ def analyze_sha256_multiblock_codegen(
         if "[" in instruction
     ]
     input_vector_loads: list[str] = []
-    constant_vector_pair_load_offsets: list[int] = []
-    volatile_offset_loads: list[str] = []
+    constant_vector_pair_loads: list[tuple[str, int]] = []
     unexpected_memory_operations: list[str] = []
     input_vector_load_pattern = re.compile(
         r"^ld1\.4s\s+\{\s*v[0-9]+,\s*v[0-9]+,\s*v[0-9]+,\s*"
@@ -2543,9 +2933,8 @@ def analyze_sha256_multiblock_codegen(
     )
     constant_vector_pair_load_pattern = re.compile(
         r"^ldp\s+q[0-9]+,\s*q[0-9]+,\s*"
-        r"\[x8(?:,\s*#(0x[0-9a-fA-F]+))?\]$"
+        r"\[(x[0-9]+)(?:,\s*#(0x[0-9a-fA-F]+))?\]$"
     )
-    volatile_offset_load_pattern = re.compile(r"^ldr\s+w[0-9]+,\s*\[x3\]$")
     for instruction in loop_memory_instructions:
         if input_vector_load_pattern.fullmatch(instruction) is not None:
             input_vector_loads.append(instruction)
@@ -2554,13 +2943,13 @@ def analyze_sha256_multiblock_codegen(
             instruction
         )
         if constant_match is not None:
-            offset_text = constant_match.group(1)
-            constant_vector_pair_load_offsets.append(
-                int(offset_text, 16) if offset_text is not None else 0
+            offset_text = constant_match.group(2)
+            constant_vector_pair_loads.append(
+                (
+                    constant_match.group(1),
+                    int(offset_text, 16) if offset_text is not None else 0,
+                )
             )
-            continue
-        if volatile_offset_load_pattern.fullmatch(instruction) is not None:
-            volatile_offset_loads.append(instruction)
             continue
         unexpected_memory_operations.append(instruction)
     forbidden_in_loop = [
@@ -2588,6 +2977,12 @@ def analyze_sha256_multiblock_codegen(
         for _, instruction, _ in loop_instructions
         if instruction.startswith("sha256su1.4s")
     )
+    adjacent_sha256_state_pairs = sum(
+        1
+        for index, (_, instruction, _) in enumerate(loop_instructions[:-1])
+        if instruction.startswith("sha256h.4s")
+        and loop_instructions[index + 1][1].startswith("sha256h2.4s")
+    )
     if loop_call_count != 0:
         raise BenchmarkError(
             "SHA-256 ARM64 multi-block loop contains a function call"
@@ -2603,18 +2998,27 @@ def analyze_sha256_multiblock_codegen(
             f"{input_vector_loads}"
         )
     expected_constant_offsets = list(range(0, 256, 32))
-    if sorted(constant_vector_pair_load_offsets) != expected_constant_offsets:
+    constant_vector_pair_load_offsets = [
+        offset for _, offset in constant_vector_pair_loads
+    ]
+    constant_vector_pair_load_bases = sorted(
+        {base for base, _ in constant_vector_pair_loads}
+    )
+    if constant_vector_pair_loads and (
+        sorted(constant_vector_pair_load_offsets) != expected_constant_offsets
+        or len(constant_vector_pair_load_bases) != 1
+    ):
         raise BenchmarkError(
-            "SHA-256 ARM64 multi-block loop must perform exactly eight "
-            "constant-vector pair loads at 32-byte offsets; found "
-            f"{constant_vector_pair_load_offsets}"
+            "SHA-256 ARM64 multi-block loop must either keep all round "
+            "constants outside the loop or perform exactly eight direct "
+            "constant-vector pair loads from one base at 32-byte offsets; "
+            f"found {constant_vector_pair_loads}"
         )
-    if len(volatile_offset_loads) != 1:
-        raise BenchmarkError(
-            "SHA-256 ARM64 multi-block loop must perform exactly one "
-            "volatile zero-offset load; found "
-            f"{volatile_offset_loads}"
-        )
+    round_constant_residency = (
+        "hoisted-outside-block-loop"
+        if not constant_vector_pair_loads
+        else "direct-table-pair-loads-per-block"
+    )
     if unexpected_memory_operations:
         raise BenchmarkError(
             "SHA-256 ARM64 multi-block loop contains unexpected memory "
@@ -2632,12 +3036,44 @@ def analyze_sha256_multiblock_codegen(
             f"sha256h and 16 sha256h2 instructions; found "
             f"{sha256h_count} and {sha256h2_count}"
         )
+    if adjacent_sha256_state_pairs != 16:
+        raise BenchmarkError(
+            "SHA-256 ARM64 multi-block loop must keep all 16 sha256h/"
+            "sha256h2 state updates adjacent; found "
+            f"{adjacent_sha256_state_pairs} adjacent pairs"
+        )
     if sha256su0_count != 12 or sha256su1_count != 12:
         raise BenchmarkError(
             "SHA-256 ARM64 multi-block loop must contain exactly 12 "
             f"sha256su0 and 12 sha256su1 instructions; found "
             f"{sha256su0_count} and {sha256su1_count}"
         )
+
+    hash_one_shot = load_macho_text_function(
+        path,
+        toolchain=toolchain,
+        required_symbol_fragments=(
+            "SSLCrypto13SHA256ContextV11hashOneShot",
+            "CryptoInputError",
+        ),
+        label="SHA-256 one-shot implementation",
+    )
+    aligned_kernel_call_indices = [
+        index
+        for index, (_, instruction, _) in enumerate(
+            hash_one_shot["instructions"]
+        )
+        if is_call_instruction(instruction)
+        and "compressMultipleBlocksAndAlignedPadding" in instruction
+    ]
+    if len(aligned_kernel_call_indices) != 1:
+        raise BenchmarkError(
+            "SHA-256 one-shot implementation must call the aligned kernel "
+            f"exactly once; found {len(aligned_kernel_call_indices)} call sites"
+        )
+    aligned_kernel_call_address = hash_one_shot["instructions"][
+        aligned_kernel_call_indices[0]
+    ][0]
 
     context_update = load_macho_text_function(
         path,
@@ -2653,7 +3089,14 @@ def analyze_sha256_multiblock_codegen(
         context_instructions,
         label="SHA-256 context update",
         required_calls=(
-            ("typed-error witness", "CryptoInputErrorOACs0D0AAWl", 1),
+            (
+                "typed-error witness",
+                (
+                    "CryptoInputErrorOACs0D0AAWl",
+                    "CryptoInputErrorOACs0E0AAWl",
+                ),
+                1,
+            ),
             ("typed-error throw", "swift_willThrowTypedImpl", 1),
             ("bounded pending-byte copy", "_memmove", 2),
             ("multi-block kernel", "compressMultipleBlocks", 1),
@@ -2737,7 +3180,14 @@ def analyze_sha256_multiblock_codegen(
         label="SHA-256 context finalize",
         required_calls=(
             ("padding zero fill", "_bzero", 2),
-            ("typed-error witness", "CryptoInputErrorOACs0D0AAWl", 1),
+            (
+                "typed-error witness",
+                (
+                    "CryptoInputErrorOACs0D0AAWl",
+                    "CryptoInputErrorOACs0E0AAWl",
+                ),
+                1,
+            ),
             ("typed-error throw", "swift_willThrowTypedImpl", 1),
             ("stack-check failure", "stack_chk_fail", 1),
         ),
@@ -2755,12 +3205,14 @@ def analyze_sha256_multiblock_codegen(
         "constantVectorPairLoadOffsets": sorted(
             constant_vector_pair_load_offsets
         ),
-        "volatileZeroOffsetLoadsPerBlock": len(volatile_offset_loads),
+        "constantVectorPairLoadBaseRegisters": constant_vector_pair_load_bases,
+        "roundConstantResidency": round_constant_residency,
         "functionCallsInLoop": loop_call_count,
         "pageAddressLoadsInLoop": loop_page_address_count,
         "unexpectedMemoryOperations": unexpected_memory_operations,
         "sha256hInstructionsPerBlock": sha256h_count,
         "sha256h2InstructionsPerBlock": sha256h2_count,
+        "adjacentSHA256StatePairsPerBlock": adjacent_sha256_state_pairs,
         "sha256su0InstructionsPerBlock": sha256su0_count,
         "sha256su1InstructionsPerBlock": sha256su1_count,
         "forbiddenSymbolsInLoop": forbidden_in_loop,
@@ -2768,6 +3220,11 @@ def analyze_sha256_multiblock_codegen(
             *LOOP_FORBIDDEN_SYMBOLS,
             "swift_once",
         ],
+        "oneShotSymbol": hash_one_shot["symbol"],
+        "oneShotAlignedKernelCallSites": len(aligned_kernel_call_indices),
+        "oneShotAlignedKernelCallAddress": (
+            f"0x{aligned_kernel_call_address:x}"
+        ),
         "contextUpdateSymbol": context_update["symbol"],
         "contextUpdateFunctionStartAddress": (
             f"0x{context_update['functionStart']:x}"
@@ -3823,6 +4280,51 @@ def reject_source_snapshot_symlinks(root: Path) -> dict[str, Any]:
     }
 
 
+def validate_bounded_relative_symlinks(root: Path) -> dict[str, Any]:
+    symlink_records: list[dict[str, str]] = []
+    escaping: list[str] = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_symlink():
+            continue
+        relative = path.relative_to(root)
+        target = os.readlink(path)
+        if os.path.isabs(target):
+            escaping.append(f"{relative.as_posix()} -> {target}")
+            continue
+        normalized = os.path.normpath(
+            str(relative.parent / target)
+        )
+        normalized_path = Path(normalized)
+        if normalized_path == Path("..") or (
+            normalized_path.parts and normalized_path.parts[0] == ".."
+        ):
+            escaping.append(f"{relative.as_posix()} -> {target}")
+            continue
+        symlink_records.append(
+            {
+                "path": relative.as_posix(),
+                "target": target,
+                "normalizedTarget": normalized_path.as_posix(),
+            }
+        )
+    if escaping:
+        raise BenchmarkError(
+            "source snapshot contains absolute or escaping symlinks: "
+            + ", ".join(escaping)
+        )
+    record_payload = json.dumps(
+        symlink_records,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return {
+        "policy": "allow only relative symlinks lexically bounded by snapshot",
+        "symlinkCount": len(symlink_records),
+        "recordsSHA256": hashlib.sha256(record_payload).hexdigest(),
+        "passed": True,
+    }
+
+
 def directory_manifest_sha256(root: Path) -> str:
     digest = hashlib.sha256()
     for path in sorted(root.rglob("*")):
@@ -3858,6 +4360,8 @@ def create_git_archive_snapshot(
     tree: str,
     snapshot_root: Path,
     timeout_seconds: int,
+    read_only: bool = True,
+    symlink_policy: str = "reject",
 ) -> dict[str, Any]:
     archive_path = snapshot_root / f"{label}.tar"
     source_path = snapshot_root / label
@@ -3888,9 +4392,17 @@ def create_git_archive_snapshot(
         cwd=REPOSITORY_ROOT,
         timeout_seconds=timeout_seconds,
     )
-    symlink_validation = reject_source_snapshot_symlinks(source_path)
-    make_tree_read_only(source_path)
-    archive_path.chmod(0o444)
+    if symlink_policy == "reject":
+        symlink_validation = reject_source_snapshot_symlinks(source_path)
+    elif symlink_policy == "bounded-relative":
+        symlink_validation = validate_bounded_relative_symlinks(source_path)
+    else:
+        raise BenchmarkError(
+            f"unsupported source snapshot symlink policy: {symlink_policy}"
+        )
+    if read_only:
+        make_tree_read_only(source_path)
+        archive_path.chmod(0o444)
     content_manifest_sha256 = directory_manifest_sha256(source_path)
     return {
         "repository": str(repository),
@@ -3911,7 +4423,7 @@ def create_git_archive_snapshot(
         "sourcePath": str(source_path),
         "contentManifestSHA256": content_manifest_sha256,
         "symlinkValidation": symlink_validation,
-        "readOnly": True,
+        "readOnly": read_only,
     }
 
 
@@ -3961,6 +4473,282 @@ def create_formal_source_snapshots(
     }
 
 
+def validate_sha256_llvm_repository(repository: Path) -> dict[str, Any]:
+    metadata = git_metadata(repository)
+    if metadata["commit"] != EXPECTED_SHA256_LLVM_COMMIT:
+        raise BenchmarkError(
+            "SHA-256 LLVM source commit mismatch: expected "
+            f"{EXPECTED_SHA256_LLVM_COMMIT}, found {metadata['commit']}"
+        )
+    normalized_origin = (
+        metadata["origin"].removesuffix("/").removesuffix(".git")
+        if metadata["origin"] is not None
+        else None
+    )
+    if normalized_origin != EXPECTED_SHA256_LLVM_ORIGIN:
+        raise BenchmarkError(
+            "SHA-256 LLVM source origin mismatch: expected "
+            f"{EXPECTED_SHA256_LLVM_ORIGIN}, found {metadata['origin']}"
+        )
+    tree = git_value(
+        repository,
+        ["rev-parse", f"{EXPECTED_SHA256_LLVM_COMMIT}^{{tree}}"],
+    )
+    if tree != EXPECTED_SHA256_LLVM_TREE:
+        raise BenchmarkError(
+            "SHA-256 LLVM source tree mismatch: expected "
+            f"{EXPECTED_SHA256_LLVM_TREE}, found {tree}"
+        )
+    metadata["tree"] = tree
+    metadata["archiveUsesCommittedTreeOnly"] = True
+    return metadata
+
+
+def build_sha256_llvm_backend_from_source(
+    *,
+    build_root: Path,
+    repository: Path,
+    repository_metadata: dict[str, Any],
+    toolchain: dict[str, Any],
+    timeout_seconds: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    patch_path = (
+        REPOSITORY_ROOT
+        / "Validation/CodeGeneration/SHA256TiedOperands/"
+        "llvm-264fd65923c28-sha256-paired-two-address.patch"
+    ).resolve()
+    if not patch_path.is_file():
+        raise BenchmarkError(f"retained SHA-256 LLVM patch is missing: {patch_path}")
+    patch_sha256 = file_sha256(patch_path)
+    if patch_sha256 != EXPECTED_SHA256_LLVM_PATCH_SHA256:
+        raise BenchmarkError(
+            "retained SHA-256 LLVM patch hash mismatch: expected "
+            f"{EXPECTED_SHA256_LLVM_PATCH_SHA256}, found {patch_sha256}"
+        )
+
+    backend_root = build_root / "sha256-llvm-source-backend"
+    backend_root.mkdir()
+    snapshot_root = backend_root / "source-snapshot"
+    snapshot_root.mkdir()
+    snapshot = create_git_archive_snapshot(
+        label="llvm-project",
+        repository=repository,
+        commit=EXPECTED_SHA256_LLVM_COMMIT,
+        tree=EXPECTED_SHA256_LLVM_TREE,
+        snapshot_root=snapshot_root,
+        timeout_seconds=timeout_seconds,
+        read_only=False,
+        symlink_policy="bounded-relative",
+    )
+    source_root = Path(snapshot["sourcePath"])
+    pre_patch_manifest = snapshot["contentManifestSHA256"]
+    environment = sanitized_environment(
+        {
+            "DEVELOPER_DIR": toolchain["developerDirectory"],
+            "SDKROOT": toolchain["macOSSDKPath"],
+            "MACOSX_DEPLOYMENT_TARGET": DEPLOYMENT_TARGET,
+        }
+    )
+    patch_check_command = [
+        GIT_EXECUTABLE,
+        "apply",
+        "--check",
+        "--whitespace=error-all",
+        str(patch_path),
+    ]
+    patch_check_completed = run_command(
+        patch_check_command,
+        cwd=source_root,
+        timeout_seconds=timeout_seconds,
+        environment=environment,
+        executable_path=GIT_EXECUTABLE,
+    )
+    patch_command = [GIT_EXECUTABLE, "apply", str(patch_path)]
+    patch_completed = run_command(
+        patch_command,
+        cwd=source_root,
+        timeout_seconds=timeout_seconds,
+        environment=environment,
+        executable_path=GIT_EXECUTABLE,
+    )
+    validate_bounded_relative_symlinks(source_root)
+    make_tree_read_only(source_root)
+    Path(snapshot["archive"]["path"]).chmod(0o444)
+    post_patch_manifest = directory_manifest_sha256(source_root)
+    snapshot["prePatchContentManifestSHA256"] = pre_patch_manifest
+    snapshot["contentManifestSHA256"] = post_patch_manifest
+    snapshot["readOnly"] = True
+
+    llvm_build_root = backend_root / "build"
+    configure_command = [
+        toolchain["cmake"]["invocationPath"],
+        "-S",
+        str(source_root / "llvm"),
+        "-B",
+        str(llvm_build_root),
+        "-G",
+        "Ninja",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DLLVM_ENABLE_ASSERTIONS=ON",
+        "-DLLVM_TARGETS_TO_BUILD=AArch64",
+        "-DLLVM_ENABLE_PROJECTS=",
+        "-DLLVM_BUILD_TOOLS=ON",
+        f"-DCMAKE_C_COMPILER={toolchain['clangCompiler']}",
+        f"-DCMAKE_CXX_COMPILER={toolchain['clangxxCompiler']}",
+        "-DCMAKE_CXX_COMPILER_ARG1=--driver-mode=g++",
+        f"-DCMAKE_MAKE_PROGRAM={toolchain['ninja']['path']}",
+        f"-DCMAKE_OSX_ARCHITECTURES={EXPECTED_ARCHITECTURE}",
+        f"-DCMAKE_OSX_SYSROOT={toolchain['macOSSDKPath']}",
+        f"-DCMAKE_OSX_DEPLOYMENT_TARGET={DEPLOYMENT_TARGET}",
+    ]
+    configure_completed = run_command(
+        configure_command,
+        cwd=backend_root,
+        timeout_seconds=timeout_seconds,
+        environment=environment,
+        executable_path=toolchain["cmake"]["path"],
+    )
+    build_command = [
+        toolchain["cmake"]["invocationPath"],
+        "--build",
+        str(llvm_build_root),
+        "--target",
+        "llc",
+        "FileCheck",
+        "--parallel",
+        "2",
+    ]
+    build_completed = run_command(
+        build_command,
+        cwd=backend_root,
+        timeout_seconds=timeout_seconds,
+        environment=environment,
+        executable_path=toolchain["cmake"]["path"],
+    )
+    llc_path = llvm_build_root / "bin/llc"
+    file_check_path = llvm_build_root / "bin/FileCheck"
+    llc = collect_sha256_llvm_llc_metadata(
+        llc_path,
+        timeout_seconds=timeout_seconds,
+    )
+    llc["provenanceMode"] = "runner-built-from-verified-source"
+    file_check = executable_metadata(file_check_path)
+
+    ir_fixture_path = (
+        source_root
+        / "llvm/test/CodeGen/AArch64/sha256-paired-two-address.ll"
+    )
+    mir_fixture_path = (
+        source_root
+        / "llvm/test/CodeGen/AArch64/"
+        "peephole-sha256-paired-two-address.mir"
+    )
+    fixture_commands = [
+        [
+            llc["invocationPath"],
+            "-verify-machineinstrs",
+            "-mtriple=aarch64-linux-gnu",
+            "-mattr=+sha2",
+            str(ir_fixture_path),
+            "-o",
+            "-",
+        ],
+        [
+            llc["invocationPath"],
+            "-run-pass=aarch64-mi-peephole-opt",
+            "-verify-machineinstrs",
+            "-mtriple=aarch64-unknown-linux",
+            "-o",
+            "-",
+            str(mir_fixture_path),
+        ],
+    ]
+    fixture_paths = [ir_fixture_path, mir_fixture_path]
+    fixture_evidence: list[dict[str, Any]] = []
+    for command, fixture_path in zip(fixture_commands, fixture_paths):
+        llc_completed = run_command(
+            command,
+            cwd=source_root,
+            timeout_seconds=timeout_seconds,
+            environment=environment,
+            executable_path=llc["path"],
+        )
+        file_check_command = [
+            file_check["invocationPath"],
+            str(fixture_path),
+        ]
+        file_check_completed = run_command(
+            file_check_command,
+            cwd=source_root,
+            timeout_seconds=timeout_seconds,
+            environment=environment,
+            executable_path=file_check["path"],
+            input_text=llc_completed.stdout,
+        )
+        fixture_evidence.append(
+            {
+                "fixturePath": str(fixture_path),
+                "fixtureSHA256": file_sha256(fixture_path),
+                "llc": command_evidence(
+                    command,
+                    cwd=source_root,
+                    environment=environment,
+                    completed=llc_completed,
+                    executable_path=llc["path"],
+                ),
+                "fileCheck": command_evidence(
+                    file_check_command,
+                    cwd=source_root,
+                    environment=environment,
+                    completed=file_check_completed,
+                    executable_path=file_check["path"],
+                ),
+            }
+        )
+
+    return llc, {
+        "classification": "runner-built-from-verified-source",
+        "repositoryAtStart": repository_metadata,
+        "sourceSnapshot": snapshot,
+        "patch": {
+            "path": str(patch_path),
+            "sha256": patch_sha256,
+            "check": command_evidence(
+                patch_check_command,
+                cwd=source_root,
+                environment=environment,
+                completed=patch_check_completed,
+                executable_path=GIT_EXECUTABLE,
+            ),
+            "apply": command_evidence(
+                patch_command,
+                cwd=source_root,
+                environment=environment,
+                completed=patch_completed,
+                executable_path=GIT_EXECUTABLE,
+            ),
+        },
+        "configure": command_evidence(
+            configure_command,
+            cwd=backend_root,
+            environment=environment,
+            completed=configure_completed,
+            executable_path=toolchain["cmake"]["path"],
+        ),
+        "build": command_evidence(
+            build_command,
+            cwd=backend_root,
+            environment=environment,
+            completed=build_completed,
+            executable_path=toolchain["cmake"]["path"],
+        ),
+        "llc": llc,
+        "fileCheck": file_check,
+        "fixtures": fixture_evidence,
+        "passed": True,
+    }
+
+
 def verify_formal_source_snapshots_unchanged(
     snapshots: dict[str, Any],
 ) -> dict[str, Any]:
@@ -3985,6 +4773,44 @@ def verify_formal_source_snapshots_unchanged(
     return results
 
 
+def verify_sha256_llvm_source_build_unchanged(
+    evidence: dict[str, Any],
+) -> dict[str, Any]:
+    initial_repository = evidence["repositoryAtStart"]
+    final_repository = validate_sha256_llvm_repository(
+        Path(initial_repository["path"])
+    )
+    if final_repository["commit"] != initial_repository["commit"]:
+        raise BenchmarkError("SHA-256 LLVM source HEAD changed during benchmark")
+    if final_repository["origin"] != initial_repository["origin"]:
+        raise BenchmarkError("SHA-256 LLVM source origin changed during benchmark")
+    snapshot = evidence["sourceSnapshot"]
+    archive_path = Path(snapshot["archive"]["path"])
+    source_path = Path(snapshot["sourcePath"])
+    archive_sha256 = file_sha256(archive_path)
+    manifest_sha256 = directory_manifest_sha256(source_path)
+    if archive_sha256 != snapshot["archive"]["sha256"]:
+        raise BenchmarkError("SHA-256 LLVM source archive changed during benchmark")
+    if manifest_sha256 != snapshot["contentManifestSHA256"]:
+        raise BenchmarkError("patched SHA-256 LLVM source changed during benchmark")
+    patch_sha256 = file_sha256(Path(evidence["patch"]["path"]))
+    if patch_sha256 != evidence["patch"]["sha256"]:
+        raise BenchmarkError("retained SHA-256 LLVM patch changed during benchmark")
+    verify_executable_metadata_unchanged(
+        {
+            "sha256LLVMBackend": evidence["llc"],
+            "sha256LLVMFileCheck": evidence["fileCheck"],
+        }
+    )
+    return {
+        "repositoryAtEnd": final_repository,
+        "archiveSHA256": archive_sha256,
+        "patchedSourceManifestSHA256": manifest_sha256,
+        "patchSHA256": patch_sha256,
+        "unchanged": True,
+    }
+
+
 def build_workers(
     *,
     build_root: Path,
@@ -3994,6 +4820,7 @@ def build_workers(
     toolchain: dict[str, Any],
     timeout_seconds: int,
     independent_pair: bool = False,
+    sha256_llvm_llc: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     verify_executable_metadata_unchanged(toolchain["trustedExecutables"])
     selected_environment = {
@@ -4075,6 +4902,37 @@ def build_workers(
     swift_worker = (
         Path(bin_path_lines[-1]).resolve() / "swift-ssl-sha256-benchmark"
     )
+    release_root = swift_worker.parent
+    swift_build_contract = require_swift_build_contract(
+        completed=swift_completed,
+        toolchain=toolchain,
+        swift_source=swift_source,
+        swift_scratch=swift_scratch,
+    )
+    standard_swift_worker_metadata: dict[str, Any] | None = None
+    sha256_llvm_backend: dict[str, Any] | None = None
+    if sha256_llvm_llc is not None:
+        if independent_pair:
+            raise BenchmarkError(
+                "the SHA-256 LLVM backend experiment is only defined for "
+                "the one-message contract"
+            )
+        standard_swift_worker_metadata = executable_metadata(swift_worker)
+        standard_swift_worker_metadata["machO"] = collect_macho_metadata(
+            swift_worker,
+            toolchain=toolchain,
+        )
+        swift_worker, sha256_llvm_backend = rebuild_sha256_worker_with_llc(
+            build_root=build_root,
+            release_root=release_root,
+            original_worker=swift_worker,
+            swift_completed=swift_completed,
+            swift_build_contract=swift_build_contract,
+            toolchain=toolchain,
+            llc=sha256_llvm_llc,
+            environment=environment,
+            timeout_seconds=timeout_seconds,
+        )
 
     boringssl_build = build_root / "boringssl"
     configure_command = [
@@ -4146,12 +5004,6 @@ def build_workers(
     boringssl_worker_metadata["machO"] = collect_macho_metadata(
         boringssl_worker,
         toolchain=toolchain,
-    )
-    swift_build_contract = require_swift_build_contract(
-        completed=swift_completed,
-        toolchain=toolchain,
-        swift_source=swift_source,
-        swift_scratch=swift_scratch,
     )
     boringssl_build_contract = require_boringssl_build_contract(
         compile_database=compile_database,
@@ -4265,6 +5117,8 @@ def build_workers(
                 executable_path=toolchain["swiftDriver"]["path"],
             ),
             "buildContract": swift_build_contract,
+            "standardWorker": standard_swift_worker_metadata,
+            "sha256LLVMBackend": sha256_llvm_backend,
             "timedLoopCodeGeneration": swift_codegen,
             "sha256KernelCodeGeneration": sha256_kernel_codegen,
             "messagesPerTimedIteration": 2 if independent_pair else 1,
@@ -4821,12 +5675,23 @@ def paired_bootstrap_interval(
     }
 
 
-def target_decision(confidence_interval: dict[str, Any]) -> str:
-    if confidence_interval["lower"] >= TARGET_SPEEDUP:
+def threshold_decision(
+    confidence_interval: dict[str, Any],
+    *,
+    minimum_speedup: float,
+) -> str:
+    if confidence_interval["lower"] >= minimum_speedup:
         return "pass"
-    if confidence_interval["upper"] < TARGET_SPEEDUP:
+    if confidence_interval["upper"] < minimum_speedup:
         return "fail"
     return "inconclusive"
+
+
+def target_decision(confidence_interval: dict[str, Any]) -> str:
+    return threshold_decision(
+        confidence_interval,
+        minimum_speedup=TARGET_SPEEDUP,
+    )
 
 
 def sample_workload(
@@ -4968,6 +5833,17 @@ def sample_workload(
             ),
             "decision": target_decision(confidence_interval),
         },
+        "parityFloor": {
+            "minimumSpeedup": PARITY_FLOOR,
+            "criterion": (
+                "lower bound of the paired median speedup 95% bootstrap "
+                "confidence interval is at least 1.0"
+            ),
+            "decision": threshold_decision(
+                confidence_interval,
+                minimum_speedup=PARITY_FLOOR,
+            ),
+        },
         "matchedTimedOutput": {
             "checksum": expected_identity[0] if expected_identity else None,
             "digestHex": expected_identity[1] if expected_identity else None,
@@ -4975,8 +5851,14 @@ def sample_workload(
     }
 
 
-def overall_decision(workloads: Sequence[dict[str, Any]]) -> str:
-    decisions = [workload["target"]["decision"] for workload in workloads]
+def overall_decision(
+    workloads: Sequence[dict[str, Any]],
+    *,
+    threshold_key: str = "target",
+) -> str:
+    decisions = [
+        workload[threshold_key]["decision"] for workload in workloads
+    ]
     if all(decision == "pass" for decision in decisions):
         return "pass"
     if any(decision == "fail" for decision in decisions):
@@ -5076,6 +5958,13 @@ def write_json_atomically(path: Path, payload: dict[str, Any]) -> None:
 def main(arguments: Sequence[str] | None = None) -> int:
     parser = build_argument_parser()
     options = parser.parse_args(arguments)
+    if (
+        options.sha256_llvm_llc is not None
+        and options.sha256_llvm_source is not None
+    ):
+        parser.error(
+            "--sha256-llvm-llc and --sha256-llvm-source are mutually exclusive"
+        )
     if options.samples < MINIMUM_SAMPLE_COUNT:
         parser.error(f"--samples must be at least {MINIMUM_SAMPLE_COUNT}")
     if options.samples % 2 != 0:
@@ -5119,6 +6008,13 @@ def main(arguments: Sequence[str] | None = None) -> int:
             "headlineByteCounts": list(HEADLINE_BYTE_COUNTS),
             "wasiMeasured": False,
             "embeddedMeasured": False,
+            "swiftCodeGeneration": (
+                "runner-built verified LLVM source compiler experiment"
+                if options.sha256_llvm_source is not None
+                else "external verified LLVM llc compiler experiment"
+                if options.sha256_llvm_llc is not None
+                else "pinned installed Swift toolchain"
+            ),
         },
         "configuration": {
             "pairedSampleCountPerWorkload": options.samples,
@@ -5128,11 +6024,19 @@ def main(arguments: Sequence[str] | None = None) -> int:
             "buildTimeoutSeconds": options.build_timeout_seconds,
             "minimumSampleNanoseconds": MINIMUM_SAMPLE_NANOSECONDS,
             "minimumSpeedup": TARGET_SPEEDUP,
+            "parityFloor": PARITY_FLOOR,
             "validationIterationsPerWorkload": VALIDATION_ITERATION_COUNT,
             "convergenceWindow": CONVERGENCE_WINDOW,
             "convergenceTolerance": CONVERGENCE_TOLERANCE,
             "maximumLoadPerLogicalCPU": options.maximum_load_per_logical_cpu,
             "allowActiveBuildProcesses": options.allow_active_build_processes,
+            "sha256LLVMBackendRequested": (
+                options.sha256_llvm_llc is not None
+                or options.sha256_llvm_source is not None
+            ),
+            "sha256LLVMSourceBuildRequested": (
+                options.sha256_llvm_source is not None
+            ),
         },
         "memoryEvidence": {
             "allocationCountMeasured": False,
@@ -5166,6 +6070,21 @@ def main(arguments: Sequence[str] | None = None) -> int:
         boringssl_repository = git_metadata(boringssl_source)
         validate_boringssl_repository(boringssl_repository)
         toolchain = collect_toolchain_metadata()
+        sha256_llvm_llc = (
+            collect_sha256_llvm_llc_metadata(
+                options.sha256_llvm_llc.expanduser(),
+                timeout_seconds=options.build_timeout_seconds,
+            )
+            if options.sha256_llvm_llc is not None
+            else None
+        )
+        sha256_llvm_repository = (
+            validate_sha256_llvm_repository(
+                options.sha256_llvm_source.expanduser().resolve()
+            )
+            if options.sha256_llvm_source is not None
+            else None
+        )
         host_metadata = collect_host_metadata()
         if host_metadata["hardwareModel"] is None:
             raise BenchmarkError("hardware model is unavailable")
@@ -5195,6 +6114,12 @@ def main(arguments: Sequence[str] | None = None) -> int:
             eligibility_reasons.append(
                 "formal runs reject active build process overrides"
             )
+        if options.formal and sha256_llvm_llc is not None:
+            eligibility_reasons.append(
+                "formal runs reject a prebuilt external SHA-256 llc; this "
+                "mode remains a compiler experiment until the patched backend "
+                "is built from verified source inside the runner"
+            )
         formal_eligible = not eligibility_reasons
         artifact["formalEvidence"] = {
             "requested": options.formal,
@@ -5219,6 +6144,8 @@ def main(arguments: Sequence[str] | None = None) -> int:
             "sslAtStart": swift_repository,
             "boringSSLAtStart": boringssl_repository,
             "toolchain": toolchain,
+            "sha256LLVMBackendAtStart": sha256_llvm_llc,
+            "sha256LLVMSourceAtStart": sha256_llvm_repository,
             "host": host_metadata,
             "initialQuiescence": initial_quiescence,
             "runner": {
@@ -5251,6 +6178,22 @@ def main(arguments: Sequence[str] | None = None) -> int:
                 "mode": "live working trees for exploratory run",
                 "readOnly": False,
             }
+        sha256_llvm_source_build: dict[str, Any] | None = None
+        if sha256_llvm_repository is not None:
+            artifact["status"] = "building-sha256-llvm-backend"
+            sha256_llvm_llc, sha256_llvm_source_build = (
+                build_sha256_llvm_backend_from_source(
+                    build_root=build_root,
+                    repository=Path(sha256_llvm_repository["path"]),
+                    repository_metadata=sha256_llvm_repository,
+                    toolchain=toolchain,
+                    timeout_seconds=options.build_timeout_seconds,
+                )
+            )
+            artifact["sha256LLVMSourceBuild"] = sha256_llvm_source_build
+            artifact["provenance"]["sha256LLVMBackendAtStart"] = (
+                sha256_llvm_llc
+            )
         artifact["status"] = "building"
         builds = build_workers(
             build_root=build_root,
@@ -5260,6 +6203,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
             toolchain=toolchain,
             timeout_seconds=options.build_timeout_seconds,
             independent_pair=options.independent_pair,
+            sha256_llvm_llc=sha256_llvm_llc,
         )
         artifact["builds"] = builds
         artifact["storage"]["atPostBuild"] = collect_storage_capacity(
@@ -5346,6 +6290,18 @@ def main(arguments: Sequence[str] | None = None) -> int:
             ),
             "decision": decision,
         }
+        parity_decision = overall_decision(
+            workload_results,
+            threshold_key="parityFloor",
+        )
+        artifact["parityFloor"] = {
+            "minimumSpeedup": PARITY_FLOOR,
+            "criterion": (
+                "every fixed headline workload must have a paired median "
+                "speedup 95% bootstrap confidence-interval lower bound of 1.0"
+            ),
+            "decision": parity_decision,
+        }
 
         swift_repository_at_end = git_metadata(REPOSITORY_ROOT)
         boringssl_repository_at_end = git_metadata(boringssl_source)
@@ -5387,6 +6343,22 @@ def main(arguments: Sequence[str] | None = None) -> int:
                 toolchain["trustedExecutables"]
             )
         )
+        if sha256_llvm_llc is not None:
+            verify_executable_metadata_unchanged(
+                {"sha256LLVMBackend": sha256_llvm_llc}
+            )
+            artifact["provenance"]["sha256LLVMBackendAtEnd"] = (
+                collect_sha256_llvm_llc_metadata(
+                    Path(sha256_llvm_llc["path"]),
+                    timeout_seconds=options.build_timeout_seconds,
+                )
+            )
+        if sha256_llvm_source_build is not None:
+            artifact["sha256LLVMSourceBuildAtEnd"] = (
+                verify_sha256_llvm_source_build_unchanged(
+                    sha256_llvm_source_build
+                )
+            )
         final_quiescence = collect_quiescence(
             maximum_load_per_logical_cpu=options.maximum_load_per_logical_cpu,
             allow_active_build_processes=options.allow_active_build_processes,
@@ -5420,6 +6392,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
 
         classification = artifact["formalEvidence"]["classification"]
         print(f"Decision: {decision} ({classification} timing evidence)")
+        print(f"Parity floor: {parity_decision}")
         for workload in workload_results:
             speedup = workload["statistics"]["pairedSpeedup"]
             interval = speedup["confidenceInterval95"]

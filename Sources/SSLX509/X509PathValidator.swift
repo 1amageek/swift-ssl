@@ -80,7 +80,7 @@ public struct X509PathValidator: Sendable {
                 do {
                     try policy.evaluate(path: path, hostname: hostname)
                     validatedPaths.append(X509ValidatedPath(certificates: path))
-                } catch let error as X509PathError {
+                } catch let error {
                     lastFailure = error
                 }
                 continue
@@ -132,7 +132,7 @@ public struct X509PathValidator: Sendable {
                     do {
                         try policy.evaluate(path: next, hostname: hostname)
                         validatedPaths.append(X509ValidatedPath(certificates: next))
-                    } catch let error as X509PathError {
+                    } catch let error {
                         lastFailure = error
                     }
                     continue

@@ -39,13 +39,13 @@ final class SHA512Tests: XCTestCase {
   func testRejectsWrongOutputLengthWithoutMutation() throws {
     let original = ContiguousArray<UInt8>(repeating: 0xA5, count: SHA512.digestByteCount - 1)
     var output = original
-    var context = SHA512Context()
+    let context = SHA512Context()
     var wrongSpan = output.mutableSpan
     do {
       try context.finalize(into: &wrongSpan)
       XCTFail("SHA-512 accepted an incorrectly sized output")
     } catch {
-      XCTAssertEqual(error as? CryptoInputError, .invalidOutputLength(expected: 64, actual: 63))
+      XCTAssertEqual(error, .invalidOutputLength(expected: 64, actual: 63))
     }
     XCTAssertEqual(output, original)
   }

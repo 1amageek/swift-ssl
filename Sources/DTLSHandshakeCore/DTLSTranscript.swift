@@ -3,7 +3,7 @@
 /// DTLS 1.2 hashes the full accumulated handshake-message buffer at several
 /// points. The selected provider supplies concrete SHA-256 and SHA-384 functions
 /// when the engine is configured, so the handshake runtime does not cross a
-/// generic `CryptoProvider` witness boundary on normal WASM.
+/// generic provider witness boundary on normal WASM.
 
 import DTLSWireCore
 

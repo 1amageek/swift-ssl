@@ -514,7 +514,7 @@ public struct DTLS13ServerHandshake: DTLS13ServerHandshaking, ~Copyable, Sendabl
             implicitlyAcknowledged: &implicitlyAcknowledged,
             handshakeRecordNumbersToAcknowledge: &finalFlightRecordNumbers
           )
-        } catch let error as DTLS13ConnectionError {
+        } catch let error {
           if case .record(.replayed(let recordNumber)) = error {
             if acknowledgedHandshakeRecordNumbers.contains(recordNumber) {
               finalFlightRecordNumbers.append(recordNumber)
@@ -689,7 +689,7 @@ public struct DTLS13ServerHandshake: DTLS13ServerHandshaking, ~Copyable, Sendabl
             implicitlyAcknowledged: &implicitlyAcknowledged,
             handshakeRecordNumbersToAcknowledge: &finalFlightRecordNumbers
           )
-        } catch let error as DTLS13ConnectionError {
+        } catch let error {
           if case .record(.replayed(let recordNumber)) = error {
             if acknowledgedHandshakeRecordNumbers.contains(recordNumber) {
               finalFlightRecordNumbers.append(recordNumber)
@@ -1444,12 +1444,9 @@ public struct DTLS13ServerHandshake: DTLS13ServerHandshaking, ~Copyable, Sendabl
           .handshake,
           opened.recordNumber
         )
-      } catch let error as DTLS13RecordError {
+      } catch let error {
         handshakeRead = consume protector
         throw .record(error)
-      } catch {
-        handshakeRead = consume protector
-        throw .malformedDatagram
       }
     default:
       if let currentEpoch = applicationRead?.epoch,
@@ -1468,12 +1465,9 @@ public struct DTLS13ServerHandshake: DTLS13ServerHandshaking, ~Copyable, Sendabl
             .application,
             opened.recordNumber
           )
-        } catch let error as DTLS13RecordError {
+        } catch let error {
           applicationRead = consume protector
           throw .record(error)
-        } catch {
-          applicationRead = consume protector
-          throw .malformedDatagram
         }
       }
       guard let previousEpoch = previousApplicationRead?.epoch,
@@ -1491,12 +1485,9 @@ public struct DTLS13ServerHandshake: DTLS13ServerHandshaking, ~Copyable, Sendabl
           .application,
           opened.recordNumber
         )
-      } catch let error as DTLS13RecordError {
+      } catch let error {
         previousApplicationRead = consume protector
         throw .record(error)
-      } catch {
-        previousApplicationRead = consume protector
-        throw .malformedDatagram
       }
     }
   }

@@ -9,8 +9,7 @@
 /// the FSM's crypto requests (ECDHE / SKE-signature verify / CertificateVerify sign)
 /// through the injected ``DTLSEngineConfiguration`` closures. X.509 stays OUT.
 
-import P2PCoreBytes
-import P2PCoreCrypto
+import NetworkingCore
 import TLSWireCore
 import DTLSWireCore
 import DTLSHandshakeCore
@@ -161,7 +160,7 @@ extension DTLSClientEngine {
             return
         }
 
-        let result: DTLSClientHandshake<C>.IngestResult
+        let result: DTLSClientHandshake.IngestResult
         do {
             result = try fsm.ingest(header: header, body: body, rawMessage: rawMessage)
         } catch {
@@ -269,14 +268,14 @@ extension DTLSClientEngine {
         do { certBody = try certMessage.encodeBytes() }
         catch { throw .from(wire: error) }
 
-        let inputs = DTLSClientHandshake<C>.ClientFlightInputs(
+        let inputs = DTLSClientHandshake.ClientFlightInputs(
             sharedSecret: sharedSecret,
             clientPublicKey: pair.publicKey,
             certificateBody: certBody
         )
 
         // The core derives keys + transcript and returns the CertificateVerify hash.
-        let cvRequest: DTLSClientHandshake<C>.CertificateVerifyRequest
+        let cvRequest: DTLSClientHandshake.CertificateVerifyRequest
         do { cvRequest = try fsm.buildClientFlight(inputs: inputs) }
         catch { throw .from(core: error) }
 

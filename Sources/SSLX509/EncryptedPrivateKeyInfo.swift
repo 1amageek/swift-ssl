@@ -136,7 +136,7 @@ public struct EncryptedPrivateKeyInfo: Sendable {
                 limits: limits,
                 inputByteCount: encodedDER.count
             )
-        } catch let error as ResourceLimitError {
+        } catch let error {
             throw EncryptedPrivateKeyInfoError.resourceLimit(error)
         }
 
@@ -145,10 +145,8 @@ public struct EncryptedPrivateKeyInfo: Sendable {
         do {
             root = try cursor.readElement(using: &budget)
             try cursor.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw EncryptedPrivateKeyInfoError.der(error)
-        } catch {
-            throw EncryptedPrivateKeyInfoError.invalidStructure
         }
         guard root.tag == Self.sequenceTag else {
             throw EncryptedPrivateKeyInfoError.invalidStructure
@@ -164,10 +162,8 @@ public struct EncryptedPrivateKeyInfo: Sendable {
             algorithm = try body.readElement(using: &budget)
             encryptedData = try body.readElement(using: &budget)
             try body.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw EncryptedPrivateKeyInfoError.der(error)
-        } catch {
-            throw EncryptedPrivateKeyInfoError.invalidStructure
         }
         guard algorithm.tag == Self.sequenceTag,
               encryptedData.tag == Self.octetStringTag else {
@@ -207,10 +203,8 @@ public struct EncryptedPrivateKeyInfo: Sendable {
             oidElement = try body.readElement(using: &budget)
             parameters = try body.readElement(using: &budget)
             try body.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw EncryptedPrivateKeyInfoError.der(error)
-        } catch {
-            throw EncryptedPrivateKeyInfoError.invalidStructure
         }
         guard try Self.decodeOID(oidElement, budget: &budget) == Self.pbes2OID else {
             throw EncryptedPrivateKeyInfoError.unsupportedEncryptionAlgorithm
@@ -229,10 +223,8 @@ public struct EncryptedPrivateKeyInfo: Sendable {
             keyDerivation = try parametersBody.readElement(using: &budget)
             encryptionScheme = try parametersBody.readElement(using: &budget)
             try parametersBody.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw EncryptedPrivateKeyInfoError.der(error)
-        } catch {
-            throw EncryptedPrivateKeyInfoError.invalidStructure
         }
         guard keyDerivation.tag == Self.sequenceTag,
               encryptionScheme.tag == Self.sequenceTag else {
@@ -268,10 +260,8 @@ public struct EncryptedPrivateKeyInfo: Sendable {
             oidElement = try body.readElement(using: &budget)
             parameters = try body.readElement(using: &budget)
             try body.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw EncryptedPrivateKeyInfoError.der(error)
-        } catch {
-            throw EncryptedPrivateKeyInfoError.invalidStructure
         }
         guard try Self.decodeOID(oidElement, budget: &budget) == Self.pbkdf2OID else {
             throw EncryptedPrivateKeyInfoError.unsupportedKeyDerivationFunction
@@ -291,10 +281,8 @@ public struct EncryptedPrivateKeyInfo: Sendable {
             salt = try parameterBody.readElement(using: &budget)
             iterations = try parameterBody.readElement(using: &budget)
             next = try parameterBody.readElement(using: &budget)
-        } catch let error as DERError {
+        } catch let error {
             throw EncryptedPrivateKeyInfoError.der(error)
-        } catch {
-            throw EncryptedPrivateKeyInfoError.invalidStructure
         }
         guard salt.tag == Self.octetStringTag else {
             throw EncryptedPrivateKeyInfoError.invalidStructure
@@ -318,19 +306,15 @@ public struct EncryptedPrivateKeyInfo: Sendable {
             }
             do {
                 next = try parameterBody.readElement(using: &budget)
-            } catch let error as DERError {
+            } catch let error {
                 throw EncryptedPrivateKeyInfoError.der(error)
-            } catch {
-                throw EncryptedPrivateKeyInfoError.invalidStructure
             }
         }
         try Self.requireHMACSHA256(next, budget: &budget)
         do {
             try parameterBody.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw EncryptedPrivateKeyInfoError.der(error)
-        } catch {
-            throw EncryptedPrivateKeyInfoError.invalidStructure
         }
 
         return KeyParameters(
@@ -353,10 +337,8 @@ public struct EncryptedPrivateKeyInfo: Sendable {
         let oidElement: DERElementView
         do {
             oidElement = try body.readElement(using: &budget)
-        } catch let error as DERError {
+        } catch let error {
             throw EncryptedPrivateKeyInfoError.der(error)
-        } catch {
-            throw EncryptedPrivateKeyInfoError.invalidStructure
         }
         guard try Self.decodeOID(oidElement, budget: &budget) == Self.hmacSHA256OID else {
             throw EncryptedPrivateKeyInfoError.unsupportedPseudorandomFunction
@@ -366,10 +348,8 @@ public struct EncryptedPrivateKeyInfo: Sendable {
             do {
                 parameters = try body.readElement(using: &budget)
                 try body.requireFullyConsumed()
-            } catch let error as DERError {
+            } catch let error {
                 throw EncryptedPrivateKeyInfoError.der(error)
-            } catch {
-                throw EncryptedPrivateKeyInfoError.invalidStructure
             }
             guard parameters.tag == Self.nullTag,
                   parameters.contentBytes.isEmpty else {
@@ -392,10 +372,8 @@ public struct EncryptedPrivateKeyInfo: Sendable {
             oidElement = try body.readElement(using: &budget)
             parameters = try body.readElement(using: &budget)
             try body.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw EncryptedPrivateKeyInfoError.der(error)
-        } catch {
-            throw EncryptedPrivateKeyInfoError.invalidStructure
         }
         guard try Self.decodeOID(oidElement, budget: &budget) == Self.aes256GCMOID else {
             throw EncryptedPrivateKeyInfoError.unsupportedEncryptionAlgorithm
@@ -414,10 +392,8 @@ public struct EncryptedPrivateKeyInfo: Sendable {
             nonce = try parameterBody.readElement(using: &budget)
             tagLength = try parameterBody.readElement(using: &budget)
             try parameterBody.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw EncryptedPrivateKeyInfoError.der(error)
-        } catch {
-            throw EncryptedPrivateKeyInfoError.invalidStructure
         }
         guard nonce.tag == Self.octetStringTag else {
             throw EncryptedPrivateKeyInfoError.invalidStructure
@@ -448,8 +424,6 @@ public struct EncryptedPrivateKeyInfo: Sendable {
             throw EncryptedPrivateKeyInfoError.resourceLimit(error)
         } catch let error as DERValueError {
             throw EncryptedPrivateKeyInfoError.value(error)
-        } catch {
-            throw EncryptedPrivateKeyInfoError.invalidStructure
         }
     }
 
@@ -458,10 +432,8 @@ public struct EncryptedPrivateKeyInfo: Sendable {
     ) throws -> UInt64 {
         do {
             return try DERPrimitiveCodec.decodePositiveInteger(from: element)
-        } catch let error as DERValueError {
+        } catch let error {
             throw EncryptedPrivateKeyInfoError.value(error)
-        } catch {
-            throw EncryptedPrivateKeyInfoError.invalidStructure
         }
     }
 
@@ -473,7 +445,7 @@ public struct EncryptedPrivateKeyInfo: Sendable {
                 offset: element.encodedOffset + element.headerByteCount,
                 count: element.contentBytes.count
             )
-        } catch let error as ByteError {
+        } catch let error {
             throw EncryptedPrivateKeyInfoError.invalidRange(error)
         }
     }

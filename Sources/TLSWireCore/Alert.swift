@@ -17,7 +17,7 @@
 /// } Alert;
 /// ```
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - Alert Level
 

@@ -86,10 +86,8 @@ public struct QUICInitialSecrets: ~Copyable, Sendable {
             self.serverIV = consume serverIV
             self.clientHeaderProtectionKey = consume clientHeaderProtectionKey
             self.serverHeaderProtectionKey = consume serverHeaderProtectionKey
-        } catch let error as QUICInitialSecretsError {
+        } catch let error {
             throw error
-        } catch {
-            throw .secretMemoryFailure
         }
     }
 

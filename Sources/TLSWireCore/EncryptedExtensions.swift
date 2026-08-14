@@ -6,7 +6,7 @@
 /// } EncryptedExtensions;
 /// ```
 
-import P2PCoreBytes
+import NetworkingCore
 
 /// TLS 1.3 EncryptedExtensions message
 public struct EncryptedExtensions: Sendable {
@@ -29,7 +29,7 @@ public struct EncryptedExtensions: Sendable {
             extensionData.append(contentsOf: try ext.encodeBytes())
         }
 
-        var writer = ByteWriter(reservingCapacity: 2 + extensionData.count)
+        var writer = TLSWireWriter(reservingCapacity: 2 + extensionData.count)
         try writer.wWriteVector16(extensionData)
         return writer.finishArray()
     }
@@ -43,11 +43,11 @@ public struct EncryptedExtensions: Sendable {
 
     /// Decodes EncryptedExtensions from content data (without handshake header)
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> EncryptedExtensions {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         let extensionData = try reader.wReadVector16()
 
         var extensions: [TLSExtension] = []
-        var extReader = ByteReader(extensionData)
+        var extReader = TLSWireReader(extensionData)
         while !extReader.isAtEnd {
             let ext = try TLSExtension.decode(from: &extReader, context: .encryptedExtensions)
             extensions.append(ext)

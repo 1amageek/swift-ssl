@@ -84,7 +84,7 @@ final class SHA3Tests: XCTestCase {
         into: &invalidOutput
       )
       XCTFail("SHAKE accepted an output length different from the requested length")
-    } catch let error as CryptoInputError {
+    } catch {
       XCTAssertEqual(error, .invalidOutputLength(expected: 7, actual: 8))
       XCTAssertEqual(output, ContiguousArray(repeating: 0xA5, count: 8))
     }

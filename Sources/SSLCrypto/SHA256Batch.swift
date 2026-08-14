@@ -2,7 +2,7 @@ import SSLCore
 
 extension SHA256: BatchHashFunction {
   public static var preferredBatchWidth: Int {
-    #if os(macOS) && arch(arm64) && canImport(simd)
+    #if os(macOS) && arch(arm64) && canImport(simd) && !SWIFT_SSL_TSAN
       2
     #else
       1
@@ -55,7 +55,7 @@ extension SHA256: BatchHashFunction {
       )
       let firstOutputStart = inputIndex * digestByteCount
 
-      #if os(macOS) && arch(arm64) && canImport(simd)
+      #if os(macOS) && arch(arm64) && canImport(simd) && !SWIFT_SSL_TSAN
         if inputIndex + 1 < inputs.count {
           let second = inputs[inputIndex + 1]
           if first.byteCount == second.byteCount {

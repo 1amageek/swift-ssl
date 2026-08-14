@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "classification": "exploratory-compiler-backend-evidence",
+  "measuredAt": {
+    "started": "2026-08-13T05:11:07.814653+00:00",
+    "finished": "2026-08-13T05:14:46.763900+00:00"
+  },
+  "objective": {
+    "operation": "Native one-shot SHA-256",
+    "requiredWorkloadBytes": [1024, 16384],
+    "minimumSpeedup": 1.0,
+    "criterion": "paired median speedup 95% bootstrap confidence-interval lower bound is at least 1.0 for every required workload",
+    "decision": "pass"
+  },
+  "comparison": {
+    "definition": "pinned BoringSSL elapsed time divided by Pure Swift elapsed time",
+    "pairedSamplesPerWorkload": 30,
+    "bootstrapResamples": 10000,
+    "seed": 2759565164924407291,
+    "boringSSLCommit": "ae49d2681a56ca7b8609f6039a770fda2a8eb550",
+    "boringSSLOrigin": "https://boringssl.googlesource.com/boringssl"
+  },
+  "workloads": [
+    {
+      "bytes": 64,
+      "swiftMedianNanoseconds": 33.0762794117647,
+      "boringSSLMedianNanoseconds": 39.93670094117647,
+      "pairedMedianSpeedup": 1.207457925549848,
+      "pairedBootstrap95Lower": 1.205406059715831,
+      "pairedBootstrap95Upper": 1.2094899907882504,
+      "parityDecision": "pass"
+    },
+    {
+      "bytes": 1024,
+      "swiftMedianNanoseconds": 345.369063125,
+      "boringSSLMedianNanoseconds": 350.53190125,
+      "pairedMedianSpeedup": 1.0157249557638075,
+      "pairedBootstrap95Lower": 1.0126720053916811,
+      "pairedBootstrap95Upper": 1.0173217842002658,
+      "parityDecision": "pass"
+    },
+    {
+      "bytes": 16384,
+      "swiftMedianNanoseconds": 5411.467427272728,
+      "boringSSLMedianNanoseconds": 5414.722727272727,
+      "pairedMedianSpeedup": 1.0003716111786316,
+      "pairedBootstrap95Lower": 1.000084440319777,
+      "pairedBootstrap95Upper": 1.001443060449205,
+      "parityDecision": "pass"
+    }
+  ],
+  "correctness": {
+    "allDigestsMatched": true,
+    "mutationsPerWorkload": 256,
+    "workloadBytes": [64, 1024, 16384],
+    "totalMatchedDigests": 768
+  },
+  "codeGeneration": {
+    "llvmCommit": "264fd65923c28d9060211c1177a8820b76ed3ae2",
+    "llvmVersion": "21.1.6",
+    "patchSHA256": "571561f22f755d026f3fa7cfd724170a9d2d17841c66d0bd7ecd92036276d754",
+    "adjacentSHA256StatePairsPerBlock": 16,
+    "roundConstantResidency": "hoisted-outside-block-loop",
+    "functionCallsPerBlockLoop": 0,
+    "unexpectedMemoryOperationsPerBlockLoop": 0
+  },
+  "artifacts": {
+    "optimizedIRSHA256": "a6b413cc2251a59f161dd5b2b6b0ba22bd19ec78bc6639b8569e6bfb715414d7",
+    "rebuiltObjectSHA256": "7c1c5d0ea6a5507dd9c7ff928d964e04fa9dff123571433866d658d07d747ca0",
+    "swiftWorkerSHA256": "f8edd6b41ea99bc6e050b8f7efada087b8a552b1d80d27f8ee9bd36273973e0d",
+    "boringSSLWorkerSHA256": "0c0e6b026687e46e767fc78f289335170e5f284efd1c76d231f137c290a45d63",
+    "localRawArtifactSHA256": "22710fcebebaa24b02fb56ad9f6e976f419b94ae0712eb520b7e9fd91a7ddf43"
+  },
+  "aspirationalTarget": {
+    "minimumSpeedup": 1.1,
+    "decision": "fail",
+    "separateFromParityObjective": true
+  },
+  "limitations": [
+    "The Swift source was a dirty live worktree, so this is not formal release evidence.",
+    "The verified patched llc was prebuilt outside the runner, so formal mode rejects it.",
+    "The complete 2.3 MB raw artifact remains in the local ignored build directory and is bound here only by SHA-256."
+  ]
+}

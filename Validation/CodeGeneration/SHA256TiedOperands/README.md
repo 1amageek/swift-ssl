@@ -25,9 +25,11 @@ kernel and formal benchmark must be reevaluated.
 patch for LLVM commit `264fd65923c28d9060211c1177a8820b76ed3ae2`, the LLVM
 revision embedded in the pinned Swift snapshot. It changes the AArch64 machine
 peephole pass, not the SSL product source. The pass recognizes an adjacent
-`SHA256H`/`SHA256H2` pair, preserves the old first state with the target vector
-move form, and rewrites later same-block users to the preserved register. The
-public Swift API, input ownership, and WASI/Embedded backends are unchanged.
+`SHA256H`/`SHA256H2` pair, preserves both old state values when later
+same-block users require them, and rewrites those users to the preserved
+registers. This lets both destructive state updates remain in place and keeps
+their preservation moves outside the `SHA256H`/`SHA256H2` pair. The public
+Swift API, input ownership, and WASI/Embedded backends are unchanged.
 
 Apply and verify it from a matching `swiftlang/llvm-project` checkout:
 
@@ -51,26 +53,31 @@ cmake --build /path/to/llvm-build --target llc --parallel 10
       llvm/test/CodeGen/AArch64/peephole-sha256-paired-two-address.mir
 ```
 
-The 2026-08-03 validation built `llc` in Release mode with assertions and the
+The 2026-08-13 validation built `llc` in Release mode with assertions and the
 AArch64 target. The end-to-end IR fixture and the machine-pass MIR fixture both
 passed the exact checkout's LLVM 21.1.6 `llc`, machine verifier, and FileCheck.
 The MIR fixture covers the positive state/feed-forward rewrite and rejects
 mismatched-work and nonadjacent pairs. The macOS arm64 triple produced the same
 expected instruction shape. The patched compiler then compiled the production
-optimized `SSLCrypto` IR. Its object SHA-256 was
-`e1e414aac6f597f28ced2874b6e44d4cd59b34ed7aea9c1367a02aebdf753eeb` before
-and after the final same-block-use audit, directly binding the recorded timing
-binary to the retained patch. The resulting executable matched both the pinned
-Swift binary and BoringSSL for 768 digests spanning 64 B, 1 KiB, 16 KiB, and
-input offsets 0, 1, 7, and 15.
+optimized `SSLCrypto` IR through the standalone benchmark runner. The retained
+patch SHA-256 is
+`571561f22f755d026f3fa7cfd724170a9d2d17841c66d0bd7ecd92036276d754`;
+the IR SHA-256 is
+`a6b413cc2251a59f161dd5b2b6b0ba22bd19ec78bc6639b8569e6bfb715414d7`;
+and the object SHA-256 is
+`7c1c5d0ea6a5507dd9c7ff928d964e04fa9dff123571433866d658d07d747ca0`.
+The resulting executable matched pinned BoringSSL for all 768 differential
+digests: 256 mutations at each of 64 B, 1 KiB, and 16 KiB.
 
-The patched production kernel keeps `SHA256H` in place for all 16 pairs. In 30
-balanced exploratory pairs against pinned BoringSSL, it measured `1.170837x`
-at 64 B, `1.014471x` at 1 KiB, and `1.009975x` at 16 KiB. The corresponding
-95% paired bootstrap lower bounds were `1.166957x`, `1.009768x`, and
-`1.006648x`. This proves that the tied-operand compiler defect can be removed,
-but it does not satisfy the project-wide `1.10x` Native gate for the two
-block-dominated workloads.
+The patched production kernel keeps all 16 `SHA256H`/`SHA256H2` pairs adjacent.
+In 30 balanced exploratory pairs against pinned BoringSSL, it measured
+`1.207458x` at 64 B, `1.015725x` at 1 KiB, and `1.000372x` at 16 KiB. The
+corresponding 95% paired bootstrap lower bounds were `1.205406x`, `1.012672x`,
+and `1.000084x`. Thus both block-dominated workloads pass the explicit `1.0x`
+Native one-shot parity floor. They do not satisfy the separate `1.10x` target.
+The result is exploratory because the runner used the dirty live Swift tree
+and a prebuilt external `llc`; neither condition is accepted for formal release
+evidence.
 
 ## Native single-stream ceiling certificate
 

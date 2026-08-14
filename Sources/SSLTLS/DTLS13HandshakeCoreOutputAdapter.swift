@@ -408,10 +408,8 @@ enum DTLS13HandshakeCoreOutputAdapter {
           )
         }
       }
-    } catch let error as DTLS13RecordError {
+    } catch let error {
       throw .record(error)
-    } catch {
-      throw .invalidState
     }
     guard let installedReadProtector = readProtector.take(),
       let installedWriteProtector = writeProtector.take()

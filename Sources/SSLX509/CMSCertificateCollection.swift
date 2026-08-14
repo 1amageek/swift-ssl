@@ -104,7 +104,7 @@ public struct CMSCertificateCollection: Sendable {
                 limits: limits,
                 inputByteCount: encodedDER.count
             )
-        } catch let error as ResourceLimitError {
+        } catch let error {
             throw CMSCertificateCollectionError.resourceLimit(error)
         }
 
@@ -231,7 +231,7 @@ public struct CMSCertificateCollection: Sendable {
                     offset: certificate.encodedOffset,
                     count: certificate.encodedBytes.count
                 )
-            } catch let error as ByteError {
+            } catch let error {
                 throw CMSCertificateCollectionError.invalidRange(error)
             }
             if let previousRange {
@@ -244,7 +244,7 @@ public struct CMSCertificateCollection: Sendable {
             }
             do {
                 _ = try X509Certificate(der: certificate.encodedBytes)
-            } catch let error as X509CertificateError {
+            } catch let error {
                 throw CMSCertificateCollectionError.certificate(error)
             }
             ranges.append(range)
@@ -269,7 +269,7 @@ public struct CMSCertificateCollection: Sendable {
             totalCertificateBytes = updated
             do {
                 _ = try X509Certificate(der: certificate.span)
-            } catch let error as X509CertificateError {
+            } catch let error {
                 throw CMSCertificateCollectionError.certificate(error)
             }
         }
@@ -355,7 +355,7 @@ public struct CMSCertificateCollection: Sendable {
                 limits: defaultParsingLimits,
                 inputByteCount: inputByteCount
             )
-        } catch let error as ResourceLimitError {
+        } catch let error {
             throw CMSCertificateCollectionError.resourceLimit(error)
         }
     }
@@ -372,7 +372,7 @@ public struct CMSCertificateCollection: Sendable {
         do {
             element = try cursor.readElement(using: &budget)
             try cursor.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw CMSCertificateCollectionError.der(error)
         }
         try writer.append(tag: element.tag, content: element.contentBytes)
@@ -385,7 +385,7 @@ public struct CMSCertificateCollection: Sendable {
     ) throws -> DERElementView {
         do {
             return try cursor.readElement(using: &budget)
-        } catch let error as DERError {
+        } catch let error {
             throw CMSCertificateCollectionError.der(error)
         }
     }
@@ -395,7 +395,7 @@ public struct CMSCertificateCollection: Sendable {
     ) throws {
         do {
             try cursor.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw CMSCertificateCollectionError.der(error)
         }
     }
@@ -405,7 +405,7 @@ public struct CMSCertificateCollection: Sendable {
     ) throws -> UInt64 {
         do {
             return try DERPrimitiveCodec.decodePositiveInteger(from: element)
-        } catch let error as DERValueError {
+        } catch let error {
             throw CMSCertificateCollectionError.value(error)
         }
     }
@@ -415,7 +415,7 @@ public struct CMSCertificateCollection: Sendable {
     ) throws -> ContiguousArray<UInt64> {
         do {
             return try DERPrimitiveCodec.decodeObjectIdentifier(from: element)
-        } catch let error as DERValueError {
+        } catch let error {
             throw CMSCertificateCollectionError.value(error)
         }
     }

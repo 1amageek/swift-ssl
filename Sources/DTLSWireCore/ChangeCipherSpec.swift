@@ -5,7 +5,8 @@
 ///   enum { change_cipher_spec(1), (255) } type;
 /// } ChangeCipherSpec;
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 
 /// DTLS 1.2 ChangeCipherSpec message
 public struct ChangeCipherSpec: Sendable {

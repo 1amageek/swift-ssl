@@ -23,7 +23,7 @@
 /// secret) lives in the `TLSCore` adapter; this core file carries only the pure
 /// wire types.
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - Early Data Extension
 
@@ -47,7 +47,7 @@ public enum EarlyDataExtension: Sendable, TLSExtensionValue {
         case .clientHello, .encryptedExtensions:
             return []
         case .newSessionTicket(let maxSize):
-            var writer = ByteWriter(reservingCapacity: 4)
+            var writer = TLSWireWriter(reservingCapacity: 4)
             writer.writeUInt32(maxSize)
             return writer.finishArray()
         }
@@ -69,7 +69,7 @@ public enum EarlyDataExtension: Sendable, TLSExtensionValue {
             throw TLSWireError.decode(.invalidFormat("EarlyData in NewSessionTicket: expected 4 bytes"))
         }
 
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         let maxSize = try reader.wReadUInt32()
         return .newSessionTicket(maxEarlyDataSize: maxSize)
     }

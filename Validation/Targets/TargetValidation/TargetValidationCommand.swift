@@ -646,15 +646,16 @@ enum TargetValidationCommand {
           0xEF, 0x92, 0x5B, 0x8C, 0x75, 0xA4, 0x2D, 0xBC,
           0xBF, 0x57, 0xD6, 0x3C, 0xCD, 0x38, 0x16, 0x00,
         ]))
-      var setup = try HPKEX25519.setupBaseSender(
+      let setup = try HPKEX25519.setupBaseSender(
         recipientPublicKey: recipientPrivate.publicKey,
         info: info.span,
         kdf: .sha256,
         aead: aead,
         using: entropy
       )
+      let encapsulation = setup.encapsulation
       var recipient = try HPKEX25519.setupBaseRecipient(
-        encapsulation: setup.encapsulation.span,
+        encapsulation: encapsulation.span,
         recipientKeyPair: recipientPrivate,
         info: info.span,
         kdf: .sha256,
@@ -714,18 +715,19 @@ enum TargetValidationCommand {
         "4995788ef4b9d6132b249ce59a77281493eb39af373d236a1fe415cb0c2d7beb"
       )
     )
-    var setup = try SSLCrypto.HPKEP256.setupBaseSender(
+    let setup = try SSLCrypto.HPKEP256.setupBaseSender(
       recipientPublicKey: recipient.publicKey,
       info: info.span,
       kdf: .sha256,
       aead: .aes128GCM,
       using: entropy
     )
-    guard copy(setup.encapsulation.span) == expectedEncapsulation else {
+    let encapsulation = setup.encapsulation
+    guard copy(encapsulation.span) == expectedEncapsulation else {
       throw Failure.hpke
     }
     var recipientContext = try SSLCrypto.HPKEP256.setupBaseRecipient(
-      encapsulation: setup.encapsulation.span,
+      encapsulation: encapsulation.span,
       recipientKeyPair: recipient,
       info: info.span,
       kdf: .sha256,

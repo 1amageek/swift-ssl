@@ -10,12 +10,11 @@ public enum SHA256: HashFunction {
   }
 
   @inlinable
+  @inline(__always)
   public static func hash(
     _ input: Span<UInt8>,
     into output: inout MutableSpan<UInt8>
   ) throws(CryptoInputError) {
-    var context = SHA256Context()
-    try context.update(input)
-    try context.finalizeInPlace(into: &output)
+    try SHA256Context.hashOneShot(input, into: &output)
   }
 }

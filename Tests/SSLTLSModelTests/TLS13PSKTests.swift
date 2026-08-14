@@ -176,7 +176,7 @@ final class TLS13PSKTests: XCTestCase {
       cipherSuite: .aes128GCM_SHA256
     )
 
-    try actual.withBorrowedBytes { value in
+    actual.withBorrowedBytes { value in
       XCTAssertEqual(copy(value), copy(expected.span))
     }
   }

@@ -1,12 +1,13 @@
-/// Engine-local typed-throws wrappers over `P2PCoreBytes` reader/writer.
+/// Engine-local typed-throws wrappers over `NetworkingCore` reader/writer.
 ///
 /// The `dRead*` / `dWrite*` helpers in ``DTLSWireCore`` are `internal` to that
 /// target, so the engine cannot reuse them. These mirror them inside
-/// `DTLSEngineCore`: each rewraps the base ``P2PCoreBytes/ByteError`` as a
+/// `DTLSEngineCore`: each rewraps the base ``NetworkingCore/ByteError`` as a
 /// ``DTLSEngineError`` (the engine's single typed-throws surface), so no error is
 /// ever swallowed and typed-throws stays closed end-to-end (Embedded requirement).
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 import DTLSWireCore
 
 /// Decodes a complete handshake message (`rawMessage` = 12-byte header + body) into
@@ -15,7 +16,7 @@ import DTLSWireCore
 func decodeHandshakeMessage(
     _ rawMessage: [UInt8]
 ) throws(DTLSEngineError) -> (header: DTLSHandshakeHeader, body: [UInt8]) {
-    var reader = ByteReader(rawMessage)
+    var reader = TLSWireReader(rawMessage)
     let header: DTLSHandshakeHeader
     do { header = try DTLSHandshakeHeader.decode(reader: &reader) }
     catch { throw .from(wire: error) }
@@ -23,7 +24,7 @@ func decodeHandshakeMessage(
     return (header, body)
 }
 
-extension ByteReader {
+extension TLSWireReader {
     @inline(__always)
     mutating func eReadUInt8() throws(DTLSEngineError) -> UInt8 {
         do { return try readUInt8() } catch { throw .protocolFailure(reason: "byte read failed: \(error)") }
@@ -51,7 +52,7 @@ extension ByteReader {
     }
 }
 
-extension ByteWriter {
+extension TLSWireWriter {
     @inline(__always)
     mutating func eWriteVector8(_ payload: [UInt8]) throws(DTLSEngineError) {
         do { try writeVector8(payload) } catch { throw .internalError(reason: "vector8 write failed: \(error)") }

@@ -2,13 +2,14 @@
 ///
 /// This value type carries everything the engine needs to drive the cored DTLS
 /// handshake FSMs (``DTLSHandshakeCore/DTLSClientHandshake`` /
-/// ``DTLSHandshakeCore/DTLSServerHandshake``) WITHOUT pulling in Foundation,
-/// swift-crypto, or X.509. The genuinely host-coupled responsibilities — ECDHE key
+/// ``DTLSHandshakeCore/DTLSServerHandshake``) without pulling in Foundation,
+/// concrete cryptography, or X.509. The mechanism-bound responsibilities — ECDHE key
 /// agreement, the ServerKeyExchange / CertificateVerify signing and verification
 /// (a private key / X.509 trust), the HelloVerifyRequest cookie HMAC, the CSPRNG
 /// randoms, and the cipher-suite selection — are injected as `@Sendable` closures.
-/// The facade fills them: on host with the swift-crypto / swift-certificates
-/// strategy (`#if canImport(Foundation)`); X.509 therefore never enters the engine.
+/// The `swift-tls` facade fills them with `swift-ssl`'s `SSLCrypto` and `SSLX509`
+/// implementations on every supported platform; X.509 therefore never enters
+/// the engine.
 ///
 /// All security invariants live where they did before: the cookie binding check is
 /// fail-closed (a presented cookie that fails the injected verify is rejected by
@@ -16,7 +17,7 @@
 /// verified by the injected closures and folded into the core fail-closed, and the
 /// Finished MAC + anti-replay + epoch monotonicity stay in the cores / engine.
 ///
-/// Embedded-clean: no Foundation, no `any`, no swift-crypto, no X509, value type,
+/// Embedded-clean: no Foundation, no `any`, no concrete crypto, no X509, value type,
 /// typed-throws closures.
 
 import TLSWireCore
@@ -24,7 +25,7 @@ import DTLSWireCore
 import DTLSHandshakeCore
 import DTLSRecordCore
 
-public struct DTLSEngineConfiguration<C>: Sendable where C: Sendable {
+public struct DTLSEngineConfiguration: Sendable {
 
     // MARK: - Negotiation (config-dependent)
 
@@ -52,7 +53,7 @@ public struct DTLSEngineConfiguration<C>: Sendable where C: Sendable {
     // MARK: - Host-coupled crypto seams (injected closures)
 
     /// 32-byte CSPRNG random for our own ClientHello / ServerHello.
-    public var randomBytes: (@Sendable (_ count: Int) -> [UInt8])?
+    public var randomBytes: (@Sendable (_ count: Int) throws(DTLSEngineError) -> [UInt8])?
 
     /// Generates an ephemeral ECDHE key pair for `group`, returning our public key
     /// bytes plus an opaque handle the engine passes back to `ecdheAgree`. The
@@ -118,7 +119,7 @@ public struct DTLSEngineConfiguration<C>: Sendable where C: Sendable {
         requireClientCertificate: Bool = true,
         certificateChainDER: [[UInt8]] = [],
         signingScheme: SignatureScheme? = nil,
-        randomBytes: (@Sendable (_ count: Int) -> [UInt8])? = nil,
+        randomBytes: (@Sendable (_ count: Int) throws(DTLSEngineError) -> [UInt8])? = nil,
         ecdheGenerate: (@Sendable (_ group: NamedGroup) throws(DTLSEngineError) -> (publicKey: [UInt8], privateHandle: [UInt8]))? = nil,
         ecdheAgree: (@Sendable (_ group: NamedGroup, _ privateHandle: [UInt8], _ peerPublicKey: [UInt8]) throws(DTLSEngineError) -> [UInt8])? = nil,
         sign: (@Sendable (_ data: [UInt8]) throws(DTLSEngineError) -> [UInt8])? = nil,

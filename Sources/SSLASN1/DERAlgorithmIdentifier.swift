@@ -19,10 +19,8 @@ public struct DERAlgorithmIdentifier: Sendable, Hashable {
         let oidElement: DERElementView
         do {
             oidElement = try cursor.readElement(using: &budget)
-        } catch let error as DERError {
+        } catch let error {
             throw .der(error)
-        } catch {
-            throw .malformed
         }
         let objectIdentifier: ContiguousArray<UInt64>
         do {
@@ -42,10 +40,8 @@ public struct DERAlgorithmIdentifier: Sendable, Hashable {
             do {
                 parameterElement = try cursor.readElement(using: &budget)
                 try cursor.requireFullyConsumed()
-            } catch let error as DERError {
+            } catch let error {
                 throw .der(error)
-            } catch {
-                throw .malformed
             }
             let nullTag = DERTag(tagClass: .universal, isConstructed: false, number: 5)
             let oidTag = DERTag(tagClass: .universal, isConstructed: false, number: 6)
@@ -74,10 +70,8 @@ public struct DERAlgorithmIdentifier: Sendable, Hashable {
 
         do {
             try cursor.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw .der(error)
-        } catch {
-            throw .malformed
         }
         return DERAlgorithmIdentifier(
             objectIdentifier: objectIdentifier,

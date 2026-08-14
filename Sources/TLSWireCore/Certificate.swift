@@ -17,7 +17,7 @@
 /// } CertificateEntry;
 /// ```
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - Certificate Entry
 
@@ -40,7 +40,7 @@ public struct CertificateEntry: Sendable {
             extensionData.append(contentsOf: try ext.encodeBytes())
         }
 
-        var writer = ByteWriter(reservingCapacity: 3 + certData.count + 2 + extensionData.count)
+        var writer = TLSWireWriter(reservingCapacity: 3 + certData.count + 2 + extensionData.count)
         // cert_data<1..2^24-1>
         try writer.wWriteVector24(certData)
         // extensions<0..2^16-1>
@@ -48,12 +48,12 @@ public struct CertificateEntry: Sendable {
         return writer.finishArray()
     }
 
-    public static func decode(from reader: inout ByteReader) throws(TLSWireError) -> CertificateEntry {
+    public static func decode(from reader: inout TLSWireReader) throws(TLSWireError) -> CertificateEntry {
         let certData = try reader.wReadVector24()
         let extensionData = try reader.wReadVector16()
 
         var extensions: [TLSExtension] = []
-        var extReader = ByteReader(extensionData)
+        var extReader = TLSWireReader(extensionData)
         while !extReader.isAtEnd {
             let ext = try TLSExtension.decode(from: &extReader)
             extensions.append(ext)
@@ -96,7 +96,7 @@ public struct Certificate: Sendable {
             certListData.append(contentsOf: try entry.encodeBytes())
         }
 
-        var writer = ByteWriter(reservingCapacity: 1 + certificateRequestContext.count + 3 + certListData.count)
+        var writer = TLSWireWriter(reservingCapacity: 1 + certificateRequestContext.count + 3 + certListData.count)
         // certificate_request_context<0..2^8-1>
         try writer.wWriteVector8(certificateRequestContext)
         // certificate_list<0..2^24-1>
@@ -113,7 +113,7 @@ public struct Certificate: Sendable {
 
     /// Decodes Certificate from content data (without handshake header)
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> Certificate {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
 
         // certificate_request_context
         let certificateRequestContext = try reader.wReadVector8()
@@ -121,7 +121,7 @@ public struct Certificate: Sendable {
         // certificate_list
         let certListData = try reader.wReadVector24()
         var certificateList: [CertificateEntry] = []
-        var listReader = ByteReader(certListData)
+        var listReader = TLSWireReader(certListData)
         while !listReader.isAtEnd {
             certificateList.append(try CertificateEntry.decode(from: &listReader))
         }

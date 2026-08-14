@@ -1,26 +1,28 @@
 diff --git a/llvm/lib/Target/AArch64/AArch64MIPeepholeOpt.cpp b/llvm/lib/Target/AArch64/AArch64MIPeepholeOpt.cpp
-index 0ddd17cee..e8fd8e913 100644
+index 0ddd17cee..8e10224d6 100644
 --- a/llvm/lib/Target/AArch64/AArch64MIPeepholeOpt.cpp
 +++ b/llvm/lib/Target/AArch64/AArch64MIPeepholeOpt.cpp
-@@ -67,6 +67,17 @@
+@@ -67,6 +67,19 @@
  // 9. Replace UBFMXri with UBFMWri if the instruction is equivalent to a 32 bit
  //    LSR or LSL alias of UBFM.
  //
-+// 10. Preserve SHA256H's first input before the destructive update when an
-+//     immediately following SHA256H2 consumes the old value. This lets
-+//     two-address lowering keep both hash state updates in place:
++// 10. Preserve both SHA256 state inputs before their destructive updates when
++//     an immediately following SHA256H2 consumes the old first state. This
++//     lets two-address lowering keep both hash state updates in place and
++//     keeps the state-preservation moves outside the SHA256H/SHA256H2 pair:
 +//
 +//   %new0 = SHA256Hrrr %state0, %state1, %work
 +//   %new1 = SHA256H2rrr %state1, %state0, %work
 +//     ==>
 +//   %saved0 = ORRv16i8 %state0, %state0
++//   %saved1 = ORRv16i8 %state1, %state1
 +//   %new0 = SHA256Hrrr %state0, %state1, %work
 +//   %new1 = SHA256H2rrr %state1, %saved0, %work
 +//
  //===----------------------------------------------------------------------===//
  
  #include "AArch64ExpandImm.h"
-@@ -135,6 +146,7 @@ struct AArch64MIPeepholeOpt : public MachineFunctionPass {
+@@ -135,6 +148,7 @@ struct AArch64MIPeepholeOpt : public MachineFunctionPass {
    bool visitFMOVDr(MachineInstr &MI);
    bool visitUBFMXri(MachineInstr &MI);
    bool visitCopy(MachineInstr &MI);
@@ -28,7 +30,7 @@ index 0ddd17cee..e8fd8e913 100644
    bool runOnMachineFunction(MachineFunction &MF) override;
  
    StringRef getPassName() const override {
-@@ -836,6 +848,53 @@ bool AArch64MIPeepholeOpt::visitCopy(MachineInstr &MI) {
+@@ -836,6 +850,77 @@ bool AArch64MIPeepholeOpt::visitCopy(MachineInstr &MI) {
    return true;
  }
  
@@ -53,14 +55,28 @@ index 0ddd17cee..e8fd8e913 100644
 +  for (auto It = std::next(Position); It != MBB.end(); ++It)
 +    FollowingInstructions.insert(&*It);
 +
-+  SmallVector<MachineOperand *, 4> UsesToPreserve;
++  SmallVector<MachineOperand *, 4> State0UsesToPreserve;
 +  for (MachineOperand &Use : MRI->use_operands(State0)) {
 +    MachineInstr *User = Use.getParent();
 +    if (User == &MI && Use.getOperandNo() == 1)
 +      continue;
 +    if (User->getParent() == &MBB) {
 +      if (FollowingInstructions.contains(User))
-+        UsesToPreserve.push_back(&Use);
++        State0UsesToPreserve.push_back(&Use);
++      continue;
++    }
++    return false;
++  }
++
++  SmallVector<MachineOperand *, 4> State1UsesToPreserve;
++  for (MachineOperand &Use : MRI->use_operands(State1)) {
++    MachineInstr *User = Use.getParent();
++    if ((User == &MI && Use.getOperandNo() == 2) ||
++        (User == &SHA256H2 && Use.getOperandNo() == 1))
++      continue;
++    if (User->getParent() == &MBB) {
++      if (FollowingInstructions.contains(User))
++        State1UsesToPreserve.push_back(&Use);
 +      continue;
 +    }
 +    return false;
@@ -74,15 +90,25 @@ index 0ddd17cee..e8fd8e913 100644
 +  BuildMI(MBB, MI, MI.getDebugLoc(), TII->get(AArch64::ORRv16i8), SavedState0)
 +      .addReg(State0)
 +      .addReg(State0);
-+  for (MachineOperand *Use : UsesToPreserve)
++  for (MachineOperand *Use : State0UsesToPreserve)
 +    Use->setReg(SavedState0);
++  if (!State1UsesToPreserve.empty()) {
++    Register SavedState1 =
++        MRI->createVirtualRegister(MRI->getRegClass(State1));
++    BuildMI(MBB, MI, MI.getDebugLoc(), TII->get(AArch64::ORRv16i8),
++            SavedState1)
++        .addReg(State1)
++        .addReg(State1);
++    for (MachineOperand *Use : State1UsesToPreserve)
++      Use->setReg(SavedState1);
++  }
 +  return true;
 +}
 +
  bool AArch64MIPeepholeOpt::runOnMachineFunction(MachineFunction &MF) {
    if (skipFunction(MF.getFunction()))
      return false;
-@@ -927,6 +986,9 @@ bool AArch64MIPeepholeOpt::runOnMachineFunction(MachineFunction &MF) {
+@@ -927,6 +1012,9 @@ bool AArch64MIPeepholeOpt::runOnMachineFunction(MachineFunction &MF) {
        case AArch64::COPY:
          Changed |= visitCopy(MI);
          break;
@@ -94,10 +120,10 @@ index 0ddd17cee..e8fd8e913 100644
    }
 diff --git a/llvm/test/CodeGen/AArch64/sha256-paired-two-address.ll b/llvm/test/CodeGen/AArch64/sha256-paired-two-address.ll
 new file mode 100644
-index 000000000..1d5ef7ba3
+index 000000000..705e77f95
 --- /dev/null
 +++ b/llvm/test/CodeGen/AArch64/sha256-paired-two-address.ll
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,39 @@
 +; RUN: llc -verify-machineinstrs -mtriple=aarch64-linux-gnu -mattr=+sha2 < %s | FileCheck %s
 +
 +declare <4 x i32> @llvm.aarch64.crypto.sha256h(
@@ -111,17 +137,20 @@ index 000000000..1d5ef7ba3
 +  ptr %new0Pointer,
 +  ptr %new1Pointer,
 +  ptr %saved0Pointer,
++  ptr %saved1Pointer,
 +  <4 x i32> %state0,
 +  <4 x i32> %state1,
 +  <4 x i32> %work
 +) {
 +; CHECK-LABEL: sha256_paired_update:
 +; CHECK:       mov v3.16b, v0.16b
++; CHECK-NEXT:  mov v4.16b, v1.16b
 +; CHECK-NEXT:  sha256h q0, q1, v2.4s
 +; CHECK-NEXT:  sha256h2 q1, q3, v2.4s
 +; CHECK-NEXT:  str q0, [x0]
 +; CHECK-NEXT:  str q1, [x1]
 +; CHECK-NEXT:  str q3, [x2]
++; CHECK-NEXT:  str q4, [x3]
 +  %new0 = call <4 x i32> @llvm.aarch64.crypto.sha256h(
 +    <4 x i32> %state0, <4 x i32> %state1, <4 x i32> %work
 +  )
@@ -131,14 +160,15 @@ index 000000000..1d5ef7ba3
 +  store <4 x i32> %new0, ptr %new0Pointer
 +  store <4 x i32> %new1, ptr %new1Pointer
 +  store <4 x i32> %state0, ptr %saved0Pointer
++  store <4 x i32> %state1, ptr %saved1Pointer
 +  ret void
 +}
 diff --git a/llvm/test/CodeGen/AArch64/peephole-sha256-paired-two-address.mir b/llvm/test/CodeGen/AArch64/peephole-sha256-paired-two-address.mir
 new file mode 100644
-index 000000000..bb618c9d3
+index 000000000..f47c4ef8c
 --- /dev/null
 +++ b/llvm/test/CodeGen/AArch64/peephole-sha256-paired-two-address.mir
-@@ -0,0 +1,69 @@
+@@ -0,0 +1,72 @@
 +# RUN: llc -run-pass=aarch64-mi-peephole-opt -verify-machineinstrs -mtriple=aarch64-unknown-linux -o - %s | FileCheck %s
 +
 +---
@@ -152,9 +182,11 @@ index 000000000..bb618c9d3
 +    ; CHECK: [[STATE1:%[0-9]+]]:fpr128 = COPY $q1
 +    ; CHECK: [[WORK:%[0-9]+]]:fpr128 = COPY $q2
 +    ; CHECK: [[SAVED:%[0-9]+]]:fpr128 = ORRv16i8 [[STATE0]], [[STATE0]]
++    ; CHECK-NEXT: [[SAVED1:%[0-9]+]]:fpr128 = ORRv16i8 [[STATE1]], [[STATE1]]
 +    ; CHECK-NEXT: [[NEW0:%[0-9]+]]:fpr128 = SHA256Hrrr [[STATE0]], [[STATE1]], [[WORK]]
 +    ; CHECK-NEXT: [[NEW1:%[0-9]+]]:fpr128 = SHA256H2rrr [[STATE1]], [[SAVED]], [[WORK]]
 +    ; CHECK-NEXT: [[FEED_FORWARD:%[0-9]+]]:fpr128 = ORRv16i8 [[SAVED]], [[SAVED]]
++    ; CHECK-NEXT: [[FEED_FORWARD1:%[0-9]+]]:fpr128 = ORRv16i8 [[SAVED1]], [[SAVED1]]
 +    ; CHECK-NEXT: RET_ReallyLR
 +    %0:fpr128 = COPY $q0
 +    %1:fpr128 = COPY $q1
@@ -162,6 +194,7 @@ index 000000000..bb618c9d3
 +    %3:fpr128 = SHA256Hrrr %0, %1, %2
 +    %4:fpr128 = SHA256H2rrr %1, %0, %2
 +    %5:fpr128 = ORRv16i8 %0, %0
++    %6:fpr128 = ORRv16i8 %1, %1
 +    RET_ReallyLR
 +...
 +---

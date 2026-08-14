@@ -16,7 +16,7 @@
 /// 64 spaces + "TLS 1.3, client CertificateVerify" + 0x00 + Transcript-Hash
 /// ```
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - Certificate Verify Message
 
@@ -46,7 +46,7 @@ public struct CertificateVerify: Sendable {
 
     /// Encodes the CertificateVerify content (without handshake header)
     public func encodeBytes() throws(TLSWireError) -> [UInt8] {
-        var writer = ByteWriter(reservingCapacity: 2 + 2 + signature.count)
+        var writer = TLSWireWriter(reservingCapacity: 2 + 2 + signature.count)
         // algorithm (2 bytes)
         writer.writeUInt16(algorithm.rawValue)
         // signature<0..2^16-1>
@@ -63,7 +63,7 @@ public struct CertificateVerify: Sendable {
 
     /// Decodes CertificateVerify from content data (without handshake header)
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> CertificateVerify {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
 
         // algorithm
         let algorithmValue = try reader.wReadUInt16()

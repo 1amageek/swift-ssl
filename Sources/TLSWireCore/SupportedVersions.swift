@@ -14,7 +14,7 @@
 /// } SupportedVersions;
 /// ```
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - Supported Versions Extension (wrapper)
 
@@ -67,7 +67,7 @@ public struct SupportedVersionsClientHello: Sendable, TLSExtensionValue {
     }
 
     public func encodeBytes() throws(TLSWireError) -> [UInt8] {
-        var writer = ByteWriter(reservingCapacity: 1 + versions.count * 2)
+        var writer = TLSWireWriter(reservingCapacity: 1 + versions.count * 2)
         // versions<2..254> with 1-byte length prefix
         var versionsData = [UInt8]()
         versionsData.reserveCapacity(versions.count * 2)
@@ -80,7 +80,7 @@ public struct SupportedVersionsClientHello: Sendable, TLSExtensionValue {
     }
 
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> SupportedVersionsClientHello {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         let versionsData = try reader.wReadVector8()
 
         guard versionsData.count >= 2 && versionsData.count % 2 == 0 else {
@@ -88,7 +88,7 @@ public struct SupportedVersionsClientHello: Sendable, TLSExtensionValue {
         }
 
         var versions: [UInt16] = []
-        var vReader = ByteReader(versionsData)
+        var vReader = TLSWireReader(versionsData)
         while !vReader.isAtEnd {
             versions.append(try vReader.wReadUInt16())
         }
@@ -116,13 +116,13 @@ public struct SupportedVersionsServerHello: Sendable, TLSExtensionValue {
     }
 
     public func encodeBytes() throws(TLSWireError) -> [UInt8] {
-        var writer = ByteWriter(reservingCapacity: 2)
+        var writer = TLSWireWriter(reservingCapacity: 2)
         writer.writeUInt16(selectedVersion)
         return writer.finishArray()
     }
 
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> SupportedVersionsServerHello {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         let version = try reader.wReadUInt16()
         return SupportedVersionsServerHello(selectedVersion: version)
     }

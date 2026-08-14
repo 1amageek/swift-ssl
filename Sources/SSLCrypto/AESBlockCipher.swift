@@ -1,5 +1,24 @@
 import SSLCore
 
+private final class AESRoundKeyStorage: @unchecked Sendable {
+  var words: SIMD64<UInt32>
+
+  init(_ words: SIMD64<UInt32>) {
+    self.words = words
+  }
+
+  deinit {
+    // This class is the sole mutable owner. AESBlockCipher is noncopyable and
+    // only exposes immutable encryption borrows, so destruction cannot race a
+    // reader. The inout borrow addresses the field itself, not a temporary or
+    // an enclosing generic object's storage.
+    withUnsafeMutableBytes(of: &words) { bytes in
+      guard let baseAddress = bytes.baseAddress else { return }
+      SecureWipe.erase(baseAddress, byteCount: bytes.count)
+    }
+  }
+}
+
 /// AES encryption for the block primitive used by the GCM construction.
 ///
 /// The type owns its expanded key schedule. Callers must validate that both
@@ -10,11 +29,7 @@ import SSLCore
 // the block-cipher API as public surface.
 @usableFromInline
 struct AESBlockCipher: ~Copyable, Sendable {
-  #if arch(arm64) && canImport(simd)
-    private var hardwareRoundKeys: SIMD64<UInt32>
-  #else
-    private var roundKeys: SIMD64<UInt32>
-  #endif
+  private let keyStorage: AESRoundKeyStorage
   let roundCount: Int
 
   init(key: Span<UInt8>) {
@@ -66,9 +81,9 @@ struct AESBlockCipher: ~Copyable, Sendable {
         }
         round += 1
       }
-      self.hardwareRoundKeys = hardwareRoundKeys
+      self.keyStorage = AESRoundKeyStorage(hardwareRoundKeys)
     #else
-      self.roundKeys = words
+      self.keyStorage = AESRoundKeyStorage(words)
     #endif
     self.roundCount = roundCount
   }
@@ -78,7 +93,7 @@ struct AESBlockCipher: ~Copyable, Sendable {
       AESARM64Kernel.encrypt(
         input,
         into: &output,
-        roundKeys: hardwareRoundKeys,
+        roundKeys: keyStorage.words,
         roundCount: roundCount
       )
     #else
@@ -156,7 +171,7 @@ struct AESBlockCipher: ~Copyable, Sendable {
         at: offset,
         startingAt: counter,
         into: &output,
-        roundKeys: hardwareRoundKeys,
+        roundKeys: keyStorage.words,
         roundCount: roundCount
       )
     }
@@ -167,9 +182,9 @@ struct AESBlockCipher: ~Copyable, Sendable {
     var column = 0
     while column < 4 {
       #if arch(arm64) && canImport(simd)
-        let word = hardwareRoundKeys[base + column].byteSwapped
+        let word = keyStorage.words[base + column].byteSwapped
       #else
-        let word = roundKeys[base + column]
+        let word = keyStorage.words[base + column]
       #endif
       let offset = column * 4
       state[offset] ^= UInt8(truncatingIfNeeded: word >> 24)
@@ -294,31 +309,6 @@ struct AESBlockCipher: ~Copyable, Sendable {
   private static func gmul13(_ value: UInt8) -> UInt8 { gmul(value, by: 13) }
   private static func gmul14(_ value: UInt8) -> UInt8 { gmul(value, by: 14) }
 
-  deinit {
-    // Unsafe boundary invariants:
-    // - AESBlockCipher is noncopyable, so destruction wipes its unique inline
-    //   key schedule exactly once.
-    // - Each SIMD64 contains exactly 64 initialized UInt32 lanes.
-    // - deinit exposes self immutably, but no live alias can observe the unique
-    //   noncopyable value; the scoped mutating raw pointer is used only to wipe.
-    #if arch(arm64) && canImport(simd)
-      withUnsafeBytes(of: hardwareRoundKeys) { bytes in
-        guard let baseAddress = bytes.baseAddress else { return }
-        SecureWipe.erase(
-          UnsafeMutableRawPointer(mutating: baseAddress),
-          byteCount: bytes.count
-        )
-      }
-    #else
-      withUnsafeBytes(of: roundKeys) { bytes in
-        guard let baseAddress = bytes.baseAddress else { return }
-        SecureWipe.erase(
-          UnsafeMutableRawPointer(mutating: baseAddress),
-          byteCount: bytes.count
-        )
-      }
-    #endif
-  }
 }
 
 private let sBox: [UInt8] = [

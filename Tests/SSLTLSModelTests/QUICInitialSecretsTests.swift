@@ -35,7 +35,7 @@ final class QUICInitialSecretsTests: XCTestCase {
             XCTFail("an oversized destination connection ID was accepted")
         } catch {
             XCTAssertEqual(
-                error as? QUICInitialSecretsError,
+                error,
                 .invalidDestinationConnectionIDLength(actual: 21)
             )
         }

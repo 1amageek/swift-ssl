@@ -1,6 +1,6 @@
 import SSLCore
 
-#if os(macOS) && arch(arm64) && canImport(simd)
+#if os(macOS) && arch(arm64) && canImport(simd) && !SWIFT_SSL_TSAN
   package enum SHA256Pair {
     package static func hash(
       _ firstInput: Span<UInt8>,

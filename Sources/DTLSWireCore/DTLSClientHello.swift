@@ -13,7 +13,8 @@
 ///   Extension extensions<0..2^16-1>;   // optional
 /// } ClientHello;
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 import TLSWireCore
 
 /// DTLS 1.2 ClientHello message
@@ -74,7 +75,7 @@ public struct DTLSClientHello: Sendable {
 
     /// Encode the ClientHello body (without handshake header)
     public func encodeBytes() throws(DTLSWireError) -> [UInt8] {
-        var writer = ByteWriter()
+        var writer = TLSWireWriter()
 
         // client_version
         clientVersion.encode(writer: &writer)
@@ -89,7 +90,7 @@ public struct DTLSClientHello: Sendable {
         try writer.dWriteVector8(cookie)
 
         // cipher_suites
-        var suitesWriter = ByteWriter()
+        var suitesWriter = TLSWireWriter()
         for suite in cipherSuites {
             suite.encode(writer: &suitesWriter)
         }
@@ -99,7 +100,7 @@ public struct DTLSClientHello: Sendable {
         try writer.dWriteVector8([0x00])
 
         // extensions
-        var extWriter = ByteWriter()
+        var extWriter = TLSWireWriter()
         try encodeExtensions(writer: &extWriter)
         let extData = extWriter.finishArray()
         if !extData.isEmpty {
@@ -109,12 +110,12 @@ public struct DTLSClientHello: Sendable {
         return writer.finishArray()
     }
 
-    private func encodeExtensions(writer: inout ByteWriter) throws(DTLSWireError) {
+    private func encodeExtensions(writer: inout TLSWireWriter) throws(DTLSWireError) {
         // supported_groups extension (0x000A)
         if !supportedGroups.isEmpty {
             writer.writeUInt16(0x000A) // extension type
-            var groupWriter = ByteWriter()
-            var groupList = ByteWriter()
+            var groupWriter = TLSWireWriter()
+            var groupList = TLSWireWriter()
             for group in supportedGroups {
                 groupList.writeUInt16(group.rawValue)
             }
@@ -125,8 +126,8 @@ public struct DTLSClientHello: Sendable {
         // signature_algorithms extension (0x000D)
         if !signatureAlgorithms.isEmpty {
             writer.writeUInt16(0x000D) // extension type
-            var sigWriter = ByteWriter()
-            var sigList = ByteWriter()
+            var sigWriter = TLSWireWriter()
+            var sigList = TLSWireWriter()
             for scheme in signatureAlgorithms {
                 sigList.writeUInt16(scheme.rawValue)
             }
@@ -136,7 +137,7 @@ public struct DTLSClientHello: Sendable {
 
         // ec_point_formats extension (0x000B) — uncompressed only
         writer.writeUInt16(0x000B)
-        var ecWriter = ByteWriter()
+        var ecWriter = TLSWireWriter()
         try ecWriter.dWriteVector8([0x00]) // uncompressed
         try writer.dWriteVector16(ecWriter.finishArray())
 
@@ -159,7 +160,7 @@ public struct DTLSClientHello: Sendable {
 
     /// Decode a ClientHello from body data
     public static func decode(from data: [UInt8]) throws(DTLSWireError) -> DTLSClientHello {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
 
         let version = try DTLSVersion.decode(reader: &reader)
         let random = try reader.dReadBytes(32)
@@ -168,7 +169,7 @@ public struct DTLSClientHello: Sendable {
 
         // cipher_suites
         let suitesData = try reader.dReadVector16()
-        var suitesReader = ByteReader(suitesData)
+        var suitesReader = TLSWireReader(suitesData)
         var suites: [DTLSCipherSuite] = []
         while !suitesReader.isAtEnd {
             let value = try suitesReader.dReadUInt16()
@@ -189,16 +190,16 @@ public struct DTLSClientHello: Sendable {
 
         if !reader.isAtEnd {
             let extData = try reader.dReadVector16()
-            var extReader = ByteReader(extData)
+            var extReader = TLSWireReader(extData)
             while !extReader.isAtEnd {
                 let extType = try extReader.dReadUInt16()
                 let extBody = try extReader.dReadVector16()
 
                 switch extType {
                 case 0x000A: // supported_groups
-                    var groupReader = ByteReader(extBody)
+                    var groupReader = TLSWireReader(extBody)
                     let groupList = try groupReader.dReadVector16()
-                    var groupListReader = ByteReader(groupList)
+                    var groupListReader = TLSWireReader(groupList)
                     while !groupListReader.isAtEnd {
                         let value = try groupListReader.dReadUInt16()
                         if let group = NamedGroup(rawValue: value) {
@@ -206,9 +207,9 @@ public struct DTLSClientHello: Sendable {
                         }
                     }
                 case 0x000D: // signature_algorithms
-                    var sigReader = ByteReader(extBody)
+                    var sigReader = TLSWireReader(extBody)
                     let sigList = try sigReader.dReadVector16()
-                    var sigListReader = ByteReader(sigList)
+                    var sigListReader = TLSWireReader(sigList)
                     while !sigListReader.isAtEnd {
                         let value = try sigListReader.dReadUInt16()
                         if let scheme = SignatureScheme(rawValue: value) {

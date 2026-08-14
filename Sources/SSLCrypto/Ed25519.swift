@@ -40,7 +40,6 @@ public enum Ed25519: DigitalSignature {
       throw .invalidSignature
     }
     let challenge = Scalar.reduce(digest.span)
-    Self.wipe(&digest)
 
     let verificationPoint = EdwardsPoint.doubleScalarMultiplyBase(
       baseScalar: scalarBytes,
@@ -113,12 +112,6 @@ public enum Ed25519: DigitalSignature {
       .encoded
   }
 
-  private static func wipe(_ bytes: inout ContiguousArray<UInt8>) {
-    bytes.withUnsafeMutableBufferPointer { buffer in
-      guard let baseAddress = buffer.baseAddress else { return }
-      SecureWipe.erase(UnsafeMutableRawPointer(baseAddress), byteCount: buffer.count)
-    }
-  }
 }
 
 /// Ed25519 private seed owner implementing deterministic RFC 8032 signing.
@@ -545,43 +538,29 @@ struct EdwardsPoint: Sendable {
     return result
   }
 
-  /// Computes `[baseScalar]B - [scalar]point` in one public-data wNAF walk.
+  /// Computes `[baseScalar]B - [scalar]point` in one public-data bit walk.
   static func doubleScalarMultiplyBase(
     baseScalar: Span<UInt8>,
     subtracting point: EdwardsPoint,
     scalar: Span<UInt8>
   ) -> EdwardsPoint {
     precondition(baseScalar.count == 32 && scalar.count == 32)
-    let baseWindow = EdwardsPublicOddWindow(base: EdwardsPoint.base)
-    let pointWindow = EdwardsPublicOddWindow(base: point)
-
-    // Unsafe boundary invariants:
-    // - The temporary owner contains exactly 512 initialized Int8 digits.
-    // - Each half is indexed only within 0..<256.
-    // - Digits are public and constrained to zero or odd values in -15...15.
-    // - The buffer is borrowed only by this synchronous closure and never escapes.
-    return withUnsafeTemporaryAllocation(of: Int8.self, capacity: 512) { digits in
-      var baseValue = EdwardsWNAFScalar(baseScalar)
-      var pointValue = EdwardsWNAFScalar(scalar)
-      baseValue.recode(into: UnsafeMutableBufferPointer(rebasing: digits[0..<256]))
-      pointValue.recode(into: UnsafeMutableBufferPointer(rebasing: digits[256..<512]))
-
-      var result = EdwardsPoint.identity
-      var bit = 255
-      while bit >= 0 {
-        result = result.double()
-        let baseDigit = digits[bit]
-        if baseDigit != 0 {
-          result = result.add(baseWindow.point(for: baseDigit))
-        }
-        let pointDigit = digits[256 + bit]
-        if pointDigit != 0 {
-          result = result.add(pointWindow.point(for: -pointDigit))
-        }
-        bit -= 1
+    let subtractedPoint = point.negated()
+    var result = EdwardsPoint.identity
+    var bit = 255
+    while bit >= 0 {
+      result = result.double()
+      let byteIndex = bit >> 3
+      let bitOffset = UInt8(bit & 7)
+      if ((baseScalar[byteIndex] >> bitOffset) & 1) != 0 {
+        result = result.add(EdwardsPoint.base)
       }
-      return result
+      if ((scalar[byteIndex] >> bitOffset) & 1) != 0 {
+        result = result.add(subtractedPoint)
+      }
+      bit -= 1
     }
+    return result
   }
 
   @inline(__always)
@@ -758,130 +737,5 @@ private struct EdwardsPublicWindow {
     case 15: point15
     default: EdwardsPoint.identity
     }
-  }
-}
-
-private struct EdwardsPublicOddWindow {
-  let point1: EdwardsPoint
-  let point3: EdwardsPoint
-  let point5: EdwardsPoint
-  let point7: EdwardsPoint
-  let point9: EdwardsPoint
-  let point11: EdwardsPoint
-  let point13: EdwardsPoint
-  let point15: EdwardsPoint
-
-  init(base: EdwardsPoint) {
-    let doubled = base.double()
-    point1 = base
-    point3 = point1.add(doubled)
-    point5 = point3.add(doubled)
-    point7 = point5.add(doubled)
-    point9 = point7.add(doubled)
-    point11 = point9.add(doubled)
-    point13 = point11.add(doubled)
-    point15 = point13.add(doubled)
-  }
-
-  @inline(__always)
-  func point(for digit: Int8) -> EdwardsPoint {
-    let magnitude = digit < 0 ? -digit : digit
-    let selected: EdwardsPoint
-    switch magnitude {
-    case 1: selected = point1
-    case 3: selected = point3
-    case 5: selected = point5
-    case 7: selected = point7
-    case 9: selected = point9
-    case 11: selected = point11
-    case 13: selected = point13
-    case 15: selected = point15
-    default: preconditionFailure("Invalid wNAF digit")
-    }
-    return digit < 0 ? selected.negated() : selected
-  }
-}
-
-private struct EdwardsWNAFScalar {
-  var word0: UInt64
-  var word1: UInt64
-  var word2: UInt64
-  var word3: UInt64
-
-  init(_ scalar: Span<UInt8>) {
-    precondition(scalar.count == 32)
-    word0 = Self.loadWord(scalar, offset: 0)
-    word1 = Self.loadWord(scalar, offset: 8)
-    word2 = Self.loadWord(scalar, offset: 16)
-    word3 = Self.loadWord(scalar, offset: 24)
-  }
-
-  mutating func recode(into digits: UnsafeMutableBufferPointer<Int8>) {
-    precondition(digits.count == 256)
-    var bit = 0
-    while bit < 256 {
-      var digit: Int8 = 0
-      if word0 & 1 == 1 {
-        var value = Int8(word0 & 31)
-        if value > 16 {
-          value -= 32
-        }
-        digit = value
-        if value > 0 {
-          subtractSmall(UInt64(value))
-        } else {
-          addSmall(UInt64(-value))
-        }
-      }
-      digits[bit] = digit
-      shiftRight()
-      bit += 1
-    }
-    precondition(word0 | word1 | word2 | word3 == 0)
-  }
-
-  private mutating func addSmall(_ value: UInt64) {
-    let (sum0, carry0) = word0.addingReportingOverflow(value)
-    word0 = sum0
-    guard carry0 else { return }
-    let (sum1, carry1) = word1.addingReportingOverflow(1)
-    word1 = sum1
-    guard carry1 else { return }
-    let (sum2, carry2) = word2.addingReportingOverflow(1)
-    word2 = sum2
-    if carry2 {
-      word3 &+= 1
-    }
-  }
-
-  private mutating func subtractSmall(_ value: UInt64) {
-    let (difference0, borrow0) = word0.subtractingReportingOverflow(value)
-    word0 = difference0
-    guard borrow0 else { return }
-    let (difference1, borrow1) = word1.subtractingReportingOverflow(1)
-    word1 = difference1
-    guard borrow1 else { return }
-    let (difference2, borrow2) = word2.subtractingReportingOverflow(1)
-    word2 = difference2
-    if borrow2 {
-      word3 &-= 1
-    }
-  }
-
-  private mutating func shiftRight() {
-    word0 = (word0 >> 1) | (word1 << 63)
-    word1 = (word1 >> 1) | (word2 << 63)
-    word2 = (word2 >> 1) | (word3 << 63)
-    word3 >>= 1
-  }
-
-  private static func loadWord(_ bytes: Span<UInt8>, offset: Int) -> UInt64 {
-    var result: UInt64 = 0
-    var index = 0
-    while index < 8 {
-      result |= UInt64(bytes[offset + index]) << UInt64(index * 8)
-      index += 1
-    }
-    return result
   }
 }

@@ -10,7 +10,8 @@
 /// TLS 1.3 uses only 4 bytes (type + length). DTLS adds 8 bytes for
 /// message sequencing and fragmentation support.
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 
 /// DTLS handshake message header
 public struct DTLSHandshakeHeader: Sendable, Equatable {
@@ -52,7 +53,7 @@ public struct DTLSHandshakeHeader: Sendable, Equatable {
     }
 
     /// Encode header to wire format
-    public func encode(writer: inout ByteWriter) throws(DTLSWireError) {
+    public func encode(writer: inout TLSWireWriter) throws(DTLSWireError) {
         writer.writeUInt8(messageType.rawValue)
         try writer.dWriteUInt24(length)
         writer.writeUInt16(messageSeq)
@@ -61,7 +62,7 @@ public struct DTLSHandshakeHeader: Sendable, Equatable {
     }
 
     /// Decode header from wire format
-    public static func decode(reader: inout ByteReader) throws(DTLSWireError) -> DTLSHandshakeHeader {
+    public static func decode(reader: inout TLSWireReader) throws(DTLSWireError) -> DTLSHandshakeHeader {
         let typeRaw = try reader.dReadUInt8()
         guard let messageType = DTLSHandshakeType(rawValue: typeRaw) else {
             throw DTLSWireError.dtls(.invalidFormat("Unknown handshake type: \(typeRaw)"))
@@ -86,7 +87,7 @@ public struct DTLSHandshakeHeader: Sendable, Equatable {
         messageSeq: UInt16,
         body: [UInt8]
     ) throws(DTLSWireError) -> [UInt8] {
-        var writer = ByteWriter()
+        var writer = TLSWireWriter()
         let header = DTLSHandshakeHeader(
             messageType: type,
             length: UInt32(body.count),
@@ -128,7 +129,7 @@ public struct DTLSHandshakeHeader: Sendable, Equatable {
 
             let fragmentBody = Array(body[offset..<(offset + fragmentLength)])
 
-            var writer = ByteWriter()
+            var writer = TLSWireWriter()
             let header = DTLSHandshakeHeader(
                 messageType: type,
                 length: totalLength,

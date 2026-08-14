@@ -11,7 +11,8 @@
 ///   } signed_params;
 /// } ServerKeyExchange;
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 import TLSWireCore
 
 /// DTLS 1.2 ServerKeyExchange message for ECDHE
@@ -42,7 +43,7 @@ public struct ServerKeyExchange: Sendable {
 
     /// Encode the EC params portion (for signing)
     public static func encodeParams(namedGroup: NamedGroup, publicKey: [UInt8]) throws(DTLSWireError) -> [UInt8] {
-        var writer = ByteWriter()
+        var writer = TLSWireWriter()
         // ECParameters: curve_type = named_curve (3)
         writer.writeUInt8(0x03)
         // named_curve
@@ -54,7 +55,7 @@ public struct ServerKeyExchange: Sendable {
 
     /// Encode the full ServerKeyExchange body
     public func encodeBytes() throws(DTLSWireError) -> [UInt8] {
-        var writer = ByteWriter()
+        var writer = TLSWireWriter()
 
         // EC parameters
         writer.writeUInt8(0x03) // curve_type = named_curve
@@ -71,7 +72,7 @@ public struct ServerKeyExchange: Sendable {
 
     /// Decode from body data
     public static func decode(from data: [UInt8]) throws(DTLSWireError) -> ServerKeyExchange {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
 
         // EC parameters
         let curveType = try reader.dReadUInt8()

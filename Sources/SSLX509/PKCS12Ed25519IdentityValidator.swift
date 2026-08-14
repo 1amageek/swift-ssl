@@ -15,7 +15,7 @@ enum PKCS12Ed25519IdentityValidator {
         let certificate: X509Certificate
         do {
             certificate = try X509Certificate(der: leafCertificate.span)
-        } catch let error as X509CertificateError {
+        } catch let error {
             throw PKCS12IdentityError.certificate(error)
         }
         guard certificate.subjectPublicKeyInfo.isEd25519 else {

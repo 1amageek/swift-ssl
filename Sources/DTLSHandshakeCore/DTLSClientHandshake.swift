@@ -2,11 +2,9 @@
 ///
 /// A single value-type, sans-IO, caller-locked finite state machine spanning
 /// ClientHello through the server Finished. It performs **no I/O**, holds **no
-/// lock**, and never reaches for a clock — the `DTLSCore` adapter owns the `Mutex`,
-/// parses wire bytes ↔ Foundation `Data`, performs the X.509-bound signature
-/// operations (ServerKeyExchange verification, the client CertificateVerify
-/// signing), runs the ECDHE key agreement, generates the handshake randoms, and
-/// drives this core under its lock.
+/// lock**, and never reaches for a clock — `DTLSClientEngine` owns framing and
+/// drives this state machine, while `swift-tls` owns the `Mutex` and supplies the
+/// X.509-bound signature operations, ECDHE agreement, and handshake randomness.
 ///
 /// ## State
 /// ```
@@ -26,21 +24,20 @@
 /// - **The server ServerKeyExchange signature** is verified by the adapter (X.509);
 ///   the core surfaces the signed bytes and folds the result fail-closed.
 ///
-/// What stays adapter-side: the ServerKeyExchange / CertificateVerify X.509
+/// What stays facade-side: the ServerKeyExchange / CertificateVerify X.509
 /// signature operations, the ECDHE key agreement, the CSPRNG randoms, and the
-/// wire ↔ `Data` bridging.
+/// protocol-to-mechanism adaptation.
 ///
-/// Generic over `C: CryptoProvider`; the adapter specialises at
-/// `C = TLSCryptoProvider`. Embedded-clean: no Foundation, no `any`, no Mutex,
-/// no ContinuousClock, no swift-crypto, no X.509, typed throws, no key paths.
+/// Crypto operations are supplied through the concrete PRF and transcript
+/// contexts. Embedded-clean: no Foundation, no `any`, no Mutex, no
+/// ContinuousClock, no concrete crypto, no X.509, typed throws, no key paths.
 
-import P2PCoreBytes
-import P2PCoreCrypto
+import NetworkingCore
 import TLSWireCore
 import DTLSWireCore
 
 /// The DTLS 1.2 client handshake FSM over the crypto seam.
-public struct DTLSClientHandshake<C: CryptoProvider>: Sendable {
+public struct DTLSClientHandshake: Sendable {
 
     // MARK: - State
 

@@ -111,6 +111,8 @@ run_sanitizer() {
     address_enabled=NO
     thread_enabled=NO
     undefined_enabled=NO
+    swift_batch_mode=YES
+    sanitizer_compilation_conditions='$(inherited)'
 
     case "$sanitizer_name" in
         asan)
@@ -118,6 +120,15 @@ run_sanitizer() {
             ;;
         tsan)
             thread_enabled=YES
+            # The pinned Swift 6.4 frontend cannot TSan-instrument the custom
+            # ARM64 SHA-256 load intrinsic. TSan therefore exercises the same
+            # public API through the scalar kernel, while ASan and UBSan retain
+            # coverage of the production ARM64 kernel.
+            swift_batch_mode=NO
+            sanitizer_compilation_conditions='$(inherited) SWIFT_SSL_TSAN'
+            printf '%s\n' \
+                "TSan: scalar SHA-256 kernel; ASan/UBSan: production ARM64 kernel" \
+                >"$artifact_directory/tsan-coverage.txt"
             ;;
         ubsan)
             undefined_enabled=YES
@@ -145,6 +156,8 @@ run_sanitizer() {
         -enableAddressSanitizer "$address_enabled" \
         -enableThreadSanitizer "$thread_enabled" \
         -enableUndefinedBehaviorSanitizer "$undefined_enabled" \
+        SWIFT_ENABLE_BATCH_MODE="$swift_batch_mode" \
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS="$sanitizer_compilation_conditions" \
         >"$log_path" 2>&1
     status=$?
     set -e

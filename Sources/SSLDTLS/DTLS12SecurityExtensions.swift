@@ -94,10 +94,8 @@ public struct DTLS12SecurityExtensions: Sendable, Equatable {
         try result.append(bytes)
       }
       return result.finish()
-    } catch let error as ByteError {
+    } catch let error {
       throw .bytes(error)
-    } catch {
-      throw DTLS12ExtensionError.malformed
     }
   }
 

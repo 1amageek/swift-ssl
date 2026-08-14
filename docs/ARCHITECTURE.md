@@ -17,9 +17,11 @@ The current package graph is:
 
 ```mermaid
 flowchart TD
-    Types["TLSTypes\nswift-tls-types vocabulary"]
-    Core["SSLCore\nbytes, ownership, limits, capabilities"]
-    Crypto["SSLCrypto\nSHA-2/3, HMAC/HKDF, AEAD, X25519, P-256, ML-KEM, DRBG, and primitive contracts"]
+    Net["NetworkingCore / NetworkingTime\nprotocol-neutral substrate"]
+    Types["TLSTypes\nswift-networking vocabulary"]
+    Contracts["SSLCryptoContracts\nprimitive capability protocols"]
+    Core["SSLCore\nsecret ownership, limits, capabilities"]
+    Crypto["SSLCrypto\nSHA-2/3, HMAC/HKDF, AEAD, X25519, P-256, ML-KEM, DRBG"]
     ASN1["SSLASN1\nstrict DER foundation"]
     X509["SSLX509\ncertificate-byte models"]
     TLS["SSLTLS\nTLS 1.3 engines, records, and actions"]
@@ -27,8 +29,11 @@ flowchart TD
     QUIC["SSLQUIC\nordered QUIC TLS output models"]
     Facade["SSL\numbrella and application composition"]
 
+    Net --> Core
     Types --> Core
     Types --> TLS
+    Contracts --> Core
+    Contracts --> Crypto
     Core --> Crypto
     Core --> ASN1
     Crypto --> X509
@@ -52,7 +57,11 @@ flowchart TD
 
 Dependencies between responsibility modules flow downward only. `SSL` is the package umbrella: it re-exports those modules for one-import application use while retaining their separate ownership boundaries. It also owns only application composition, including protocol-backed TLS 1.3 client/server factories; cryptographic and protocol implementations remain in their responsibility modules.
 
-Entropy and clock interfaces and their system implementations live in `SSLCore`. They are composed by purpose—entropy for cryptographic operations, wall time for certificate verification, and monotonic time for DTLS—rather than through one all-capabilities container. Native uses the host POSIX clock backend; WASI and Embedded WASI use WASI clock syscalls. Application storage, trust acquisition, and transport remain injected capabilities.
+Entropy ownership remains in `SSLCore`. Clock and timer interfaces live in
+`swift-networking/NetworkingTime`; their POSIX and WASI implementations live in
+`NetworkingPOSIX` and `NetworkingWASI`. They are composed by purpose rather than
+through one all-capabilities container. Application storage, trust acquisition,
+and transport remain injected capabilities.
 
 ### 2.1 Workspace ecosystem boundary
 
@@ -89,15 +98,17 @@ The cross-package source of truth is
 
 | Module | Owns | Must not own |
 |---|---|---|
-| `TLSTypes` (`swift-tls-types`) | Implementation-independent TLS vocabulary: role, version, cipher-suite identifiers, encryption level, ALPN, and opaque server-name values | Secret ownership, parsing, cryptographic algorithms, policy decisions, transport I/O |
-| `SSLCore` | Owned byte storage, scoped byte borrows, checked cursors/builders, resource limits, `TLSTrafficSecret` ownership/wipe/borrow, constant-time utilities, entropy/time capability protocols, shared error primitives | Algorithms, ASN.1 meaning, sockets, Foundation data types |
+| `NetworkingCore` / `NetworkingTime` (`swift-networking`) | Protocol-neutral owned bytes, scoped borrows, checked cursors/builders, IP values, instants, clocks, and timers | TLS parsing, secrets, algorithms, sockets |
+| `TLSTypes` (`swift-networking`) | Implementation-independent TLS vocabulary: role, version, cipher-suite identifiers, encryption level, ALPN, and opaque server-name values | Secret ownership, parsing, cryptographic algorithms, policy decisions, transport I/O |
+| `SSLCryptoContracts` | Primitive capability protocols and typed primitive errors | Concrete algorithms, TLS, PKI, transport |
+| `SSLCore` | Resource limits, `TLSTrafficSecret` ownership/wipe/borrow, constant-time utilities, entropy capability, shared security errors, and re-exports of networking substrates | Algorithms, ASN.1 meaning, sockets, Foundation data types |
 | `SSLCrypto` | Hash, MAC, KDF, AEAD, key agreement, KEM, signatures, HPKE, fixed-width field/scalar arithmetic, and algorithm policy gates | Certificate policy, TLS negotiation, vocabulary identifiers, OS entropy selection, arbitrary public mutable big integers |
 | `SSLASN1` | Strict DER TLV parser/writer, OID and primitive codecs, RFC 7468 PEM boundaries, parse budgets | Certificate validation, BER normalization, algorithm policy, file I/O |
 | `SSLX509` | Immutable certificate/CRL/OCSP models, SPKI and private-key containers, path building, RFC 5280 policy, service identity, revocation evidence validation | Network fetching, global trust, UI, silent CN fallback |
 | `SSLTLS` | TLS 1.3 handshake and record layers, main/post-handshake server/client certificate authentication with Ed25519, P-256 ECDSA, or RSA-PSS, X25519/`secp256r1`/pinned-hybrid key exchange, DTLS 1.3 framing/replay/flight state, transcript/key schedule, ticket/state/PSK binder primitives, resumption, 0-RTT policy, ECH, alerts, and correlated credential/signature/trust capability suspension | Socket I/O, event loops, DNS, persistent stores, private-key services, and QUIC packet protection |
 | `SSLDTLS` | Complete sans-I/O DTLS 1.2 WebRTC mechanism: wire codecs, handshake FSM, ECDHE/signature/certificate seams, cookie/address validation, bounded fragmentation, anti-replay, flights/retransmission state, SRTP negotiation/export, and AES-GCM record protection | Transport I/O, WebRTC SDP/fingerprint policy, ICE, SRTP media packet processing, SCTP, and application lifecycle |
 | `SSLQUIC` | Mapping complete, ordered TLS handshake messages, encryption levels, alerts, and traffic-secret events to RFC 9001 | CRYPTO offsets/reassembly, QUIC packets, header protection, loss recovery, congestion control, QUIC key phase |
-| `SSLCore` system adapters | Concrete entropy, realtime clock, and monotonic clock backends with typed failures and one cross-target protocol contract | Storage policy, trust acquisition, transport, or target-specific weakening of ownership/concurrency contracts |
+| Platform adapters | `SSLCore` supplies entropy; `NetworkingPOSIX`/`NetworkingWASI` supply clocks and timers with typed failures and one cross-target protocol contract | Storage policy, trust acquisition, transport, or target-specific weakening of ownership/concurrency contracts |
 | `SSL` | One-import umbrella, curated primitive adapters, and protocol-backed TLS client/server composition over explicit platform and external credential/trust capabilities | Duplicate cryptographic/protocol implementation, socket ownership, private-key service ownership, or hidden fallback |
 
 ## 4. Ownership and zero-copy model

@@ -87,6 +87,12 @@ public struct SHA1Context: ~Copyable, HashContext, Sendable {
   public consuming func finalize(
     into output: inout MutableSpan<UInt8>
   ) throws(CryptoInputError) {
+    try finalizeInPlace(into: &output)
+  }
+
+  package mutating func finalizeInPlace(
+    into output: inout MutableSpan<UInt8>
+  ) throws(CryptoInputError) {
     guard output.count == Self.digestByteCount else {
       throw .invalidOutputLength(expected: Self.digestByteCount, actual: output.count)
     }
@@ -198,7 +204,7 @@ public struct SHA1Context: ~Copyable, HashContext, Sendable {
     state[4] &+= e
   }
 
-  private mutating func eraseSensitiveState() {
+  package mutating func eraseSensitiveState() {
     state = [UInt32](repeating: 0, count: 5)
     pendingBytes = SIMD64<UInt8>(repeating: 0)
     pendingByteCount = 0

@@ -10,7 +10,7 @@
 ///
 /// The selected crypto provider supplies concrete SHA-256 and SHA-384 HMAC
 /// functions once, when the engine configuration is built. The handshake core
-/// therefore does not invoke a `CryptoProvider` associated-type witness while a
+/// therefore does not invoke an associated-type provider witness while a
 /// handshake is running. This is important on normal WASM, where cross-module
 /// generic protocol witnesses are not a reliable runtime ownership boundary.
 ///

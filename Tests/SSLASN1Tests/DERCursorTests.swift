@@ -37,7 +37,7 @@ final class DERCursorTests: XCTestCase {
             _ = try cursor.readElement(using: &budget)
             XCTFail("Indefinite-length BER was accepted as DER")
         } catch {
-            XCTAssertEqual(error as? DERError, .indefiniteLength(offset: 1))
+            XCTAssertEqual(error, .indefiniteLength(offset: 1))
         }
     }
 
@@ -50,7 +50,7 @@ final class DERCursorTests: XCTestCase {
             _ = try cursor.readElement(using: &budget)
             XCTFail("A nonminimal length was accepted")
         } catch {
-            XCTAssertEqual(error as? DERError, .nonMinimalLength(offset: 1))
+            XCTAssertEqual(error, .nonMinimalLength(offset: 1))
         }
     }
 
@@ -64,7 +64,7 @@ final class DERCursorTests: XCTestCase {
             XCTFail("Truncated content was accepted")
         } catch {
             XCTAssertEqual(
-                error as? DERError,
+                error,
                 .truncated(offset: 2, requested: 2, available: 1)
             )
         }

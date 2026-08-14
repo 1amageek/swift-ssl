@@ -11,7 +11,7 @@
 /// } ServerHello;
 /// ```
 
-import P2PCoreBytes
+import NetworkingCore
 
 /// TLS 1.3 ServerHello message
 public struct ServerHello: Sendable {
@@ -73,7 +73,7 @@ public struct ServerHello: Sendable {
 
     /// Encodes the ServerHello content (without handshake header)
     public func encodeBytes() throws(TLSWireError) -> [UInt8] {
-        var writer = ByteWriter(reservingCapacity: 128)
+        var writer = TLSWireWriter(reservingCapacity: 128)
 
         // legacy_version (2 bytes) - always 0x0303 for TLS 1.3
         writer.writeUInt16(TLSConstants.legacyVersion)
@@ -109,7 +109,7 @@ public struct ServerHello: Sendable {
 
     /// Decodes a ServerHello from content data (without handshake header)
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> ServerHello {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
 
         // legacy_version
         let legacyVersion = try reader.wReadUInt16()

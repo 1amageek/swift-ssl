@@ -6,7 +6,7 @@ enum SHA256Compression {
     at offset: Int,
     blockCount: Int
   ) {
-    #if os(macOS) && arch(arm64) && canImport(simd)
+    #if os(macOS) && arch(arm64) && canImport(simd) && !SWIFT_SSL_TSAN
       // Unsafe invariants: the caller has established `offset >= 0`,
       // `blockCount > 0`, and `blockCount * 64` bytes in `input`; therefore
       // every block offset is representable and in range. The span's owner
@@ -46,7 +46,7 @@ enum SHA256Compression {
     state: inout SIMD8<UInt32>,
     pendingBytes: borrowing SIMD64<UInt8>
   ) {
-    #if os(macOS) && arch(arm64) && canImport(simd)
+    #if os(macOS) && arch(arm64) && canImport(simd) && !SWIFT_SSL_TSAN
       withUnsafeBytes(of: pendingBytes) { bytes in
         SHA256ARM64Kernel.compressBlocks(
           state: &state,
@@ -79,7 +79,7 @@ enum SHA256Compression {
     initialSchedule[14] = UInt32(truncatingIfNeeded: bitCount >> 32)
     initialSchedule[15] = UInt32(truncatingIfNeeded: bitCount)
 
-    #if os(macOS) && arch(arm64) && canImport(simd)
+    #if os(macOS) && arch(arm64) && canImport(simd) && !SWIFT_SSL_TSAN
       SHA256ARM64Kernel.compress(
         state: &state,
         initialSchedule: initialSchedule
@@ -103,7 +103,7 @@ enum SHA256Compression {
     )
   }
 
-  #if os(macOS) && arch(arm64) && canImport(simd)
+  #if os(macOS) && arch(arm64) && canImport(simd) && !SWIFT_SSL_TSAN
     @inline(__always)
     static func compressUsingARM64SHA2(
       state: inout SIMD8<UInt32>,

@@ -192,7 +192,7 @@ package struct KeccakCore: ~Copyable, @unchecked Sendable {
           fromByteOffset: laneIndex * 8,
           as: UInt64.self
         )
-        state[laneIndex] ^= UInt64(littleEndian: word)
+        xorLane(at: laneIndex, with: UInt64(littleEndian: word))
         laneIndex += 1
       }
     }
@@ -221,7 +221,16 @@ package struct KeccakCore: ~Copyable, @unchecked Sendable {
     precondition(index >= 0 && index < rateByteCount)
     let laneIndex = index / 8
     let shift = UInt64((index & 7) * 8)
-    state[laneIndex] ^= UInt64(byte) << shift
+    xorLane(at: laneIndex, with: UInt64(byte) << shift)
+  }
+
+  /// Performs an explicit load/store instead of a pointer-subscript compound
+  /// assignment. Swift 6.4's TSan instrumentation cannot lower the implicit
+  /// inout access formed by that compound assignment on this noncopyable owner.
+  @inline(__always)
+  private func xorLane(at index: Int, with value: UInt64) {
+    precondition(index >= 0 && index < 25)
+    state[index] = state[index] ^ value
   }
 
   @inline(__always)
@@ -243,31 +252,31 @@ package struct KeccakCore: ~Copyable, @unchecked Sendable {
       let d3 = c2 ^ c4.rotatingLeft(by: 1)
       let d4 = c3 ^ c0.rotatingLeft(by: 1)
 
-      state[0] ^= d0
-      state[5] ^= d0
-      state[10] ^= d0
-      state[15] ^= d0
-      state[20] ^= d0
-      state[1] ^= d1
-      state[6] ^= d1
-      state[11] ^= d1
-      state[16] ^= d1
-      state[21] ^= d1
-      state[2] ^= d2
-      state[7] ^= d2
-      state[12] ^= d2
-      state[17] ^= d2
-      state[22] ^= d2
-      state[3] ^= d3
-      state[8] ^= d3
-      state[13] ^= d3
-      state[18] ^= d3
-      state[23] ^= d3
-      state[4] ^= d4
-      state[9] ^= d4
-      state[14] ^= d4
-      state[19] ^= d4
-      state[24] ^= d4
+      xorLane(at: 0, with: d0)
+      xorLane(at: 5, with: d0)
+      xorLane(at: 10, with: d0)
+      xorLane(at: 15, with: d0)
+      xorLane(at: 20, with: d0)
+      xorLane(at: 1, with: d1)
+      xorLane(at: 6, with: d1)
+      xorLane(at: 11, with: d1)
+      xorLane(at: 16, with: d1)
+      xorLane(at: 21, with: d1)
+      xorLane(at: 2, with: d2)
+      xorLane(at: 7, with: d2)
+      xorLane(at: 12, with: d2)
+      xorLane(at: 17, with: d2)
+      xorLane(at: 22, with: d2)
+      xorLane(at: 3, with: d3)
+      xorLane(at: 8, with: d3)
+      xorLane(at: 13, with: d3)
+      xorLane(at: 18, with: d3)
+      xorLane(at: 23, with: d3)
+      xorLane(at: 4, with: d4)
+      xorLane(at: 9, with: d4)
+      xorLane(at: 14, with: d4)
+      xorLane(at: 19, with: d4)
+      xorLane(at: 24, with: d4)
 
       let b0 = state[0]
       let b10 = state[1].rotatingLeft(by: 1)
@@ -321,7 +330,7 @@ package struct KeccakCore: ~Copyable, @unchecked Sendable {
       state[23] = b23 ^ ((~b24) & b20)
       state[24] = b24 ^ ((~b20) & b21)
 
-      state[0] ^= Self.roundConstants[round]
+      xorLane(at: 0, with: Self.roundConstants[round])
       round += 1
     }
   }

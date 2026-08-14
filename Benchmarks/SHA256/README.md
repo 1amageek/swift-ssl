@@ -46,12 +46,14 @@ The Swift worker acquires mutable input and output spans once per measured
 batch. The runner inspects the resulting machine code and rejects a worker when
 the timed loop contains a copy-on-write uniqueness check, buffer growth,
 allocation, retain/release, `memcpy`, or `memmove`, or when it directly calls
-anything outside the selected contract: one `SHA256Context` initializer,
-`update`, and `finalizeInPlace` for one-message mode, or one `SHA256.hashBatch`
-call for pair mode. The two current `ContiguousArray` uniqueness checks occur
-before the loop and are paid once per batch, not once per digest operation.
-One-message mode also validates the complete direct-call sets of both context
-functions.
+anything outside the selected contract: one package-internal
+`SHA256Context.hashOneShot` call for one-message mode, or one
+`SHA256.hashBatch` call for pair mode. `hashOneShot` owns the context setup,
+complete-block compression, bounded tail copy, and finalization for the public
+one-shot API. The two current `ContiguousArray` uniqueness checks occur before
+the loop and are paid once per batch, not once per digest operation. One-message
+mode separately validates the direct-call sets and machine-code contracts of
+the helper's context and ARM64 compression paths.
 
 The runner also inspects the active production ARM64 SHA-256 kernel. The
 single-message loop must load one 64-byte block with one `LD1x4`, perform eight
@@ -69,6 +71,32 @@ and finalization path; the
 public incremental wrappers must call their corresponding BCM functions; and
 the linked BCM update/finalization path must call the ARM64 hardware kernel
 without a direct no-hardware dispatch.
+
+### 2026-08-13 one-shot dispatch optimization
+
+The public `SHA256.hash` path now performs input-length validation, complete
+block compression, bounded tail retention, and finalization through one
+package-internal `SHA256Context.hashOneShot` operation. This removes the
+separate public `update` entry from the one-shot path while preserving the
+incremental context API and its typed output-length failures. The timed worker
+and its machine-code contract were updated to validate this actual production
+call path.
+
+A local exploratory run used the pinned BoringSSL worker, the current arm64
+Release worker, identical deterministic inputs, 30 balanced pairs, and 10,000
+paired bootstrap resamples. Digests and checksums matched before timing.
+
+| Message length | Pure Swift / BoringSSL median | 95% paired bootstrap CI |
+|---|---:|---:|
+| 64 B | `1.167086x` | `1.163573–1.179517x` |
+| 1 KiB | `0.892898x` | `0.886693–0.899307x` |
+| 16 KiB | `0.879149x` | `0.875764–0.882925x` |
+
+The 64-byte result clears the `1.10x` criterion. Longer single-stream inputs
+remain below parity because the fixed Swift 6.4 arm64 backend emits extra
+state moves at the ARMv8 SHA-256 tied-operand boundary; that limitation is
+documented in ADR 0037. This run used the live worktree and prebuilt workers,
+so it is diagnostic evidence rather than formal release-gate evidence.
 
 The worker output contract is:
 
@@ -99,33 +127,46 @@ comparison.
 
 ### Native LLVM backend diagnostic
 
-The 2026-08-03 compiler experiment applied
+The 2026-08-13 compiler experiment applied
 `Validation/CodeGeneration/SHA256TiedOperands/llvm-264fd65923c28-sha256-paired-two-address.patch`
 to LLVM commit `264fd65923c28d9060211c1177a8820b76ed3ae2`. Its machine pass
-preserves the old first state outside the recurrent `SHA256H` dependency and
-lets `SHA256H` update that state in place. The product remains Pure Swift; the
-experiment changes only the AArch64 compiler backend.
+preserves both old state values before their destructive updates. It lets
+`SHA256H` and `SHA256H2` update their state registers in place and keeps all 16
+instruction pairs adjacent. The product remains Pure Swift; the experiment
+changes only the AArch64 compiler backend.
 
-The patched `llc` passed its end-to-end IR fixture and positive/negative
-machine-pass MIR fixture using the exact LLVM checkout's machine verifier and
-FileCheck. A complete optimized `SSLCrypto` object built by that `llc`
-matched the retained Swift worker and BoringSSL for 768 digests. Its SHA-256
-was `e1e414aac6f597f28ced2874b6e44d4cd59b34ed7aea9c1367a02aebdf753eeb`
-before and after the final pass audit. Thirty balanced exploratory pairs with
-10,000 paired bootstrap resamples produced:
+The retained patch has SHA-256
+`571561f22f755d026f3fa7cfd724170a9d2d17841c66d0bd7ecd92036276d754`.
+The patched LLVM 21.1.6 `llc` passed its end-to-end IR fixture and
+positive/negative machine-pass MIR fixtures with the machine verifier and
+FileCheck. The standalone runner then performed a fresh SwiftPM Release build,
+emitted optimized whole-module `SSLCrypto` IR from the verified source set,
+rebuilt only that object with the verified `llc`, and relinked it through the
+actual SwiftPM link command. All 768 differential digests matched pinned
+BoringSSL before timing. Thirty balanced exploratory pairs with 10,000 paired
+bootstrap resamples produced:
 
 | Workload | Patched Swift median ns/op | BoringSSL median ns/op | Ratio | 95% paired bootstrap CI |
 |---|---:|---:|---:|---:|
-| 64 B | 34.391625 | 40.209264 | `1.170837x` | `1.166957–1.175070x` |
-| 1 KiB | 348.351735 | 353.717083 | `1.014471x` | `1.009768–1.017313x` |
-| 16 KiB | 5390.322889 | 5442.337972 | `1.009975x` | `1.006648–1.013006x` |
+| 64 B | 33.076279 | 39.936701 | `1.207458x` | `1.205406–1.209490x` |
+| 1 KiB | 345.369063 | 350.531901 | `1.015725x` | `1.012672–1.017322x` |
+| 16 KiB | 5411.467427 | 5414.722727 | `1.000372x` | `1.000084–1.001443x` |
 
-The patch improved the retained Swift code generation by `1.169649x` at 1 KiB
-and `1.190179x` at 16 KiB, demonstrating that it removes the identified
-tied-operand penalty. The long-input comparison nevertheless remains around
-parity with BoringSSL and fails the `1.10x` lower-bound gate. This diagnostic
-used a dirty Swift source tree and a separately linked compiler object, so it
-is not formal release evidence and does not supersede a runner-owned build.
+The 1 KiB and 16 KiB confidence-interval lower bounds both exceed the explicit
+`1.0x` Native one-shot parity floor. The aspirational `1.10x` lower-bound target
+remains unmet. The optimized IR SHA-256 was
+`a6b413cc2251a59f161dd5b2b6b0ba22bd19ec78bc6639b8569e6bfb715414d7`;
+the rebuilt object was
+`7c1c5d0ea6a5507dd9c7ff928d964e04fa9dff123571433866d658d07d747ca0`;
+and the resulting Swift worker was
+`f8edd6b41ea99bc6e050b8f7efada087b8a552b1d80d27f8ee9bd36273973e0d`.
+The raw local artifact SHA-256 was
+`22710fcebebaa24b02fb56ad9f6e976f419b94ae0712eb520b7e9fd91a7ddf43`.
+The compact retained result is
+[`native-one-shot-parity.json`](../../Validation/CodeGeneration/SHA256TiedOperands/native-one-shot-parity.json).
+This remains exploratory evidence because it used the dirty live Swift source
+tree and a prebuilt external `llc`; the runner rejects that configuration for
+formal release evidence.
 
 The aggregate state-only ceiling record and its standalone arithmetic verifier
 are retained in `Validation/CodeGeneration/SHA256TiedOperands`. They show that
@@ -433,6 +474,7 @@ prevents it from being release evidence.
 | Overall pass | Every fixed workload passes |
 | Fail | Any workload's confidence interval upper bound is below `1.10` |
 | Inconclusive | No failure, but at least one interval crosses `1.10` |
+| Reported parity floor | Separate `1.0x` lower-confidence-bound decision; it never replaces the `1.10x` target |
 
 Every complete timing artifact reports the ratio of median throughputs,
 duration median/p95, throughput p05/median/p95, operations per second, every
@@ -446,8 +488,10 @@ source archive and extracted-tree hashes. No individual outlier is silently
 discarded. An invalid artifact is intentionally partial and contains only the
 evidence collected before its failure.
 
-The process exits with status zero only when the timing target passes. A valid
-failure or inconclusive result exits with status one. An invalid comparison,
+The process exits with status zero only when the `1.10x` timing target passes.
+A complete artifact reports the independent `1.0x` parity-floor decision even
+when the process exits with status one for the aspirational target. A valid
+target failure or inconclusive result exits with status one. An invalid comparison,
 including any output or provenance mismatch, exits with status two. After
 artifact initialization, the runner writes an explicitly invalid failure
 artifact only when the requested output path is unused and can be created.

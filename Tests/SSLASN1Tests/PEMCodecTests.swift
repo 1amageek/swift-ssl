@@ -14,7 +14,7 @@ final class PEMCodecTests: XCTestCase {
         let decoded = try PEMCodec.decode(encoded.span)
         XCTAssertEqual(decoded.label, "TEST DATA")
         XCTAssertEqual(decoded.derByteCount, der.count)
-        try decoded.withDERBytes { bytes in
+        decoded.withDERBytes { bytes in
             XCTAssertEqual(copy(bytes), Array(der))
         }
     }
@@ -22,7 +22,7 @@ final class PEMCodecTests: XCTestCase {
     func testDecodeAcceptsCRLFAndRejectsMalformedInput() throws {
         let crlf = ContiguousArray("-----BEGIN TEST-----\r\nAQID\r\n-----END TEST-----\r\n".utf8)
         let decoded = try PEMCodec.decode(crlf.span)
-        try decoded.withDERBytes { bytes in
+        decoded.withDERBytes { bytes in
             XCTAssertEqual(copy(bytes), [1, 2, 3])
         }
 

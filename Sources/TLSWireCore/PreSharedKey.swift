@@ -30,7 +30,7 @@
 /// convenience are crypto/Date dependent and live in the `TLSCore` adapter;
 /// this core file carries only the pure wire types.
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - PSK Identity
 
@@ -52,13 +52,13 @@ public struct PskIdentity: Sendable, Equatable {
     // MARK: - Encoding/Decoding
 
     public func encodeBytes() throws(TLSWireError) -> [UInt8] {
-        var writer = ByteWriter(reservingCapacity: identity.count + 6)
+        var writer = TLSWireWriter(reservingCapacity: identity.count + 6)
         try writer.wWriteVector16(identity)
         writer.writeUInt32(obfuscatedTicketAge)
         return writer.finishArray()
     }
 
-    public static func decode(from reader: inout ByteReader) throws(TLSWireError) -> PskIdentity {
+    public static func decode(from reader: inout TLSWireReader) throws(TLSWireError) -> PskIdentity {
         let identity = try reader.wReadVector16()
         let obfuscatedAge = try reader.wReadUInt32()
         return PskIdentity(identity: identity, obfuscatedTicketAge: obfuscatedAge)
@@ -85,7 +85,7 @@ public struct OfferedPsks: Sendable {
 
     /// Encode the offered PSKs
     public func encodeBytes() throws(TLSWireError) -> [UInt8] {
-        var writer = ByteWriter(reservingCapacity: 256)
+        var writer = TLSWireWriter(reservingCapacity: 256)
 
         // identities<7..2^16-1>
         var identitiesData = [UInt8]()
@@ -109,7 +109,7 @@ public struct OfferedPsks: Sendable {
     /// Encoded identities part (for binder computation)
     /// The binders will be computed separately
     public var encodedIdentities: [UInt8] {
-        var writer = ByteWriter(reservingCapacity: 256)
+        var writer = TLSWireWriter(reservingCapacity: 256)
 
         // identities<7..2^16-1>
         var identitiesData = [UInt8]()
@@ -146,11 +146,11 @@ public struct OfferedPsks: Sendable {
     // MARK: - Decoding
 
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> OfferedPsks {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
 
         // identities
         let identitiesData = try reader.wReadVector16()
-        var identitiesReader = ByteReader(identitiesData)
+        var identitiesReader = TLSWireReader(identitiesData)
         var identities: [PskIdentity] = []
         while !identitiesReader.isAtEnd {
             identities.append(try PskIdentity.decode(from: &identitiesReader))
@@ -165,7 +165,7 @@ public struct OfferedPsks: Sendable {
         // than 32 bytes. Enforce the bounds so a malformed/short binder is rejected
         // rather than later mishandled.
         let bindersData = try reader.wReadVector16()
-        var bindersReader = ByteReader(bindersData)
+        var bindersReader = TLSWireReader(bindersData)
         var binders: [[UInt8]] = []
         while !bindersReader.isAtEnd {
             let binder = try bindersReader.wReadVector8()
@@ -203,13 +203,13 @@ public struct SelectedPsk: Sendable {
     }
 
     public func encodeBytes() -> [UInt8] {
-        var writer = ByteWriter(reservingCapacity: 2)
+        var writer = TLSWireWriter(reservingCapacity: 2)
         writer.writeUInt16(selectedIdentity)
         return writer.finishArray()
     }
 
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> SelectedPsk {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         let selectedIdentity = try reader.wReadUInt16()
         return SelectedPsk(selectedIdentity: selectedIdentity)
     }

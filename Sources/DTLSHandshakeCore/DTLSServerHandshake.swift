@@ -3,12 +3,10 @@
 /// The server-side analogue of ``DTLSClientHandshake``: a single value-type,
 /// sans-IO, caller-locked finite state machine spanning ClientHello (incl. the
 /// HelloVerifyRequest cookie exchange) through the client Finished. It performs
-/// **no I/O**, holds **no lock**, and never reaches for a clock — the `DTLSCore`
-/// adapter owns the `Mutex`, parses wire bytes ↔ Foundation `Data`, mints/verifies
-/// the HelloVerifyRequest cookie via the rotating cookie-secret provider (HMAC),
-/// performs the X.509-bound signature operations (ServerKeyExchange signing, the
-/// client CertificateVerify verification), runs the ECDHE key agreement, generates
-/// the handshake randoms, and drives this core under its lock.
+/// **no I/O**, holds **no lock**, and never reaches for a clock —
+/// `DTLSServerEngine` owns framing and drives this state machine, while `swift-tls`
+/// owns the `Mutex` and supplies cookie HMAC, X.509-bound signature operations,
+/// ECDHE agreement, and handshake randomness.
 ///
 /// ## State
 /// ```
@@ -30,17 +28,16 @@
 /// - **message_seq ordering / dedup** is owned here; a retransmit can never corrupt
 ///   the transcript.
 ///
-/// Generic over `C: CryptoProvider`; the adapter specialises at
-/// `C = TLSCryptoProvider`. Embedded-clean: no Foundation, no `any`, no Mutex,
-/// no ContinuousClock, no swift-crypto, no X.509, typed throws, no key paths.
+/// Crypto operations are supplied through the concrete PRF and transcript
+/// contexts. Embedded-clean: no Foundation, no `any`, no Mutex, no
+/// ContinuousClock, no concrete crypto, no X.509, typed throws, no key paths.
 
-import P2PCoreBytes
-import P2PCoreCrypto
+import NetworkingCore
 import TLSWireCore
 import DTLSWireCore
 
 /// The DTLS 1.2 server handshake FSM over the crypto seam.
-public struct DTLSServerHandshake<C: CryptoProvider>: Sendable {
+public struct DTLSServerHandshake: Sendable {
 
     // MARK: - State
 

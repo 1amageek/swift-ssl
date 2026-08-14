@@ -6,7 +6,8 @@
 ///   };
 /// } CertificateVerify;
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 import TLSWireCore
 
 /// DTLS 1.2 CertificateVerify message
@@ -24,7 +25,7 @@ public struct CertificateVerify: Sendable {
 
     /// Encode the CertificateVerify body
     public func encodeBytes() throws(DTLSWireError) -> [UInt8] {
-        var writer = ByteWriter()
+        var writer = TLSWireWriter()
         writer.writeUInt8(signatureScheme.hashByte)
         writer.writeUInt8(signatureScheme.signatureByte)
         try writer.dWriteVector16(signature)
@@ -33,7 +34,7 @@ public struct CertificateVerify: Sendable {
 
     /// Decode from body data
     public static func decode(from data: [UInt8]) throws(DTLSWireError) -> CertificateVerify {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         let hashByte = try reader.dReadUInt8()
         let sigByte = try reader.dReadUInt8()
         let scheme = try SignatureScheme.from(hash: hashByte, signature: sigByte)

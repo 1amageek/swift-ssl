@@ -219,7 +219,10 @@ struct KeccakX2Core: ~Copyable {
             fromByteOffset: inputOffset + laneIndex * 8,
             as: UInt64.self
           )
-          state[laneIndex] ^= SIMD2(repeating: UInt64(littleEndian: word))
+          xorLane(
+            at: laneIndex,
+            with: SIMD2(repeating: UInt64(littleEndian: word))
+          )
           laneIndex += 1
         }
         permute()
@@ -233,8 +236,10 @@ struct KeccakX2Core: ~Copyable {
           fromByteOffset: inputOffset + remainderOffset,
           as: UInt64.self
         )
-        state[remainderOffset >> 3] ^=
-          SIMD2(repeating: UInt64(littleEndian: word))
+        xorLane(
+          at: remainderOffset >> 3,
+          with: SIMD2(repeating: UInt64(littleEndian: word))
+        )
         remainderOffset += 8
       }
       while remainderOffset < remainderByteCount {
@@ -310,7 +315,10 @@ struct KeccakX2Core: ~Copyable {
 
       while bytes.count - inputOffset >= 8 {
         let word = bytes.loadUnaligned(fromByteOffset: inputOffset, as: UInt64.self)
-        state[rateOffset >> 3] ^= SIMD2(repeating: UInt64(littleEndian: word))
+        xorLane(
+          at: rateOffset >> 3,
+          with: SIMD2(repeating: UInt64(littleEndian: word))
+        )
         inputOffset += 8
         rateOffset += 8
         if rateOffset == rateByteCount {
@@ -356,7 +364,15 @@ struct KeccakX2Core: ~Copyable {
   private mutating func xorSameByte(_ byte: UInt8, at byteIndex: Int) {
     precondition(byteIndex >= 0 && byteIndex < 200)
     let value = UInt64(byte) << UInt64((byteIndex & 7) * 8)
-    state[byteIndex >> 3] ^= SIMD2(repeating: value)
+    xorLane(at: byteIndex >> 3, with: SIMD2(repeating: value))
+  }
+
+  /// Keeps the pointer access as an explicit load/store so Swift 6.4's TSan
+  /// instrumentation does not have to form an implicit inout subscript access.
+  @inline(__always)
+  private func xorLane(at index: Int, with value: SIMD2<UInt64>) {
+    precondition(index >= 0 && index < 25)
+    state[index] = state[index] ^ value
   }
 
   @inline(__always)
@@ -1134,57 +1150,57 @@ struct KeccakX2Core: ~Copyable {
       let d3 = Self.xorRotatedLeft1(c2, c4)
       let d4 = Self.xorRotatedLeft1(c3, c0)
 
-      state[0] ^= d0
-      state[5] ^= d0
-      state[10] ^= d0
-      state[15] ^= d0
-      state[20] ^= d0
-      state[1] ^= d1
-      state[6] ^= d1
-      state[11] ^= d1
-      state[16] ^= d1
-      state[21] ^= d1
-      state[2] ^= d2
-      state[7] ^= d2
-      state[12] ^= d2
-      state[17] ^= d2
-      state[22] ^= d2
-      state[3] ^= d3
-      state[8] ^= d3
-      state[13] ^= d3
-      state[18] ^= d3
-      state[23] ^= d3
-      state[4] ^= d4
-      state[9] ^= d4
-      state[14] ^= d4
-      state[19] ^= d4
-      state[24] ^= d4
+      xorLane(at: 0, with: d0)
+      xorLane(at: 5, with: d0)
+      xorLane(at: 10, with: d0)
+      xorLane(at: 15, with: d0)
+      xorLane(at: 20, with: d0)
+      xorLane(at: 1, with: d1)
+      xorLane(at: 6, with: d1)
+      xorLane(at: 11, with: d1)
+      xorLane(at: 16, with: d1)
+      xorLane(at: 21, with: d1)
+      xorLane(at: 2, with: d2)
+      xorLane(at: 7, with: d2)
+      xorLane(at: 12, with: d2)
+      xorLane(at: 17, with: d2)
+      xorLane(at: 22, with: d2)
+      xorLane(at: 3, with: d3)
+      xorLane(at: 8, with: d3)
+      xorLane(at: 13, with: d3)
+      xorLane(at: 18, with: d3)
+      xorLane(at: 23, with: d3)
+      xorLane(at: 4, with: d4)
+      xorLane(at: 9, with: d4)
+      xorLane(at: 14, with: d4)
+      xorLane(at: 19, with: d4)
+      xorLane(at: 24, with: d4)
 
       var previous = state[1]
-      Self.move(&previous, into: &state[10], rotation: 1)
-      Self.move(&previous, into: &state[7], rotation: 3)
-      Self.move(&previous, into: &state[11], rotation: 6)
-      Self.move(&previous, into: &state[17], rotation: 10)
-      Self.move(&previous, into: &state[18], rotation: 15)
-      Self.move(&previous, into: &state[3], rotation: 21)
-      Self.move(&previous, into: &state[5], rotation: 28)
-      Self.move(&previous, into: &state[16], rotation: 36)
-      Self.move(&previous, into: &state[8], rotation: 45)
-      Self.move(&previous, into: &state[21], rotation: 55)
-      Self.move(&previous, into: &state[24], rotation: 2)
-      Self.move(&previous, into: &state[4], rotation: 14)
-      Self.move(&previous, into: &state[15], rotation: 27)
-      Self.move(&previous, into: &state[23], rotation: 41)
-      Self.move(&previous, into: &state[19], rotation: 56)
-      Self.move(&previous, into: &state[13], rotation: 8)
-      Self.move(&previous, into: &state[12], rotation: 25)
-      Self.move(&previous, into: &state[2], rotation: 43)
-      Self.move(&previous, into: &state[20], rotation: 62)
-      Self.move(&previous, into: &state[14], rotation: 18)
-      Self.move(&previous, into: &state[22], rotation: 39)
-      Self.move(&previous, into: &state[9], rotation: 61)
-      Self.move(&previous, into: &state[6], rotation: 20)
-      Self.move(&previous, into: &state[1], rotation: 44)
+      move(&previous, intoLane: 10, rotation: 1)
+      move(&previous, intoLane: 7, rotation: 3)
+      move(&previous, intoLane: 11, rotation: 6)
+      move(&previous, intoLane: 17, rotation: 10)
+      move(&previous, intoLane: 18, rotation: 15)
+      move(&previous, intoLane: 3, rotation: 21)
+      move(&previous, intoLane: 5, rotation: 28)
+      move(&previous, intoLane: 16, rotation: 36)
+      move(&previous, intoLane: 8, rotation: 45)
+      move(&previous, intoLane: 21, rotation: 55)
+      move(&previous, intoLane: 24, rotation: 2)
+      move(&previous, intoLane: 4, rotation: 14)
+      move(&previous, intoLane: 15, rotation: 27)
+      move(&previous, intoLane: 23, rotation: 41)
+      move(&previous, intoLane: 19, rotation: 56)
+      move(&previous, intoLane: 13, rotation: 8)
+      move(&previous, intoLane: 12, rotation: 25)
+      move(&previous, intoLane: 2, rotation: 43)
+      move(&previous, intoLane: 20, rotation: 62)
+      move(&previous, intoLane: 14, rotation: 18)
+      move(&previous, intoLane: 22, rotation: 39)
+      move(&previous, intoLane: 9, rotation: 61)
+      move(&previous, intoLane: 6, rotation: 20)
+      move(&previous, intoLane: 1, rotation: 44)
 
       var row = 0
       while row < 25 {
@@ -1208,7 +1224,7 @@ struct KeccakX2Core: ~Copyable {
         row += 5
       }
 
-      state[0] ^= SIMD2(repeating: Self.roundConstants[round])
+      xorLane(at: 0, with: SIMD2(repeating: Self.roundConstants[round]))
       round += 1
     }
   }
@@ -1254,13 +1270,14 @@ struct KeccakX2Core: ~Copyable {
   }
 
   @inline(__always)
-  private static func move(
+  private func move(
     _ previous: inout SIMD2<UInt64>,
-    into destination: inout SIMD2<UInt64>,
+    intoLane destinationIndex: Int,
     rotation: UInt64
   ) {
-    let displaced = destination
-    destination = previous.rotatingLeft(by: rotation)
+    precondition(destinationIndex >= 0 && destinationIndex < 25)
+    let displaced = state[destinationIndex]
+    state[destinationIndex] = previous.rotatingLeft(by: rotation)
     previous = displaced
   }
 

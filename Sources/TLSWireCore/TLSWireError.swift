@@ -3,7 +3,7 @@
 /// Embedded Swift forbids untyped `throws` (which is `throws(any Error)`), so the
 /// wire codec uses typed throws with this single error type. It wraps the three
 /// error kinds the codec can raise:
-/// - ``ByteError`` from the `P2PCoreBytes` reader/writer,
+/// - ``ByteError`` from the `NetworkingCore` reader/writer,
 /// - ``TLSDecodeError`` for malformed message structure,
 /// - ``TLSHandshakeError`` for handshake-level violations (e.g. duplicate
 ///   extensions, malformed CertificateRequest).
@@ -12,7 +12,7 @@
 /// the `Data`-based boundary, so callers (and the existing test suite) continue to
 /// catch `TLSDecodeError` / `TLSHandshakeError` / `ByteError` directly.
 
-import P2PCoreBytes
+import NetworkingCore
 
 public enum TLSWireError: Error, Sendable {
     case bytes(ByteError)

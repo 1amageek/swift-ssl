@@ -57,7 +57,7 @@ public struct PBES2AES256GCM: PrivateKeyInfoEncryption, Sendable {
             try entropy.fill(&saltDestination)
             var nonceDestination = nonce.mutableSpan
             try entropy.fill(&nonceDestination)
-        } catch let error as EntropyError {
+        } catch let error {
             throw PBES2AES256GCMError.entropy(error)
         }
 
@@ -115,7 +115,7 @@ public struct PBES2AES256GCM: PrivateKeyInfoEncryption, Sendable {
                 nonce: nonce.span,
                 ciphertextAndTag: ciphertextAndTag.span
             )
-        } catch let error as DERWriteError {
+        } catch let error {
             throw PBES2AES256GCMError.derWrite(error)
         }
         do {
@@ -147,12 +147,8 @@ public struct PBES2AES256GCM: PrivateKeyInfoEncryption, Sendable {
             byteCount = try SecretByteCount(
                 encryptedPrivateKeyInfo.plaintextByteCount
             )
-        } catch let error as SecretMemoryError {
+        } catch let error {
             throw PBES2AES256GCMError.secretMemory(error)
-        } catch {
-            preconditionFailure(
-                "SecretByteCount declares SecretMemoryError as its failure type"
-            )
         }
 
         let plaintext = try encryptedPrivateKeyInfo.withCryptographicInputs {
@@ -239,7 +235,7 @@ public struct PBES2AES256GCM: PrivateKeyInfoEncryption, Sendable {
                     into: &destination
                 )
             }
-        } catch let error as PBKDF2Error {
+        } catch let error {
             throw PBES2AES256GCMError.keyDerivation(error)
         }
 

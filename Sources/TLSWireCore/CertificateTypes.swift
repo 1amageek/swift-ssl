@@ -28,7 +28,7 @@
 /// } ServerCertTypeExtension;
 /// ```
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - Certificate Type
 
@@ -48,7 +48,7 @@ enum CertificateTypeCodec {
 
     /// Encode the ClientHello form: a 1-byte length-prefixed list.
     static func encodeOffered(_ types: [CertificateType]) throws(TLSWireError) -> [UInt8] {
-        var writer = ByteWriter(reservingCapacity: 1 + types.count)
+        var writer = TLSWireWriter(reservingCapacity: 1 + types.count)
         try writer.wWriteVector8(types.map { $0.rawValue })
         return writer.finishArray()
     }
@@ -63,7 +63,7 @@ enum CertificateTypeCodec {
     /// Unknown certificate type values are ignored (the peer may offer
     /// types we do not implement), but the list itself must be non-empty.
     static func decodeOffered(from data: [UInt8], extensionName: String) throws(TLSWireError) -> [CertificateType] {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         let listData = try reader.wReadVector8()
         guard reader.remaining == 0 else {
             throw TLSWireError.decode(.invalidFormat("\(extensionName): trailing bytes after type list"))

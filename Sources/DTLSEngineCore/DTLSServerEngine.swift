@@ -1,14 +1,13 @@
 /// The Embedded-clean, sans-IO DTLS 1.2 SERVER connection engine.
 ///
-/// `DTLSServerEngine<C>` is the cored replacement for the host
-/// `DTLSConnection`+`DTLSServerHandshakeHandler` orchestration. Value type,
+/// `DTLSServerEngine` is the complete server-side DTLS mechanism. It is a value type,
 /// caller-locked, sans-IO — the mirror of ``DTLSClientEngine``. The server takes the
 /// client's transport address through `receive(_:from:)` for the HelloVerifyRequest
 /// cookie binding (RFC 6347 §4.2.1).
 ///
 /// ```
 ///   receive(ClientHello, from: addr)
-///                 ─► DTLSServerHandshake<C>.ingestClientHello
+///                 ─► DTLSServerHandshake.ingestClientHello
 ///                 ─► .needCookie → mint cookie (injected HMAC) → HelloVerifyRequest
 ///                 ─► .verifyCookie → verify cookie (injected HMAC, fail-closed)
 ///                                  → select suite + sign ServerKeyExchange (injected)
@@ -25,22 +24,21 @@
 /// HMAC are INJECTED (see ``DTLSEngineConfiguration``); X.509 never enters here.
 ///
 /// Embedded-clean: no Foundation, no `any`, no `Mutex`, no `ContinuousClock`, no
-/// swift-crypto, no X509; typed throws (`DTLSEngineError`); bare `catch { switch }`.
+/// concrete crypto, no X509; typed throws (`DTLSEngineError`); bare `catch { switch }`.
 
-import P2PCoreBytes
-import P2PCoreCrypto
+import NetworkingCore
 import TLSWireCore
 import DTLSWireCore
 import DTLSHandshakeCore
 import DTLSRecordCore
 
-public struct DTLSServerEngine<C: CryptoProvider>: Sendable {
+public struct DTLSServerEngine: Sendable {
 
-    let configuration: DTLSEngineConfiguration<C>
+    let configuration: DTLSEngineConfiguration
 
     // MARK: - Handshake FSM (the core)
 
-    var fsm: DTLSServerHandshake<C>
+    var fsm: DTLSServerHandshake
 
     /// Our ECDHE private-key handle (set when building the server flight).
     var keyExchangeHandle: [UInt8]?
@@ -78,7 +76,7 @@ public struct DTLSServerEngine<C: CryptoProvider>: Sendable {
 
     // MARK: - Initialization
 
-    public init(configuration: DTLSEngineConfiguration<C>) throws(DTLSEngineError) {
+    public init(configuration: DTLSEngineConfiguration) throws(DTLSEngineError) {
         // A server requires identity + all crypto seams incl. the cookie HMAC.
         guard let prfContext = configuration.prfContext,
               let transcriptContext = configuration.transcriptContext,
@@ -94,7 +92,7 @@ public struct DTLSServerEngine<C: CryptoProvider>: Sendable {
         }
         try DTLSSRTPNegotiation.validate(configuration.srtpProtectionProfiles)
         self.configuration = configuration
-        self.fsm = DTLSServerHandshake<C>(
+        self.fsm = DTLSServerHandshake(
             requireClientCertificate: configuration.requireClientCertificate,
             prfContext: prfContext,
             transcriptContext: transcriptContext

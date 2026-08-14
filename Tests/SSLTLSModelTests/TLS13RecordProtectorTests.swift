@@ -65,7 +65,7 @@ final class TLS13RecordProtectorTests: XCTestCase {
         let before = recovered
         XCTAssertThrowsError(try recovered.withUnsafeMutableBufferPointer { destination in
             var recoveredSpan = MutableSpan(_unsafeStart: destination.baseAddress!, count: destination.count)
-            try record.withUnsafeBufferPointer { buffer in
+            _ = try record.withUnsafeBufferPointer { buffer in
                 try openProtector.open(
                     record: Span(_unsafeElements: UnsafeBufferPointer(start: buffer.baseAddress, count: recordCount)),
                     into: &recoveredSpan

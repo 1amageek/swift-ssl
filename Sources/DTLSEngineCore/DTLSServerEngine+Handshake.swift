@@ -8,8 +8,7 @@
 /// (fail-closed); the ServerKeyExchange signing and the client CertificateVerify
 /// verification go through the injected signer / verifier. X.509 stays OUT.
 
-import P2PCoreBytes
-import P2PCoreCrypto
+import NetworkingCore
 import TLSWireCore
 import DTLSWireCore
 import DTLSHandshakeCore
@@ -188,7 +187,7 @@ extension DTLSServerEngine {
             return
         }
 
-        let result: DTLSServerHandshake<C>.IngestResult
+        let result: DTLSServerHandshake.IngestResult
         do {
             result = try fsm.ingest(header: header, body: body, rawMessage: rawMessage)
         } catch {
@@ -230,7 +229,7 @@ extension DTLSServerEngine {
         remoteAddress: Span<UInt8>,
         into output: inout DTLSEngineOutput
     ) throws(DTLSEngineError) {
-        let outcome: DTLSServerHandshake<C>.ClientHelloOutcome
+        let outcome: DTLSServerHandshake.ClientHelloOutcome
         do { outcome = try fsm.ingestClientHello(header: header, body: body) }
         catch { throw .from(core: error) }
 
@@ -295,7 +294,7 @@ extension DTLSServerEngine {
                 throw .protocolFailure(reason: "no matching DTLS cipher suite")
             }
             // Invalid cookie: let the core fail-close on the cookie check.
-            let inputs = DTLSServerHandshake<C>.ServerFlightInputs(
+            let inputs = DTLSServerHandshake.ServerFlightInputs(
                 serverRandom: [UInt8](repeating: 0, count: 32),
                 certificateBody: [],
                 serverKeyExchangeBody: []
@@ -348,9 +347,9 @@ extension DTLSServerEngine {
         clientHello: DTLSClientHello,
         selectedSuite: DTLSCipherSuite,
         cookieValid: Bool
-    ) throws(DTLSEngineError) -> DTLSServerHandshake<C>.ServerFlightInputs {
+    ) throws(DTLSEngineError) -> DTLSServerHandshake.ServerFlightInputs {
         guard cookieValid else {
-            return DTLSServerHandshake<C>.ServerFlightInputs(
+            return DTLSServerHandshake.ServerFlightInputs(
                 serverRandom: [UInt8](repeating: 0, count: 32),
                 certificateBody: [],
                 serverKeyExchangeBody: []
@@ -362,7 +361,7 @@ extension DTLSServerEngine {
               let signingScheme = configuration.signingScheme else {
             throw .invalidConfiguration(reason: "no crypto seams for server flight")
         }
-        let serverRandom = randomBytes(32)
+        let serverRandom = try randomBytes(32)
 
         let certMessage = CertificateMessage(certificates: configuration.certificateChainDER)
         let certBody: [UInt8]
@@ -394,7 +393,7 @@ extension DTLSServerEngine {
         do { skeBody = try ske.encodeBytes() }
         catch { throw .from(wire: error) }
 
-        return DTLSServerHandshake<C>.ServerFlightInputs(
+        return DTLSServerHandshake.ServerFlightInputs(
             serverRandom: serverRandom,
             certificateBody: certBody,
             serverKeyExchangeBody: skeBody
@@ -565,11 +564,11 @@ extension DTLSServerEngine {
         clientRandom: [UInt8],
         cipherSuites: [DTLSCipherSuite]
     ) -> [UInt8] {
-        var writer = ByteWriter()
+        var writer = TLSWireWriter()
         do {
             try writer.writeVector16(clientAddress)
             try writer.writeVector8(clientRandom)
-            var suitesWriter = ByteWriter()
+            var suitesWriter = TLSWireWriter()
             for suite in cipherSuites {
                 suite.encode(writer: &suitesWriter)
             }
@@ -584,7 +583,7 @@ extension DTLSServerEngine {
 
     /// Encodes the HelloVerifyRequest body (`server_version(2) || cookie<0..255>`).
     static func encodeHelloVerifyRequestBody(cookie: [UInt8]) -> [UInt8] {
-        var writer = ByteWriter()
+        var writer = TLSWireWriter()
         // DTLS 1.2 ProtocolVersion = 0xFEFD.
         writer.writeUInt8(0xFE)
         writer.writeUInt8(0xFD)

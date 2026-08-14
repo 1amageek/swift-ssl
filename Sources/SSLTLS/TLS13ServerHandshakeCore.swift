@@ -1460,14 +1460,10 @@ public struct TLS13ServerHandshakeCore:
           pending.processedClientHello,
           binderTranscriptIncludesRetry: pending.binderTranscriptIncludesRetry
         )
-      } catch let error as TLS13HandshakeEngineError {
+      } catch let error {
         pendingServerCredentialSelection = nil
         phase = .failed
         throw error
-      } catch {
-        pendingServerCredentialSelection = nil
-        phase = .failed
-        throw .capability(.invalidCredential)
       }
 
     case .peerTrustAccepted, .peerTrustRejected, .signature,
@@ -2876,10 +2872,8 @@ public struct TLS13ServerHandshakeCore:
         try binderTranscript.append(truncated.span)
         binderHash = try binderTranscript.digest(for: cipherSuite)
       }
-    } catch let error as TLS13HandshakeError {
+    } catch let error {
       throw .handshake(error)
-    } catch {
-      throw .preSharedKey(.derivationFailed)
     }
     return try verifyCoreResumption(
       clientHello: clientHello,
@@ -3632,10 +3626,8 @@ private func verifyCoreResumption(
       transcriptHash: binderTranscriptHash.span,
       binder: offeredBinder.span
     )
-  } catch let error as TLS13PSKError {
+  } catch let error {
     throw .preSharedKey(error)
-  } catch {
-    throw .preSharedKey(.derivationFailed)
   }
 }
 import TLSTypes

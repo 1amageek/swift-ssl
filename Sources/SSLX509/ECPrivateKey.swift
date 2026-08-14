@@ -32,10 +32,8 @@ public struct ECPrivateKey: ~Copyable, Sendable {
         do {
             root = try cursor.readElement(using: &budget)
             try cursor.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw .der(error)
-        } catch {
-            throw .invalidStructure
         }
 
         let sequenceTag = DERTag(tagClass: .universal, isConstructed: true, number: 16)
@@ -47,19 +45,15 @@ public struct ECPrivateKey: ~Copyable, Sendable {
         do {
             versionElement = try body.readElement(using: &budget)
             privateKeyElement = try body.readElement(using: &budget)
-        } catch let error as DERError {
+        } catch let error {
             throw .der(error)
-        } catch {
-            throw .invalidStructure
         }
 
         let version: UInt64
         do {
             version = try DERPrimitiveCodec.decodePositiveInteger(from: versionElement)
-        } catch let error as DERValueError {
+        } catch let error {
             throw .value(error)
-        } catch {
-            throw .invalidStructure
         }
         guard version == 1 else { throw .invalidVersion(version) }
 
@@ -75,10 +69,8 @@ public struct ECPrivateKey: ~Copyable, Sendable {
             let element: DERElementView
             do {
                 element = try body.readElement(using: &budget)
-            } catch let error as DERError {
+            } catch let error {
                 throw .der(error)
-            } catch {
-                throw .invalidStructure
             }
 
             switch (element.tag.tagClass, element.tag.isConstructed, element.tag.number) {
@@ -90,10 +82,8 @@ public struct ECPrivateKey: ~Copyable, Sendable {
                 do {
                     oidElement = try parameterCursor.readElement(using: &budget)
                     try parameterCursor.requireFullyConsumed()
-                } catch let error as DERError {
+                } catch let error {
                     throw .der(error)
-                } catch {
-                    throw .invalidStructure
                 }
                 do {
                     try budget.requireOIDByteCount(oidElement.contentBytes.count)

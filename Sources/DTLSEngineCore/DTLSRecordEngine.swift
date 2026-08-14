@@ -1,11 +1,10 @@
 /// The Embedded-clean, value-type DTLS 1.2 record layer (RFC 6347 §4.1).
 ///
-/// `DTLSRecordEngine` is the cored, caller-locked replacement for the host
-/// `DTLSRecordLayer` (`Mutex` + swift-crypto `SymmetricKey`). It owns the per-epoch
+/// `DTLSRecordEngine` is the caller-locked record mechanism. It owns the per-epoch
 /// 48-bit sequence numbers, the read/write epochs, the 64-bit anti-replay window,
 /// and the per-direction ``DTLSRecordProtectionContext``. The record framing,
-/// AAD, and explicit-nonce assembly are byte-identical to the legacy layer; a
-/// provider strategy constructs the concrete AEAD once and injects the immutable
+/// AAD, and explicit-nonce assembly are defined by the wire protocol; a provider
+/// strategy constructs the concrete AEAD once and injects the immutable
 /// protection context through ``DTLSEngineConfiguration``.
 ///
 /// Security invariants preserved verbatim:
@@ -18,13 +17,14 @@
 /// - read/write epochs advance on each CCS boundary; the write sequence resets
 ///   to 0 and the read replay window resets on their respective key changes.
 ///
-/// Embedded-clean: no Foundation, no `any`, no `Mutex`, no swift-crypto. The
+/// Embedded-clean: no Foundation, no `any`, no `Mutex`, no concrete crypto. The
 /// engine intentionally has no crypto-provider generic parameter: Swift 6.4
 /// normal WASM cannot safely construct cross-module metadata for stored associated-
 /// type AEAD payloads, while the non-generic context preserves the same provider
 /// selection and typed-failure contract.
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 import DTLSWireCore
 import DTLSRecordCore
 
@@ -413,7 +413,7 @@ struct DTLSRecordEngine: Sendable {
 
     /// `explicit_nonce = epoch(2) || sequence_number(6)`.
     static func buildExplicitNonce(epoch: UInt16, sequenceNumber: UInt64) -> [UInt8] {
-        var writer = ByteWriter()
+        var writer = TLSWireWriter()
         writer.writeUInt16(epoch)
         writer.writeUInt16(UInt16((sequenceNumber >> 32) & 0xFFFF))
         writer.writeUInt32(UInt32(sequenceNumber & 0xFFFFFFFF))
@@ -427,7 +427,7 @@ struct DTLSRecordEngine: Sendable {
         contentType: DTLSContentType,
         plaintextLength: Int
     ) -> [UInt8] {
-        var writer = ByteWriter()
+        var writer = TLSWireWriter()
         writer.writeUInt16(epoch)
         writer.writeUInt16(UInt16((sequenceNumber >> 32) & 0xFFFF))
         writer.writeUInt32(UInt32(sequenceNumber & 0xFFFFFFFF))

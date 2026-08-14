@@ -15,7 +15,7 @@ final class PrivateKeyInfoTests: XCTestCase {
         XCTAssertEqual(info.version, 0)
         XCTAssertEqual(info.algorithm, .x25519)
         XCTAssertEqual(info.privateKeyByteCount, 32)
-        try info.withPrivateKeyBytes { key in
+        info.withPrivateKeyBytes { key in
             XCTAssertEqual(copy(key), Array(repeating: 0x5A, count: 32))
         }
     }
@@ -71,7 +71,7 @@ final class PrivateKeyInfoTests: XCTestCase {
         XCTAssertEqual(key.version, 1)
         XCTAssertEqual(key.curve, .prime256v1)
         XCTAssertEqual(key.privateKeyByteCount, 32)
-        try key.withPrivateKeyBytes { bytes in
+        key.withPrivateKeyBytes { bytes in
             XCTAssertEqual(copy(bytes), scalar)
         }
         guard let encodedPublicKey = key.publicKey else {
@@ -96,7 +96,7 @@ final class PrivateKeyInfoTests: XCTestCase {
             _ = consume key
             XCTFail("mismatched curve was accepted")
         } catch {
-            XCTAssertEqual(error as? ECPrivateKeyError, .invalidParameters)
+            XCTAssertEqual(error, .invalidParameters)
         }
     }
 

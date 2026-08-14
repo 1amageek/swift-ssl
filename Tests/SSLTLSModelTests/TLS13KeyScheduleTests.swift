@@ -27,13 +27,13 @@ final class TLS13KeyScheduleTests: XCTestCase {
       transcriptHash: helloTranscriptHash.span
     )
 
-    try handshake.withClientTrafficSecret { secret in
+    handshake.withClientTrafficSecret { secret in
       XCTAssertEqual(
         copy(secret),
         bytes("b3eddb126e067f35a780b3abf45e2d8f3b1a950738f52e9600746a0e27a55a21")
       )
     }
-    try handshake.withServerTrafficSecret { secret in
+    handshake.withServerTrafficSecret { secret in
       XCTAssertEqual(
         copy(secret),
         bytes("b67b7d690cc16c4e75e54213cb2d37b4e9c912bcded9105d42befd59d391ad38")
@@ -50,19 +50,19 @@ final class TLS13KeyScheduleTests: XCTestCase {
     let application = try handshake.makeApplicationSecrets(
       transcriptHash: applicationTranscriptHash.span
     )
-    try application.withClientTrafficSecret { secret in
+    application.withClientTrafficSecret { secret in
       XCTAssertEqual(
         copy(secret),
         bytes("9e40646ce79a7f9dc05af8889bce6552875afa0b06df0087f792ebb7c17504a5")
       )
     }
-    try application.withServerTrafficSecret { secret in
+    application.withServerTrafficSecret { secret in
       XCTAssertEqual(
         copy(secret),
         bytes("a11af9f05531f856ad47116b45a950328204b4f44bfb6b3a4b4f1f3fcb631643")
       )
     }
-    try application.withExporterMasterSecret { secret in
+    application.withExporterMasterSecret { secret in
       XCTAssertEqual(
         copy(secret),
         bytes("fe22f881176eda18eb8f44529e6792c50c9a3f89452f68d8ae311b4309d3cf50")
@@ -87,7 +87,7 @@ final class TLS13KeyScheduleTests: XCTestCase {
     let resumption = try handshake.makeResumptionMasterSecret(
       transcriptHash: completedTranscriptHash.span
     )
-    try resumption.withBorrowedBytes { secret in
+    resumption.withBorrowedBytes { secret in
       XCTAssertEqual(
         copy(secret),
         bytes("7df235f2031d2a051287d02b0241b0bfdaf86cc856231f2d5aba46c434ec196c")
@@ -99,7 +99,7 @@ final class TLS13KeyScheduleTests: XCTestCase {
     let emptyPSK = ContiguousArray<UInt8>()
     let ecdhe = ContiguousArray<UInt8>(repeating: 0x33, count: 32)
     let transcript = ContiguousArray<UInt8>(repeating: 0x44, count: 32)
-    var schedule = try TLS13KeySchedule(
+    let schedule = try TLS13KeySchedule(
       cipherSuite: .aes128GCM_SHA256,
       preSharedKey: emptyPSK.span
     )
@@ -108,7 +108,7 @@ final class TLS13KeyScheduleTests: XCTestCase {
       transcriptHash: transcript.span
     )
     var clientSecret = ContiguousArray<UInt8>()
-    try handshake.withClientTrafficSecret { secret in
+    handshake.withClientTrafficSecret { secret in
       clientSecret = copy(secret)
     }
     XCTAssertEqual(clientSecret.count, 32)
@@ -122,7 +122,7 @@ final class TLS13KeyScheduleTests: XCTestCase {
 
     let application = try handshake.makeApplicationSecrets(transcriptHash: transcript.span)
     var applicationSecret = ContiguousArray<UInt8>()
-    try application.withServerTrafficSecret { secret in
+    application.withServerTrafficSecret { secret in
       applicationSecret = copy(secret)
     }
     XCTAssertEqual(applicationSecret.count, 32)
@@ -141,7 +141,7 @@ final class TLS13KeyScheduleTests: XCTestCase {
       ecdheSharedSecret: ecdhe.span,
       transcriptHash: transcript.span
     )
-    try handshake.withServerTrafficSecret { secret in
+    handshake.withServerTrafficSecret { secret in
       XCTAssertEqual(secret.count, 48)
     }
 
@@ -153,7 +153,7 @@ final class TLS13KeyScheduleTests: XCTestCase {
       )
       XCTFail("invalid ECDHE length was accepted")
     } catch {
-      XCTAssertEqual(error as? TLS13KeyScheduleError, .invalidECDHESecretLength(actual: 48))
+      XCTAssertEqual(error, .invalidECDHESecretLength(actual: 48))
     }
   }
 

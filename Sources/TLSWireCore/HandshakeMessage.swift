@@ -9,12 +9,12 @@
 /// } Handshake;
 /// ```
 ///
-/// Embedded-clean: the wire codec is expressed over `P2PCoreBytes`
-/// (`ByteReader`/`ByteWriter`), not Foundation `Data`. The Foundation-based
+/// Embedded-clean: the wire codec is expressed over `NetworkingCore`
+/// (`TLSWireReader`/`TLSWireWriter`), not Foundation `Data`. The Foundation-based
 /// `TLSReader`/`TLSWriter` and `Data` entry points live in the `TLSCore`
 /// adapter.
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - Handshake Type
 

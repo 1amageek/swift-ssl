@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted for the canonical Pure Swift transport stack.
+Superseded by ADR 0054. The responsibility boundary remains valid, but the
+decision to give `TLSTypes` an independent package identity was replaced by
+co-location in the multi-product `swift-networking` package.
 
 ## Context
 

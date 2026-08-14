@@ -11,7 +11,7 @@
 /// } ClientHello;
 /// ```
 
-import P2PCoreBytes
+import NetworkingCore
 
 /// TLS 1.3 ClientHello message
 public struct ClientHello: Sendable {
@@ -54,7 +54,7 @@ public struct ClientHello: Sendable {
 
     /// Encodes the ClientHello content (without handshake header)
     public func encodeBytes() throws(TLSWireError) -> [UInt8] {
-        var writer = ByteWriter(reservingCapacity: 512)
+        var writer = TLSWireWriter(reservingCapacity: 512)
 
         // legacy_version (2 bytes) - always 0x0303 for TLS 1.3
         writer.writeUInt16(TLSConstants.legacyVersion)
@@ -96,7 +96,7 @@ public struct ClientHello: Sendable {
 
     /// Decodes a ClientHello from content data (without handshake header)
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> ClientHello {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
 
         // legacy_version
         let legacyVersion = try reader.wReadUInt16()
@@ -116,7 +116,7 @@ public struct ClientHello: Sendable {
             throw TLSWireError.decode(.invalidFormat("Invalid cipher suite length"))
         }
         var cipherSuites: [CipherSuite] = []
-        var csReader = ByteReader(cipherSuiteData)
+        var csReader = TLSWireReader(cipherSuiteData)
         while !csReader.isAtEnd {
             let value = try csReader.wReadUInt16()
             if let suite = CipherSuite(rawValue: value) {
@@ -137,7 +137,7 @@ public struct ClientHello: Sendable {
         let extensionData = try reader.wReadVector16()
         var extensions: [TLSExtension] = []
         var seenTypes: Set<UInt16> = []
-        var extReader = ByteReader(extensionData)
+        var extReader = TLSWireReader(extensionData)
         while !extReader.isAtEnd {
             let ext = try TLSExtension.decode(from: &extReader)
             guard seenTypes.insert(ext.rawType).inserted else {

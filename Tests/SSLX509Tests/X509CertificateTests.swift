@@ -17,11 +17,11 @@ final class X509CertificateTests: XCTestCase {
         XCTAssertTrue(parsed.validity.contains(inside))
         XCTAssertFalse(parsed.validity.contains(outside))
         var tbsByteCount = 0
-        try parsed.withTBSCertificateBytes { tbs in
+        parsed.withTBSCertificateBytes { tbs in
             tbsByteCount = tbs.count
         }
         XCTAssertEqual(tbsByteCount, 92)
-        try parsed.withSignatureBytes { signature in
+        parsed.withSignatureBytes { signature in
             XCTAssertEqual(copy(signature), [1, 2])
         }
     }

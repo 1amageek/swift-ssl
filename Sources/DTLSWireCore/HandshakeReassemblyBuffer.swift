@@ -4,7 +4,8 @@
 /// message once all fragments have arrived. Handles out-of-order delivery
 /// and overlapping fragments.
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 
 /// Reassembly buffer for fragmented DTLS handshake messages.
 public struct HandshakeReassemblyBuffer: Sendable {
@@ -187,7 +188,7 @@ public struct HandshakeReassemblyBuffer: Sendable {
     public static func parseMessages(
         from recordFragment: [UInt8]
     ) throws(DTLSWireError) -> [(header: DTLSHandshakeHeader, body: [UInt8])] {
-        var reader = ByteReader(recordFragment)
+        var reader = TLSWireReader(recordFragment)
         var messages: [(header: DTLSHandshakeHeader, body: [UInt8])] = []
 
         while !reader.isAtEnd {

@@ -15,7 +15,8 @@
 ///
 /// Embedded-clean: no Foundation, no `any`, typed throws.
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 import DTLSWireCore
 
 extension DTLSHandshakeHeader {
@@ -117,7 +118,7 @@ func decodeFinished(_ body: [UInt8]) throws(DTLSError) -> DTLSFinished {
 /// returning the cookie bytes. The HVR wire framing lives in the adapter
 /// (`HelloVerifyRequest`); the FSM only needs the cookie.
 func decodeHelloVerifyRequestCookie(_ body: [UInt8]) throws(DTLSError) -> [UInt8] {
-    var reader = ByteReader(body)
+    var reader = TLSWireReader(body)
     do {
         // ProtocolVersion server_version (2 bytes), then opaque cookie<0..2^8-1>.
         _ = try reader.readUInt16()

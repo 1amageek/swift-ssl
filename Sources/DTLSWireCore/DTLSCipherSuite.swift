@@ -3,7 +3,8 @@
 /// TLS 1.2 cipher suites used in DTLS. WebRTC mandates ECDHE_ECDSA suites.
 /// These differ from TLS 1.3 cipher suites (0x1301 etc.) in code values and semantics.
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 
 /// DTLS 1.2 cipher suite identifiers
 public enum DTLSCipherSuite: UInt16, Sendable, CaseIterable {
@@ -75,12 +76,12 @@ public enum DTLSCipherSuite: UInt16, Sendable, CaseIterable {
     }
 
     /// Encode to wire format
-    public func encode(writer: inout ByteWriter) {
+    public func encode(writer: inout TLSWireWriter) {
         writer.writeUInt16(rawValue)
     }
 
     /// Decode from wire format
-    public static func decode(reader: inout ByteReader) throws(DTLSWireError) -> DTLSCipherSuite {
+    public static func decode(reader: inout TLSWireReader) throws(DTLSWireError) -> DTLSCipherSuite {
         let value = try reader.dReadUInt16()
         guard let suite = DTLSCipherSuite(rawValue: value) else {
             throw DTLSWireError.dtls(.unsupportedCipherSuite(value))

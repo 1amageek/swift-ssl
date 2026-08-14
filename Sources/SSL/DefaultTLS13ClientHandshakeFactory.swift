@@ -10,9 +10,18 @@ public struct DefaultTLS13ClientHandshakeFactory:
   private let entropy: any EntropySource
   private let wallClock: any WallClock
 
+#if canImport(Darwin) || canImport(Glibc) || canImport(Musl) || canImport(WASILibc)
+    public init(
+      entropy: consuming any EntropySource = SystemEntropySource()
+    ) {
+      self.entropy = entropy
+      self.wallClock = makeSystemWallClock()
+    }
+#endif
+
   public init(
     entropy: consuming any EntropySource = SystemEntropySource(),
-    wallClock: consuming any WallClock = SystemWallClock()
+    wallClock: consuming any WallClock
   ) {
     self.entropy = entropy
     self.wallClock = wallClock

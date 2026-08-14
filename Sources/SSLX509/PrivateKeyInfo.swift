@@ -21,7 +21,7 @@ public struct PrivateKeyInfo: ~Copyable, Sendable {
         let secretDER: SecretBytes
         do {
             secretDER = try SecretBytes(copying: encodedDER)
-        } catch let error as SecretMemoryError {
+        } catch let error {
             throw PrivateKeyInfoError.memoryFailure(error)
         }
         var budget: ParsingBudget
@@ -36,10 +36,8 @@ public struct PrivateKeyInfo: ~Copyable, Sendable {
         do {
             root = try cursor.readElement(using: &budget)
             try cursor.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw PrivateKeyInfoError.der(error)
-        } catch {
-            throw PrivateKeyInfoError.invalidStructure
         }
         let sequenceTag = DERTag(tagClass: .universal, isConstructed: true, number: 16)
         guard root.tag == sequenceTag else {
@@ -56,19 +54,15 @@ public struct PrivateKeyInfo: ~Copyable, Sendable {
             versionElement = try body.readElement(using: &budget)
             algorithmElement = try body.readElement(using: &budget)
             privateKeyElement = try body.readElement(using: &budget)
-        } catch let error as DERError {
+        } catch let error {
             throw PrivateKeyInfoError.der(error)
-        } catch {
-            throw PrivateKeyInfoError.invalidStructure
         }
 
         let version: UInt64
         do {
             version = try DERPrimitiveCodec.decodePositiveInteger(from: versionElement)
-        } catch let error as DERValueError {
+        } catch let error {
             throw PrivateKeyInfoError.value(error)
-        } catch {
-            throw PrivateKeyInfoError.invalidStructure
         }
         guard version == 0 || version == 1 else {
             throw PrivateKeyInfoError.invalidVersion(version)
@@ -80,10 +74,8 @@ public struct PrivateKeyInfo: ~Copyable, Sendable {
                 from: algorithmElement,
                 using: &budget
             )
-        } catch let error as DERAlgorithmIdentifierError {
+        } catch let error {
             throw PrivateKeyInfoError.algorithm(error)
-        } catch {
-            throw PrivateKeyInfoError.invalidStructure
         }
 
         let octetTag = DERTag(tagClass: .universal, isConstructed: false, number: 4)
@@ -96,7 +88,7 @@ public struct PrivateKeyInfo: ~Copyable, Sendable {
                 offset: privateKeyElement.encodedOffset + privateKeyElement.headerByteCount,
                 count: privateKeyElement.contentBytes.count
             )
-        } catch let error as ByteError {
+        } catch let error {
             throw PrivateKeyInfoError.invalidRange(error)
         }
 
@@ -106,10 +98,8 @@ public struct PrivateKeyInfo: ~Copyable, Sendable {
             let optionalElement: DERElementView
             do {
                 optionalElement = try body.readElement(using: &budget)
-            } catch let error as DERError {
+            } catch let error {
                 throw PrivateKeyInfoError.der(error)
-            } catch {
-                throw PrivateKeyInfoError.invalidStructure
             }
             switch (optionalElement.tag.tagClass, optionalElement.tag.isConstructed, optionalElement.tag.number) {
             case (.contextSpecific, true, 0):

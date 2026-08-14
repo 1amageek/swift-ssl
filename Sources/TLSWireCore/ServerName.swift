@@ -13,7 +13,7 @@
 /// } ServerNameList;
 /// ```
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - Server Name Extension
 
@@ -49,7 +49,7 @@ public struct ServerNameExtension: Sendable, TLSExtensionValue {
         // HostName
         serverNameData.append(contentsOf: hostNameData)
 
-        var writer = ByteWriter(reservingCapacity: 2 + serverNameData.count)
+        var writer = TLSWireWriter(reservingCapacity: 2 + serverNameData.count)
         try writer.wWriteVector16(serverNameData)
         return writer.finishArray()
     }
@@ -60,14 +60,14 @@ public struct ServerNameExtension: Sendable, TLSExtensionValue {
             return ServerNameExtension(hostName: nil)
         }
 
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         let serverNameListData = try reader.wReadVector16()
 
         if serverNameListData.isEmpty {
             return ServerNameExtension(hostName: nil)
         }
 
-        var listReader = ByteReader(serverNameListData)
+        var listReader = TLSWireReader(serverNameListData)
         let nameType = try listReader.wReadUInt8()
 
         guard nameType == Self.hostNameType else {

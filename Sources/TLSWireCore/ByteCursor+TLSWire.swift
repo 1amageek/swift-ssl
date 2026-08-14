@@ -1,13 +1,13 @@
-/// Typed-throws wrappers over `P2PCoreBytes` reader/writer for the wire codec.
+/// Typed-throws wrappers over `NetworkingCore` reader/writer for the wire codec.
 ///
-/// `ByteReader`/`ByteWriter` throw ``ByteError``; the wire codec throws
+/// `TLSWireReader`/`TLSWireWriter` throw ``ByteError``; the wire codec throws
 /// ``TLSWireError``. Embedded Swift requires typed throws end-to-end (no
 /// `any Error`), and typed-throws does not auto-convert between error types, so
 /// these thin wrappers rewrap `ByteError` as `TLSWireError.bytes` at each call.
 
-import P2PCoreBytes
+import NetworkingCore
 
-extension ByteReader {
+extension TLSWireReader {
     @inline(__always)
     mutating func wReadUInt8() throws(TLSWireError) -> UInt8 {
         do { return try readUInt8() } catch { throw .bytes(error) }
@@ -49,7 +49,7 @@ extension ByteReader {
     }
 }
 
-extension ByteWriter {
+extension TLSWireWriter {
     @inline(__always)
     mutating func wWriteUInt24(_ value: UInt32) throws(TLSWireError) {
         do { try writeUInt24(value) } catch { throw .bytes(error) }

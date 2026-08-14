@@ -30,10 +30,8 @@ public extension X509Certificate {
         do {
             sequence = try cursor.readElement(using: &budget)
             try cursor.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw .der(error)
-        } catch {
-            throw .malformedSubjectAlternativeName
         }
         guard sequence.tag == DERTag(tagClass: .universal, isConstructed: true, number: 16) else {
             throw .malformedSubjectAlternativeName
@@ -44,10 +42,8 @@ public extension X509Certificate {
             let name: DERElementView
             do {
                 name = try names.readElement(using: &budget)
-            } catch let error as DERError {
+            } catch let error {
                 throw .der(error)
-            } catch {
-                throw .malformedSubjectAlternativeName
             }
             guard name.tag.tagClass == .contextSpecific, name.tag.number <= 8 else {
                 throw .malformedSubjectAlternativeName

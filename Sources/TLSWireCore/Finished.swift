@@ -12,7 +12,7 @@
 /// finished_key = HKDF-Expand-Label(BaseKey, "finished", "", Hash.length)
 /// ```
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - Finished Message
 

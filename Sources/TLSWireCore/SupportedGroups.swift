@@ -6,7 +6,7 @@
 /// } NamedGroupList;
 /// ```
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - Supported Groups Extension
 
@@ -38,13 +38,13 @@ public struct SupportedGroupsExtension: Sendable, TLSExtensionValue {
             groupsData.append(UInt8(group.rawValue & 0xFF))
         }
 
-        var writer = ByteWriter(reservingCapacity: 2 + groupsData.count)
+        var writer = TLSWireWriter(reservingCapacity: 2 + groupsData.count)
         try writer.wWriteVector16(groupsData)
         return writer.finishArray()
     }
 
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> SupportedGroupsExtension {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         let groupsData = try reader.wReadVector16()
 
         guard groupsData.count >= 2 && groupsData.count % 2 == 0 else {
@@ -52,7 +52,7 @@ public struct SupportedGroupsExtension: Sendable, TLSExtensionValue {
         }
 
         var groups: [NamedGroup] = []
-        var groupReader = ByteReader(groupsData)
+        var groupReader = TLSWireReader(groupsData)
         while !groupReader.isAtEnd {
             let value = try groupReader.wReadUInt16()
             if let group = NamedGroup(rawValue: value) {

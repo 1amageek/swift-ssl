@@ -147,7 +147,7 @@ final class X509CertificateRevocationListTests: XCTestCase {
                 at: instant
             )
             XCTFail("hard-fail revocation policy accepted missing evidence")
-        } catch let error as X509RevocationError {
+        } catch {
             XCTAssertEqual(error, .evidenceRequired(certificateIndex: 0))
         }
         XCTAssertNoThrow(try softFail.evaluate(

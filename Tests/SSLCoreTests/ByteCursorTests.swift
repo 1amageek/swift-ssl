@@ -23,7 +23,7 @@ final class ByteCursorTests: XCTestCase {
             XCTFail("A truncated read succeeded")
         } catch {
             XCTAssertEqual(
-                error as? ByteError,
+                error,
                 .outOfBounds(offset: 0, requested: 3, available: 2)
             )
         }

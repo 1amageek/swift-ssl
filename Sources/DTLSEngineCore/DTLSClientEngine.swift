@@ -1,13 +1,12 @@
 /// The Embedded-clean, sans-IO DTLS 1.2 CLIENT connection engine.
 ///
-/// `DTLSClientEngine<C>` is the cored replacement for the host
-/// `DTLSConnection`+`DTLSClientHandshakeHandler` orchestration. It is a **value
+/// `DTLSClientEngine` is the complete client-side DTLS mechanism. It is a **value
 /// type**, **caller-locked** (the facade holds it under its own `Mutex`; the engine
 /// itself takes `mutating` methods and never reaches for a lock), and **sans-IO**
 /// (the caller does the UDP I/O):
 ///
 /// ```
-/// var e = try DTLSClientEngine<C>(configuration: cfg)
+/// var e = try DTLSClientEngine(configuration: cfg)
 /// let hello = try e.startHandshake()           // → [ClientHello datagram]
 /// let out   = try e.receive(peer.span)         // → flight datagrams / app data / done
 /// let recs  = try e.send(appData.span)         // → one encrypted datagram
@@ -21,7 +20,7 @@
 ///   receive(Span) ─► DTLSRecordEngine.decodeRecord   (one record at a time, decrypt)
 ///                 ─► HandshakeReassemblyBuffer        (fragment offset/length reassembly)
 ///                 ─► dispatch each complete message to the cored FSM:
-///                       DTLSClientHandshake<C>  (HVR/SH/Cert/SKE/SHD/Finished)
+///                       DTLSClientHandshake  (HVR/SH/Cert/SKE/SHD/Finished)
 ///                 ─► satisfy the FSM's crypto requests via the injected closures
 ///                    (ECDHE agree, verify SKE sig, sign CertificateVerify)
 ///                 ─► translate [DTLSCoreAction] → record bytes (encrypt at epoch)
@@ -37,26 +36,25 @@
 /// never enters here.
 ///
 /// Embedded-clean: no Foundation, no `any`, no `Mutex`, no `ContinuousClock`, no
-/// swift-crypto, no X509; typed throws (`DTLSEngineError`); bare `catch { switch }`.
+/// concrete crypto, no X509; typed throws (`DTLSEngineError`); bare `catch { switch }`.
 
-import P2PCoreBytes
-import P2PCoreCrypto
+import NetworkingCore
 import TLSWireCore
 import DTLSWireCore
 import DTLSHandshakeCore
 import DTLSRecordCore
 
-public struct DTLSClientEngine<C: CryptoProvider>: Sendable {
+public struct DTLSClientEngine: Sendable {
 
     // Stored state is `internal` (not `private`) so the `+Handshake` extension that
     // implements the dispatch can mutate it. The type stays a value type; the
     // facade holds it under its own lock (caller-locked).
 
-    let configuration: DTLSEngineConfiguration<C>
+    let configuration: DTLSEngineConfiguration
 
     // MARK: - Handshake FSM (the core)
 
-    var fsm: DTLSClientHandshake<C>
+    var fsm: DTLSClientHandshake
 
     /// Our ECDHE private-key handle (set on ServerHelloDone, opaque to the engine).
     var keyExchangeHandle: [UInt8]?
@@ -98,7 +96,7 @@ public struct DTLSClientEngine<C: CryptoProvider>: Sendable {
 
     // MARK: - Initialization
 
-    public init(configuration: DTLSEngineConfiguration<C>) throws(DTLSEngineError) {
+    public init(configuration: DTLSEngineConfiguration) throws(DTLSEngineError) {
         // A client needs the crypto seams to run the handshake.
         guard let prfContext = configuration.prfContext,
               let transcriptContext = configuration.transcriptContext,
@@ -110,7 +108,7 @@ public struct DTLSClientEngine<C: CryptoProvider>: Sendable {
         }
         try DTLSSRTPNegotiation.validate(configuration.srtpProtectionProfiles)
         self.configuration = configuration
-        self.fsm = DTLSClientHandshake<C>(
+        self.fsm = DTLSClientHandshake(
             prfContext: prfContext,
             transcriptContext: transcriptContext
         )
@@ -177,7 +175,7 @@ public struct DTLSClientEngine<C: CryptoProvider>: Sendable {
         guard let randomBytes = configuration.randomBytes else {
             throw .invalidConfiguration(reason: "no random seam")
         }
-        let random = randomBytes(32)
+        let random = try randomBytes(32)
         self.clientRandom = random
 
         let clientHello = DTLSClientHello(

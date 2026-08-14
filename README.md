@@ -7,15 +7,18 @@ Embedded Swift without reproducing the OpenSSL/BoringSSL C API or legacy protoco
 surface.
 
 > [!NOTE]
-> Version 0.1.4 is the current public release of the declared Pure Swift scope.
+> Version 0.2.0 is the current public release of the declared Pure Swift scope.
 > Production deployment remains a separate security-review decision.
 
 ## Modules
 
 ```mermaid
 flowchart LR
-    Types[TLSTypes\nfrom swift-tls-types] --> Core[SSLCore]
-    Core[SSLCore] --> Crypto[SSLCrypto]
+    Net[NetworkingCore / NetworkingTime\nfrom swift-networking] --> Core[SSLCore]
+    Types[TLSTypes\nfrom swift-networking] --> Core
+    Contracts[SSLCryptoContracts] --> Core
+    Contracts --> Crypto[SSLCrypto]
+    Core --> Crypto
     Core --> ASN1[SSLASN1]
     Crypto --> X509[SSLX509]
     ASN1 --> X509
@@ -35,8 +38,9 @@ flowchart LR
 
 | Product | Responsibility |
 |---|---|
-| External product `TLSTypes` from `swift-tls-types` | Dependency-light TLS vocabulary values (role, version, cipher-suite ID, ALPN, encryption level, and server name); it does not own secrets or protocol state |
-| `SSLCore` | Owned and borrowed bytes, secret memory, entropy, clocks, and typed errors |
+| External `NetworkingCore` / `NetworkingTime` / `TLSTypes` products from `swift-networking` | Protocol-neutral bytes, time capabilities, and dependency-light TLS vocabulary |
+| `SSLCore` | Secret memory, entropy, resource/security limits, and TLS-specific ownership; it re-exports the shared networking substrates |
+| `SSLCryptoContracts` | Primitive capability protocols and typed primitive errors without concrete algorithms |
 | `SSLCrypto` | Hashes, AEAD, key agreement, signatures, KEMs, and HPKE |
 | `SSLASN1` | Strict DER and PEM parsing and encoding |
 | `SSLX509` | Certificates, key containers, path validation, and revocation inputs |
@@ -44,7 +48,6 @@ flowchart LR
 | `SSLDTLS` | Complete sans-I/O DTLS 1.2 WebRTC mechanism: wire codecs, handshake state, ECDHE/signature seams, cookies, fragmentation, replay, flights, retransmission state, SRTP negotiation/export, and AES-GCM records |
 | `TLSWire` / `DTLSWire` | Pure TLS 1.3 / DTLS 1.2 wire codecs with no I/O or cryptographic policy |
 | `DTLSHandshake` / `DTLSRecord` | DTLS 1.2 handshake and record-layer contracts used by the `SSLDTLS` engine |
-| `P2PCoreBytes` / `P2PCoreCrypto` | Embedded-safe shared byte and crypto capability contracts; implementation is owned by this package so consumers do not fork them |
 | `SSLQUIC` | QUIC TLS handshake-byte, alert, and traffic-secret mapping; CRYPTO offsets/reassembly belong to `swift-quic` in the target architecture |
 | `SSL` | Umbrella façade for application-facing composition |
 
@@ -68,10 +71,10 @@ mechanisms that implement those contracts. Transport packages own I/O and
 transport framing. See the workspace
 [Secure Transport Architecture](../SECURE_TRANSPORT_ARCHITECTURE.md).
 
-`swift-tls-types` is the independent vocabulary package at the bottom of the
-stack. It owns only implementation-independent values and opaque byte-backed
-names. The secret owner remains `SSLCore.TLSTrafficSecret`; ownership-backed
-borrows and output sinks are deliberately not exported by `swift-tls-types`.
+`swift-networking/TLSTypes` owns only implementation-independent values and
+opaque byte-backed names. The secret owner remains
+`SSLCore.TLSTrafficSecret`; ownership-backed borrows and output sinks are not
+exported by `TLSTypes`.
 
 `swift-ssl` is the only TLS/DTLS mechanism owner. `swift-tls` is a
 session-contract and policy facade: it supplies identity, trust, timer, and
@@ -131,7 +134,7 @@ Add `swift-ssl` to the package dependencies:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/1amageek/swift-ssl.git", from: "0.1.4")
+    .package(url: "https://github.com/1amageek/swift-ssl.git", from: "0.2.0")
 ]
 ```
 
@@ -170,7 +173,8 @@ promise BoringSSL API, ABI, source, or internal implementation equivalence.
 | Workload group | BoringSSL time / Swift time | Gate |
 |---|---:|---|
 | Native SHA-256, 64 B / 1 KiB / 16 KiB | `1.0939x` / `0.8612x` / `0.8399x` | Historical measurement; not a gate |
-| Native SHA-256, source-optimized 64 B / 1 KiB / 16 KiB | `1.1564x` / `0.8594x` / `0.8385x` | Exploratory; 64 B pass, long-input gate fail |
+| Native SHA-256, one-shot optimized 64 B / 1 KiB / 16 KiB | `1.1671x` / `0.8929x` / `0.8791x` | Exploratory; 64 B pass, long-input gate fail |
+| Native SHA-256, corrected LLVM one-shot 64 B / 1 KiB / 16 KiB | `1.2075x` / `1.0157x` / `1.0004x` | Exploratory; all 95% CI lower bounds pass the separate `1.0x` parity floor; `1.10x` target remains unmet |
 | Native SHA-256 batch, two independent 64 B / 1 KiB / 16 KiB messages | `1.2225x` / `1.2453x` / `1.2892x` | Exploratory; all 95% CI lower bounds pass `1.10x` |
 | WASI and Embedded WASI SHA-256, 1 MiB variants | `1.3311x`–`1.3389x` | Historical exploratory measurement |
 | Native X25519MLKEM768 TLS round trip | `1.1093x` | Pass |

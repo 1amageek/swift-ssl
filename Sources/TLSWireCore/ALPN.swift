@@ -8,7 +8,7 @@
 /// opaque ProtocolName<1..2^8-1>;
 /// ```
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - ALPN Extension
 
@@ -41,17 +41,17 @@ public struct ALPNExtension: Sendable, TLSExtensionValue {
             protocolListData.append(contentsOf: protoData)
         }
 
-        var writer = ByteWriter(reservingCapacity: 2 + protocolListData.count)
+        var writer = TLSWireWriter(reservingCapacity: 2 + protocolListData.count)
         try writer.wWriteVector16(protocolListData)
         return writer.finishArray()
     }
 
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> ALPNExtension {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         let protocolListData = try reader.wReadVector16()
 
         var protocols: [String] = []
-        var listReader = ByteReader(protocolListData)
+        var listReader = TLSWireReader(protocolListData)
         while !listReader.isAtEnd {
             let protoData = try listReader.wReadVector8()
             if let proto = String(validating: protoData, as: UTF8.self) {

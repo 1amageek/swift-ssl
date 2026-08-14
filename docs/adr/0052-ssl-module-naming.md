@@ -1,6 +1,6 @@
 # ADR 0052: Use SSL module names without a Swift prefix
 
-- Status: Accepted
+- Status: Accepted; package placement amended by ADR 0054
 - Date: 2026-08-03
 
 ## Context
@@ -19,7 +19,7 @@ same prefix:
 
 | Responsibility | Module |
 |---|---|
-| Shared TLS vocabulary (including cipher-suite IDs and ALPN) | `TLSTypes` from `swift-tls-types` |
+| Shared TLS vocabulary (including cipher-suite IDs and ALPN) | `TLSTypes` from `swift-networking` |
 | Safe byte ownership, clocks, and entropy | `SSLCore` |
 | Cryptographic algorithms and key owners | `SSLCrypto` |
 | DER and PEM codecs | `SSLASN1` |
@@ -31,7 +31,7 @@ same prefix:
 ```mermaid
 flowchart TD
     Facade["SSL facade"] --> Core["SSLCore"]
-    Facade --> Types["TLSTypes\nswift-tls-types"]
+    Facade --> Types["TLSTypes\nswift-networking"]
     Facade --> Crypto["SSLCrypto"]
     Facade --> ASN1["SSLASN1"]
     Facade --> X509["SSLX509"]

@@ -21,7 +21,7 @@ final class EncryptedPrivateKeyInfoTests: XCTestCase {
 
         let reopened = try profile.open(encrypted, password: password.span)
         var reopenedDER = ContiguousArray<UInt8>()
-        try reopened.withDERBytes { bytes in
+        reopened.withDERBytes { bytes in
             reopenedDER = copy(bytes)
         }
         XCTAssertEqual(reopenedDER, plaintextDER)

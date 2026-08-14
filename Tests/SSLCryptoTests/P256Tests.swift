@@ -324,7 +324,7 @@ final class P256Tests: XCTestCase {
       _ = consume unexpected
       XCTFail("P-256 accepted the zero private scalar")
     } catch {
-      XCTAssertEqual(error as? CryptoInputError, .nonCanonicalEncoding)
+      XCTAssertEqual(error, .nonCanonicalEncoding)
     }
 
     let order = bytes(
@@ -335,7 +335,7 @@ final class P256Tests: XCTestCase {
       _ = consume unexpected
       XCTFail("P-256 accepted its group order as a private scalar")
     } catch {
-      XCTAssertEqual(error as? CryptoInputError, .nonCanonicalEncoding)
+      XCTAssertEqual(error, .nonCanonicalEncoding)
     }
 
     let entropy = FixedEntropy(bytes: zero)
@@ -344,7 +344,7 @@ final class P256Tests: XCTestCase {
       _ = consume unexpected
       XCTFail("P-256 generation accepted 256 invalid candidates")
     } catch {
-      XCTAssertEqual(error as? P256KeyGenerationError, .invalidScalar)
+      XCTAssertEqual(error, .invalidScalar)
     }
   }
 

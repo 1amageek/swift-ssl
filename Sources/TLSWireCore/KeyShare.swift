@@ -22,7 +22,7 @@
 /// } KeyShareEntry;
 /// ```
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - Key Share Entry
 
@@ -40,13 +40,13 @@ public struct KeyShareEntry: Sendable {
     }
 
     public func encodeBytes() throws(TLSWireError) -> [UInt8] {
-        var writer = ByteWriter(reservingCapacity: 4 + keyExchange.count)
+        var writer = TLSWireWriter(reservingCapacity: 4 + keyExchange.count)
         writer.writeUInt16(group.rawValue)
         try writer.wWriteVector16(keyExchange)
         return writer.finishArray()
     }
 
-    public static func decode(from reader: inout ByteReader) throws(TLSWireError) -> KeyShareEntry {
+    public static func decode(from reader: inout TLSWireReader) throws(TLSWireError) -> KeyShareEntry {
         let groupValue = try reader.wReadUInt16()
         guard let group = NamedGroup(rawValue: groupValue) else {
             throw TLSWireError.decode(.invalidFormat("Unknown named group: \(groupValue)"))
@@ -128,17 +128,17 @@ public struct KeyShareClientHello: Sendable, TLSExtensionValue {
             entriesData.append(contentsOf: try entry.encodeBytes())
         }
 
-        var writer = ByteWriter(reservingCapacity: 2 + entriesData.count)
+        var writer = TLSWireWriter(reservingCapacity: 2 + entriesData.count)
         try writer.wWriteVector16(entriesData)
         return writer.finishArray()
     }
 
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> KeyShareClientHello {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         let entriesData = try reader.wReadVector16()
 
         var entries: [KeyShareEntry] = []
-        var entryReader = ByteReader(entriesData)
+        var entryReader = TLSWireReader(entriesData)
         while !entryReader.isAtEnd {
             entries.append(try KeyShareEntry.decode(from: &entryReader))
         }
@@ -170,7 +170,7 @@ public struct KeyShareServerHello: Sendable, TLSExtensionValue {
     }
 
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> KeyShareServerHello {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         let entry = try KeyShareEntry.decode(from: &reader)
         return KeyShareServerHello(serverShare: entry)
     }
@@ -190,13 +190,13 @@ public struct KeyShareHelloRetryRequest: Sendable, TLSExtensionValue {
     }
 
     public func encodeBytes() -> [UInt8] {
-        var writer = ByteWriter(reservingCapacity: 2)
+        var writer = TLSWireWriter(reservingCapacity: 2)
         writer.writeUInt16(selectedGroup.rawValue)
         return writer.finishArray()
     }
 
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> KeyShareHelloRetryRequest {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         let groupValue = try reader.wReadUInt16()
         guard let group = NamedGroup(rawValue: groupValue) else {
             throw TLSWireError.decode(.invalidFormat("Unknown named group: \(groupValue)"))

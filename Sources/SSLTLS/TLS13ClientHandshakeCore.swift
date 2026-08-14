@@ -925,12 +925,9 @@ public struct TLS13ClientHandshakeCore:
     {
       do {
         return try suspendForClientCredentialSelection(message)
-      } catch let error as TLS13HandshakeEngineError {
+      } catch let error {
         phase = .failed
         throw error
-      } catch {
-        phase = .failed
-        throw mapHandshakeEngineError(error)
       }
     }
     return .output(try receiveHandshakeMessage(message, at: epoch))
@@ -2062,16 +2059,11 @@ public struct TLS13ClientHandshakeCore:
         )
         capabilitySequencer.complete(token)
         return .output(output)
-      } catch let error as TLS13HandshakeEngineError {
+      } catch let error {
         pendingClientCredentialSelection = nil
         pendingClientEndOfEarlyData = nil
         phase = .failed
         throw error
-      } catch {
-        pendingClientCredentialSelection = nil
-        pendingClientEndOfEarlyData = nil
-        phase = .failed
-        throw mapHandshakeEngineError(error)
       }
 
     case .credentialSelected(let token, let credential):

@@ -1,4 +1,4 @@
-#if os(macOS) && arch(arm64) && canImport(simd)
+#if os(macOS) && arch(arm64) && canImport(simd) && !SWIFT_SSL_TSAN
   import _Volatile
   import simd
 
@@ -10,7 +10,7 @@
   )
 
   enum SHA256ARM64Kernel {
-    private static let roundConstants: [64 of UInt32] = [
+    private static let roundConstants: [UInt32] = [
       0x428A_2F98, 0x7137_4491, 0xB5C0_FBCF, 0xE9B5_DBA5,
       0x3956_C25B, 0x59F1_11F1, 0x923F_82A4, 0xAB1C_5ED5,
       0xD807_AA98, 0x1283_5B01, 0x2431_85BE, 0x550C_7DC3,
@@ -46,8 +46,10 @@
         state[4], state[5], state[6], state[7]
       )
 
-      withUnsafeBytes(of: Self.roundConstants) { constantBytes in
-        let constantTable = constantBytes.baseAddress.unsafelyUnwrapped
+      Self.roundConstants.withUnsafeBufferPointer { constantWords in
+        let constantTable = UnsafeRawPointer(
+          constantWords.baseAddress.unsafelyUnwrapped
+        )
         if blockCount == 1 {
           let messages = loadMessages(from: blocks)
           let compressed = compressBlock(
@@ -64,23 +66,52 @@
           return
         }
 
-        var constantTableOffset: UInt32 = 0
-        withUnsafePointer(to: &constantTableOffset) { offsetPointer in
-          let offsetRegister = VolatileMappedRegister<UInt32>(
-            unsafeBitPattern: UInt(bitPattern: offsetPointer)
+        var constantTableAddress = UInt64(UInt(bitPattern: constantTable))
+        withUnsafePointer(to: &constantTableAddress) { addressPointer in
+          let addressRegister = VolatileMappedRegister<UInt64>(
+            unsafeBitPattern: UInt(bitPattern: addressPointer)
           )
           (state0, state1) = compressMultipleBlocks(
             state0: state0,
             state1: state1,
             blocks: blocks,
             blockCount: blockCount,
-            constantTable: constantTable,
-            constantTableOffset: offsetRegister
+            constantTableAddress: addressRegister
           )
         }
       }
 
       storeState(state0, state1, into: &state)
+    }
+
+    @inline(__always)
+    static func compressBlocksAndAlignedPadding(
+      state: inout SIMD8<UInt32>,
+      blocks: UnsafeRawPointer,
+      blockCount: Int,
+      bitCount: UInt64
+    ) {
+      precondition(blockCount > 0)
+      let state0 = SIMD4<UInt32>(
+        state[0], state[1], state[2], state[3]
+      )
+      let state1 = SIMD4<UInt32>(
+        state[4], state[5], state[6], state[7]
+      )
+
+      Self.roundConstants.withUnsafeBufferPointer { constantWords in
+        let compressed = compressMultipleBlocksAndAlignedPadding(
+          state0: state0,
+          state1: state1,
+          blocks: blocks,
+          blockCount: blockCount,
+          bitCount: bitCount,
+          constantTable: UnsafeRawPointer(
+            constantWords.baseAddress.unsafelyUnwrapped
+          )
+        )
+        storeState(compressed.0, compressed.1, into: &state)
+      }
     }
 
     @inline(__always)
@@ -95,7 +126,7 @@
         state[4], state[5], state[6], state[7]
       )
 
-      withUnsafeBytes(of: Self.roundConstants) { constantBytes in
+      Self.roundConstants.withUnsafeBufferPointer { constantWords in
         let compressed = compressBlock(
           state0: state0,
           state1: state1,
@@ -115,7 +146,9 @@
             initialSchedule[12], initialSchedule[13],
             initialSchedule[14], initialSchedule[15]
           ),
-          constantTable: constantBytes.baseAddress.unsafelyUnwrapped
+          constantTable: UnsafeRawPointer(
+            constantWords.baseAddress.unsafelyUnwrapped
+          )
         )
         state0 = vaddq_u32(compressed.0, state0)
         state1 = vaddq_u32(compressed.1, state1)
@@ -148,11 +181,13 @@
         secondState[4], secondState[5], secondState[6], secondState[7]
       )
 
-      withUnsafeBytes(of: Self.roundConstants) { constantBytes in
-        var constantTableOffset: UInt32 = 0
-        withUnsafePointer(to: &constantTableOffset) { offsetPointer in
-          let offsetRegister = VolatileMappedRegister<UInt32>(
-            unsafeBitPattern: UInt(bitPattern: offsetPointer)
+      Self.roundConstants.withUnsafeBufferPointer { constantWords in
+        var constantTableAddress = UInt64(
+          UInt(bitPattern: constantWords.baseAddress.unsafelyUnwrapped)
+        )
+        withUnsafePointer(to: &constantTableAddress) { addressPointer in
+          let addressRegister = VolatileMappedRegister<UInt64>(
+            unsafeBitPattern: UInt(bitPattern: addressPointer)
           )
           let compressed = compressMultipleBlockPairs(
             firstState0: firstState0,
@@ -162,8 +197,7 @@
             firstBlocks: firstBlocks,
             secondBlocks: secondBlocks,
             blockCount: blockCount,
-            constantTable: constantBytes.baseAddress.unsafelyUnwrapped,
-            constantTableOffset: offsetRegister
+            constantTableAddress: addressRegister
           )
           storeState(compressed.0, compressed.1, into: &firstState)
           storeState(compressed.2, compressed.3, into: &secondState)
@@ -197,8 +231,7 @@
       state1 initialState1: SIMD4<UInt32>,
       blocks: UnsafeRawPointer,
       blockCount: Int,
-      constantTable: UnsafeRawPointer,
-      constantTableOffset: VolatileMappedRegister<UInt32>
+      constantTableAddress: VolatileMappedRegister<UInt64>
     ) -> (SIMD4<UInt32>, SIMD4<UInt32>) {
       var state0 = initialState0
       var state1 = initialState1
@@ -210,16 +243,17 @@
       // Advancing exactly once per remaining block keeps every read in that
       // validated range and cannot overflow independently of the range.
       // Reads are unaligned and byte-preserving; memory is never rebound or
-      // mutated. The caller also owns one initialized UInt32 zero for the
-      // complete synchronous borrow. Its volatile read keeps constant loads
-      // inside this loop without changing their validated 256-byte range.
-      // Neither derived pointer escapes nor crosses a Sendable boundary.
+      // mutated. The caller also owns one initialized UInt64 containing the
+      // constant table's nonzero address for the complete synchronous borrow.
+      // Its volatile load recreates that same pointer inside every iteration,
+      // keeping constant loads in this loop without changing their validated
+      // 256-byte range. No pointer escapes or crosses a Sendable boundary.
       repeat {
         let savedState0 = state0
         let savedState1 = state1
-        let blockConstantTable = constantTable.advanced(
-          by: Int(constantTableOffset.load())
-        )
+        let blockConstantTable = UnsafeRawPointer(
+          bitPattern: UInt(constantTableAddress.load())
+        ).unsafelyUnwrapped
         let messages = loadMessages(from: block)
         let compressed = compressBlock(
           state0: state0,
@@ -242,6 +276,59 @@
     }
 
     @inline(never)
+    private static func compressMultipleBlocksAndAlignedPadding(
+      state0 initialState0: SIMD4<UInt32>,
+      state1 initialState1: SIMD4<UInt32>,
+      blocks: UnsafeRawPointer,
+      blockCount: Int,
+      bitCount: UInt64,
+      constantTable: UnsafeRawPointer
+    ) -> (SIMD4<UInt32>, SIMD4<UInt32>) {
+      var state0 = initialState0
+      var state1 = initialState1
+      var block = blocks
+      var remainingBlockCount = blockCount
+
+      // Unsafe invariants: the synchronous caller retains the input owner and
+      // supplies blockCount complete initialized 64-byte blocks. The pointer
+      // advances exactly once per validated block and never escapes. The
+      // caller also retains the immutable initialized 256-byte constant table
+      // for this synchronous call. Neither pointer escapes or crosses a
+      // Sendable boundary.
+      repeat {
+        let savedState0 = state0
+        let savedState1 = state1
+        let messages = loadMessages(from: block)
+        let compressed = compressBlock(
+          state0: state0,
+          state1: state1,
+          message0: messages.0,
+          message1: messages.1,
+          message2: messages.2,
+          message3: messages.3,
+          constantTable: constantTable
+        )
+        state0 = vaddq_u32(compressed.0, savedState0)
+        state1 = vaddq_u32(compressed.1, savedState1)
+        block = block.advanced(by: 64)
+        remainingBlockCount &-= 1
+      } while remainingBlockCount != 0
+
+      let savedState0 = state0
+      let savedState1 = state1
+      let padding = compressAlignedPaddingBlock(
+        state0: state0,
+        state1: state1,
+        bitCount: bitCount,
+        constantTable: constantTable
+      )
+      return (
+        vaddq_u32(padding.0, savedState0),
+        vaddq_u32(padding.1, savedState1)
+      )
+    }
+
+    @inline(never)
     private static func compressMultipleBlockPairs(
       firstState0 initialFirstState0: SIMD4<UInt32>,
       firstState1 initialFirstState1: SIMD4<UInt32>,
@@ -250,8 +337,7 @@
       firstBlocks: UnsafeRawPointer,
       secondBlocks: UnsafeRawPointer,
       blockCount: Int,
-      constantTable: UnsafeRawPointer,
-      constantTableOffset: VolatileMappedRegister<UInt32>
+      constantTableAddress: VolatileMappedRegister<UInt64>
     ) -> (
       SIMD4<UInt32>, SIMD4<UInt32>, SIMD4<UInt32>, SIMD4<UInt32>
     ) {
@@ -267,16 +353,18 @@
       // and supplies blockCount initialized 64-byte blocks in each range.
       // Both pointers advance by one validated block per iteration, use only
       // unaligned read-only byte loads, and never escape. The caller also owns
-      // one initialized UInt32 zero for the complete synchronous borrow. Its
-      // volatile read keeps the shared 256-byte constant table in the loop.
+      // one initialized UInt64 containing the shared constant table's nonzero
+      // address for the complete synchronous borrow. Its volatile load
+      // recreates that same pointer inside every iteration and keeps the
+      // 256-byte table loads in the loop.
       repeat {
         let savedFirstState0 = firstState0
         let savedFirstState1 = firstState1
         let savedSecondState0 = secondState0
         let savedSecondState1 = secondState1
-        let blockConstantTable = constantTable.advanced(
-          by: Int(constantTableOffset.load())
-        )
+        let blockConstantTable = UnsafeRawPointer(
+          bitPattern: UInt(constantTableAddress.load())
+        ).unsafelyUnwrapped
         let firstMessages = loadMessages(from: firstBlock)
         let secondMessages = loadMessages(from: secondBlock)
         let compressed = compressBlockPair(
@@ -389,6 +477,115 @@
         constants1: loadConstants(from: constantTable, at: 176)
       )
 
+      twoFourRounds(
+        state0: &state0,
+        state1: &state1,
+        message0: message0,
+        message1: message1,
+        constants0: loadConstants(from: constantTable, at: 192),
+        constants1: loadConstants(from: constantTable, at: 208)
+      )
+      twoFourRounds(
+        state0: &state0,
+        state1: &state1,
+        message0: message2,
+        message1: message3,
+        constants0: loadConstants(from: constantTable, at: 224),
+        constants1: loadConstants(from: constantTable, at: 240)
+      )
+
+      return (state0, state1)
+    }
+
+    @inline(__always)
+    private static func compressAlignedPaddingBlock(
+      state0 initialState0: SIMD4<UInt32>,
+      state1 initialState1: SIMD4<UInt32>,
+      bitCount: UInt64,
+      constantTable: UnsafeRawPointer
+    ) -> (SIMD4<UInt32>, SIMD4<UInt32>) {
+      var state0 = initialState0
+      var state1 = initialState1
+      var message0 = SIMD4<UInt32>(0x8000_0000, 0, 0, 0)
+      var message1 = SIMD4<UInt32>(repeating: 0)
+      var message2 = SIMD4<UInt32>(repeating: 0)
+      var message3 = SIMD4<UInt32>(
+        0, 0,
+        UInt32(truncatingIfNeeded: bitCount >> 32),
+        UInt32(truncatingIfNeeded: bitCount)
+      )
+
+      // For a full-block input, the final block always begins with the marker
+      // and fourteen zero words. SHA256SU0(message0, message1) therefore leaves
+      // message0 unchanged, and SHA256SU0(message1, message2) leaves message1
+      // unchanged. Folding the marker into K[0] also removes the first vector
+      // addition. These identities hold for every bitCount accepted here.
+      fourRoundsPrepared(
+        state0: &state0,
+        state1: &state1,
+        work: SIMD4(
+          0xC28A_2F98, 0x7137_4491, 0xB5C0_FBCF, 0xE9B5_DBA5
+        )
+      )
+      message0 = vsha256su1q_u32(message0, message2, message3)
+
+      fourRoundsPrepared(
+        state0: &state0,
+        state1: &state1,
+        work: loadConstants(from: constantTable, at: 16)
+      )
+      message1 = vsha256su1q_u32(message1, message3, message0)
+
+      twoFourRoundsAndAdvance(
+        state0: &state0,
+        state1: &state1,
+        message0: &message2,
+        message1: &message3,
+        message2: &message0,
+        message3: &message1,
+        constants0: loadConstants(from: constantTable, at: 32),
+        constants1: loadConstants(from: constantTable, at: 48)
+      )
+      twoFourRoundsAndAdvance(
+        state0: &state0,
+        state1: &state1,
+        message0: &message0,
+        message1: &message1,
+        message2: &message2,
+        message3: &message3,
+        constants0: loadConstants(from: constantTable, at: 64),
+        constants1: loadConstants(from: constantTable, at: 80)
+      )
+      twoFourRoundsAndAdvance(
+        state0: &state0,
+        state1: &state1,
+        message0: &message2,
+        message1: &message3,
+        message2: &message0,
+        message3: &message1,
+        constants0: loadConstants(from: constantTable, at: 96),
+        constants1: loadConstants(from: constantTable, at: 112)
+      )
+      twoFourRoundsAndAdvance(
+        state0: &state0,
+        state1: &state1,
+        message0: &message0,
+        message1: &message1,
+        message2: &message2,
+        message3: &message3,
+        constants0: loadConstants(from: constantTable, at: 128),
+        constants1: loadConstants(from: constantTable, at: 144)
+      )
+      twoFourRoundsAndAdvance(
+        state0: &state0,
+        state1: &state1,
+        message0: &message2,
+        message1: &message3,
+        message2: &message0,
+        message3: &message1,
+        constants0: loadConstants(from: constantTable, at: 160),
+        constants1: loadConstants(from: constantTable, at: 176)
+      )
       twoFourRounds(
         state0: &state0,
         state1: &state1,

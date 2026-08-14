@@ -1,5 +1,22 @@
 import SSLCore
 
+private final class AESGCMHashBasisStorage: @unchecked Sendable {
+  var words: SIMD8<UInt64>
+
+  init(_ words: SIMD8<UInt64>) {
+    self.words = words
+  }
+
+  deinit {
+    // The owning AESGCM is noncopyable and all operations borrow this immutable
+    // basis. The only mutation is this exactly-once destruction-time wipe.
+    withUnsafeMutableBytes(of: &words) { bytes in
+      guard let baseAddress = bytes.baseAddress else { return }
+      SecureWipe.erase(baseAddress, byteCount: bytes.count)
+    }
+  }
+}
+
 public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
   public static let supportedKeyByteCounts = [16, 24, 32]
   public static let nonceByteCount = 12
@@ -7,7 +24,7 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
 
   public let keyByteCount: Int
   private var blockCipher: AESBlockCipher
-  private var hashBasis: SIMD8<UInt64>
+  private let hashBasis: AESGCMHashBasisStorage
 
   public init(key: Span<UInt8>) throws(AEADError) {
     guard key.count == 16 || key.count == 24 || key.count == 32 else {
@@ -37,7 +54,7 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
     }
     let hashPair = Self.readPair(hash)
     self.blockCipher = blockCipher
-    hashBasis = Self.makeHashBasis(high: hashPair.0, low: hashPair.1)
+    hashBasis = AESGCMHashBasisStorage(Self.makeHashBasis(high: hashPair.0, low: hashPair.1))
   }
 
   /// Seals a message without exposing the move-only cipher owner to callers.
@@ -261,7 +278,7 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
     var offset = 0
     #if canImport(Darwin) && arch(arm64) && canImport(simd) && !SWIFT_SSL_PORTABLE_GHASH
       if bytes.count >= 1_024 {
-        let eightPowers = GHASHARM64Kernel.makeEightReversedHashPowers(hashBasis)
+        let eightPowers = GHASHARM64Kernel.makeEightReversedHashPowers(hashBasis.words)
         while offset + 128 <= bytes.count {
           let first = Self.readPartialPair(bytes, offset: offset, count: 16)
           let second = Self.readPartialPair(bytes, offset: offset + 16, count: 16)
@@ -303,7 +320,7 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
             third.0, third.1,
             fourth.0, fourth.1
           ),
-          reversedHashPowers: hashBasis
+          reversedHashPowers: hashBasis.words
         )
         offset += 64
       }
@@ -322,11 +339,11 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
       return GHASHARM64Kernel.multiplyWithReversedHash(
         xHigh: xHi,
         xLow: xLo,
-        reversedHash0: hashBasis[0],
-        reversedHash1: hashBasis[1]
+        reversedHash0: hashBasis.words[0],
+        reversedHash1: hashBasis.words[1]
       )
     #else
-      let basis = hashBasis
+      let basis = hashBasis.words
       var zHi: UInt64 = 0
       var zLo: UInt64 = 0
       var nibbleIndex = 0
@@ -557,20 +574,4 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
     writeUInt64(low, into: &bytes, offset: 8)
   }
 
-  deinit {
-    // Unsafe boundary invariants:
-    // - AESGCM is noncopyable, so destruction wipes its unique inline state
-    //   exactly once after blockCipher has completed all borrows.
-    // - All eight UInt64 lanes are initialized and exclusively mutable here.
-    // - The pointer is scoped to this closure and never crosses concurrency.
-    // deinit exposes self immutably, but the noncopyable value has no live
-    // alias; the scoped mutating raw pointer is used only for the final wipe.
-    withUnsafeBytes(of: hashBasis) { bytes in
-      guard let baseAddress = bytes.baseAddress else { return }
-      SecureWipe.erase(
-        UnsafeMutableRawPointer(mutating: baseAddress),
-        byteCount: bytes.count
-      )
-    }
-  }
 }

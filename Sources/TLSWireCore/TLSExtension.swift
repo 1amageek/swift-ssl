@@ -8,7 +8,7 @@
 /// } Extension;
 /// ```
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - Extension Type
 
@@ -132,7 +132,7 @@ public enum TLSExtension: Sendable {
         case .unknown(_, let data): extensionData = data
         }
 
-        var writer = ByteWriter(reservingCapacity: 4 + extensionData.count)
+        var writer = TLSWireWriter(reservingCapacity: 4 + extensionData.count)
         writer.writeUInt16(rawType)
         try writer.wWriteVector16(extensionData)
         return writer.finishArray()
@@ -142,7 +142,7 @@ public enum TLSExtension: Sendable {
 
     /// Decode an extension from a reader with default (ClientHello) context.
     /// Prefer `decode(from:context:)` when the message context is known.
-    public static func decode(from reader: inout ByteReader) throws(TLSWireError) -> TLSExtension {
+    public static func decode(from reader: inout TLSWireReader) throws(TLSWireError) -> TLSExtension {
         try decode(from: &reader, context: .clientHello)
     }
 
@@ -153,7 +153,7 @@ public enum TLSExtension: Sendable {
     /// - `supported_versions`: ClientHello (list), ServerHello (single version)
     /// - `pre_shared_key`: ClientHello (offered PSKs), ServerHello (selected identity)
     /// - `early_data`: ClientHello/EE (empty), NewSessionTicket (max_early_data_size)
-    public static func decode(from reader: inout ByteReader, context: MessageContext) throws(TLSWireError) -> TLSExtension {
+    public static func decode(from reader: inout TLSWireReader, context: MessageContext) throws(TLSWireError) -> TLSExtension {
         let type = try reader.wReadUInt16()
         let data = try reader.wReadVector16()
 
@@ -174,7 +174,7 @@ public enum TLSExtension: Sendable {
     /// RFC 8446 Section 4.2: "There MUST NOT be more than one extension
     /// of the same type in a given extension block."
     public static func decodeExtensions(from data: [UInt8], context: MessageContext) throws(TLSWireError) -> [TLSExtension] {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         var extensions: [TLSExtension] = []
         var seenTypes: Set<UInt16> = []
         while !reader.isAtEnd {

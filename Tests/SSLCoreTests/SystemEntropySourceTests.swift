@@ -3,7 +3,7 @@ import XCTest
 
 final class SystemEntropySourceTests: XCTestCase {
     func testFillsRequestedBytes() throws {
-        var source = SystemEntropySource()
+        let source = SystemEntropySource()
         var bytes = ContiguousArray<UInt8>(repeating: 0, count: 64)
         var destination = bytes.mutableSpan
         try source.fill(&destination)
@@ -12,7 +12,7 @@ final class SystemEntropySourceTests: XCTestCase {
     }
 
     func testRejectsOversizedRequestWithoutMutation() {
-        var source = SystemEntropySource()
+        let source = SystemEntropySource()
         var bytes = ContiguousArray<UInt8>(repeating: 0xA5, count: SystemEntropySource.maximumRequestByteCount + 1)
         let original = bytes
         var destination = bytes.mutableSpan

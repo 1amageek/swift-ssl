@@ -28,7 +28,7 @@ final class OwnedBytesTests: XCTestCase {
             XCTFail("An out-of-bounds range was accepted")
         } catch {
             XCTAssertEqual(
-                error as? ByteError,
+                error,
                 .outOfBounds(offset: 3, requested: 2, available: 1)
             )
         }

@@ -13,7 +13,7 @@ final class SubjectPublicKeyInfoTests: XCTestCase {
         let info = try SubjectPublicKeyInfo(der: der.span)
         XCTAssertEqual(info.algorithm, .x25519)
         XCTAssertEqual(info.publicKeyByteCount, 32)
-        try info.withPublicKeyBytes { key in
+        info.withPublicKeyBytes { key in
             XCTAssertEqual(copy(key), Array(repeating: 0xA5, count: 32))
         }
     }

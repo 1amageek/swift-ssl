@@ -6,7 +6,7 @@
 /// } SignatureSchemeList;
 /// ```
 
-import P2PCoreBytes
+import NetworkingCore
 
 // MARK: - Signature Algorithms Extension
 
@@ -43,13 +43,13 @@ public struct SignatureAlgorithmsExtension: Sendable, TLSExtensionValue {
             algorithmsData.append(UInt8(scheme.rawValue & 0xFF))
         }
 
-        var writer = ByteWriter(reservingCapacity: 2 + algorithmsData.count)
+        var writer = TLSWireWriter(reservingCapacity: 2 + algorithmsData.count)
         try writer.wWriteVector16(algorithmsData)
         return writer.finishArray()
     }
 
     public static func decode(from data: [UInt8]) throws(TLSWireError) -> SignatureAlgorithmsExtension {
-        var reader = ByteReader(data)
+        var reader = TLSWireReader(data)
         let algorithmsData = try reader.wReadVector16()
 
         guard algorithmsData.count >= 2 && algorithmsData.count % 2 == 0 else {
@@ -57,7 +57,7 @@ public struct SignatureAlgorithmsExtension: Sendable, TLSExtensionValue {
         }
 
         var algorithms: [SignatureScheme] = []
-        var algReader = ByteReader(algorithmsData)
+        var algReader = TLSWireReader(algorithmsData)
         while !algReader.isAtEnd {
             let value = try algReader.wReadUInt16()
             if let scheme = SignatureScheme(rawValue: value) {

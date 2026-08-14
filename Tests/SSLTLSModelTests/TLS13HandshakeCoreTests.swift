@@ -937,7 +937,7 @@ final class TLS13HandshakeCoreTests: XCTestCase {
       XCTFail("second HelloRetryRequest was accepted")
     } catch {
       XCTAssertEqual(
-        error as? TLS13HandshakeEngineError,
+        error,
         .handshake(
           .unexpectedMessage(type: TLS13HandshakeCodec.serverHelloType)
         )

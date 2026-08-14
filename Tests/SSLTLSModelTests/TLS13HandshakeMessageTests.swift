@@ -1977,8 +1977,8 @@ final class TLS13HandshakeMessageTests: XCTestCase {
     XCTAssertEqual(try state.obfuscatedTicketAge(at: verificationInstant), 7)
     let serverPSK = try serverState.consumePSK()
     let clientPSK = try state.consumePSK()
-    try serverPSK.withBorrowedBytes { serverBytes in
-      try clientPSK.withBorrowedBytes { clientBytes in
+    serverPSK.withBorrowedBytes { serverBytes in
+      clientPSK.withBorrowedBytes { clientBytes in
         XCTAssertTrue(ConstantTime.equal(serverBytes, clientBytes))
       }
     }

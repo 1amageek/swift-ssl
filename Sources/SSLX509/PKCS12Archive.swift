@@ -136,7 +136,7 @@ public struct PKCS12Archive: Sendable {
                 limits: limits,
                 inputByteCount: encodedDER.count
             )
-        } catch let error as ResourceLimitError {
+        } catch let error {
             throw PKCS12ArchiveError.resourceLimit(error)
         }
 
@@ -382,7 +382,7 @@ public struct PKCS12Archive: Sendable {
         }
         do {
             _ = try X509Certificate(der: certificateOctets.contentBytes)
-        } catch let error as X509CertificateError {
+        } catch let error {
             throw PKCS12ArchiveError.certificate(error)
         }
         return try contentRange(certificateOctets)
@@ -396,7 +396,7 @@ public struct PKCS12Archive: Sendable {
         for certificate in certificates {
             do {
                 _ = try X509Certificate(der: certificate.span)
-            } catch let error as X509CertificateError {
+            } catch let error {
                 throw PKCS12ArchiveError.certificate(error)
             }
             let (updated, overflow) = payloadByteCount.addingReportingOverflow(
@@ -559,7 +559,7 @@ public struct PKCS12Archive: Sendable {
                 limits: defaultParsingLimits,
                 inputByteCount: encoded.count
             )
-        } catch let error as ResourceLimitError {
+        } catch let error {
             throw PKCS12ArchiveError.resourceLimit(error)
         }
         var cursor = DERCursor(encoded)
@@ -576,7 +576,7 @@ public struct PKCS12Archive: Sendable {
                 offset: element.encodedOffset + element.headerByteCount,
                 count: element.contentBytes.count
             )
-        } catch let error as ByteError {
+        } catch let error {
             throw PKCS12ArchiveError.invalidRange(error)
         }
     }
@@ -589,7 +589,7 @@ public struct PKCS12Archive: Sendable {
                 offset: element.encodedOffset,
                 count: element.encodedBytes.count
             )
-        } catch let error as ByteError {
+        } catch let error {
             throw PKCS12ArchiveError.invalidRange(error)
         }
     }
@@ -601,7 +601,7 @@ public struct PKCS12Archive: Sendable {
     ) throws -> DERElementView {
         do {
             return try cursor.readElement(using: &budget)
-        } catch let error as DERError {
+        } catch let error {
             throw PKCS12ArchiveError.der(error)
         }
     }
@@ -609,7 +609,7 @@ public struct PKCS12Archive: Sendable {
     private static func requireFullyConsumed(_ cursor: DERCursor) throws {
         do {
             try cursor.requireFullyConsumed()
-        } catch let error as DERError {
+        } catch let error {
             throw PKCS12ArchiveError.der(error)
         }
     }
@@ -619,7 +619,7 @@ public struct PKCS12Archive: Sendable {
     ) throws -> UInt64 {
         do {
             return try DERPrimitiveCodec.decodePositiveInteger(from: element)
-        } catch let error as DERValueError {
+        } catch let error {
             throw PKCS12ArchiveError.value(error)
         }
     }
@@ -629,7 +629,7 @@ public struct PKCS12Archive: Sendable {
     ) throws -> ContiguousArray<UInt64> {
         do {
             return try DERPrimitiveCodec.decodeObjectIdentifier(from: element)
-        } catch let error as DERValueError {
+        } catch let error {
             throw PKCS12ArchiveError.value(error)
         }
     }

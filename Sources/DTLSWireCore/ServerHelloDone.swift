@@ -3,7 +3,8 @@
 /// Empty message signaling end of server's hello sequence.
 /// struct {} ServerHelloDone;
 
-import P2PCoreBytes
+import NetworkingCore
+import TLSWireCore
 
 /// DTLS 1.2 ServerHelloDone message (empty body)
 public struct ServerHelloDone: Sendable {
