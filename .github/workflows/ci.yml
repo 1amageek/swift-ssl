@@ -47,12 +47,24 @@ jobs:
             "$toolchain/usr/bin/ld"
           xcrun swiftc --version | tee "$RUNNER_TEMP/swift-version.txt"
           grep -F "Swift ${SWIFT_COMPILER_COMMIT}" "$RUNNER_TEMP/swift-version.txt"
-      - name: Test package with Xcode
+      - name: Build tests with Xcode
         run: |
           set -euo pipefail
           python3 -c \
             'import subprocess,sys; sys.exit(subprocess.run(sys.argv[2:], timeout=int(sys.argv[1])).returncode)' \
-            1800 xcodebuild test \
+            120 xcodebuild build-for-testing \
+              -toolchain "$TOOLCHAINS" \
+              -scheme swift-ssl-Package \
+              -destination 'platform=macOS' \
+              -parallel-testing-enabled NO \
+              "LD_RUNPATH_SEARCH_PATHS=\$(inherited) $HOME/Library/Developer/Toolchains/${SWIFT_SNAPSHOT}.xctoolchain/usr/lib/swift/macosx/testing"
+      - name: Run tests with Xcode
+        run: |
+          set -euo pipefail
+          python3 -c \
+            'import subprocess,sys; sys.exit(subprocess.run(sys.argv[2:], timeout=int(sys.argv[1])).returncode)' \
+            120 xcodebuild test-without-building \
+              -toolchain "$TOOLCHAINS" \
               -scheme swift-ssl-Package \
               -destination 'platform=macOS' \
               -parallel-testing-enabled NO \
