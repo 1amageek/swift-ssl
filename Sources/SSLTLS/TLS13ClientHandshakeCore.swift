@@ -60,6 +60,7 @@ public struct TLS13ClientHandshakeCore:
   private var echWasRejected: Bool
   private var echRetryConfigurations: ECHConfigList?
   private var resumptionState: TLS13ResumptionState?
+  private let resumptionPeerCertificateAuthenticated: Bool
   private let earlyDataConfiguration: TLS13EarlyDataClientConfiguration?
   private var resumptionPSK: SecretBytes?
   private var offeredResumption: Bool
@@ -451,6 +452,8 @@ public struct TLS13ClientHandshakeCore:
     srtpConfiguration = nil
     negotiatedSRTPProtectionProfile = nil
     negotiatedSRTPMasterKeyIdentifier = nil
+    resumptionPeerCertificateAuthenticated =
+      resumptionState?.authenticatedPeerRole == .server
     self.resumptionState = resumptionState
     self.earlyDataConfiguration = earlyDataConfiguration
     self.echConfiguration = consume echConfiguration
@@ -497,6 +500,10 @@ public struct TLS13ClientHandshakeCore:
   public var isEstablished: Bool {
     if case .established = phase { return true }
     return false
+  }
+
+  public var isResumedSession: Bool {
+    isEstablished && resumedHandshake
   }
 
   public var negotiatedApplicationProtocol: TLS13ApplicationProtocol? {
@@ -951,6 +958,10 @@ public struct TLS13ClientHandshakeCore:
       let request = try TLS13HandshakeCodec.parseCertificateRequest(message)
       guard !request.requestContext.isEmpty else {
         throw TLS13HandshakeEngineError.malformedInput
+      }
+      guard negotiatedClientCertificateType == configuredClientCertificateType
+      else {
+        throw TLS13HandshakeEngineError.certificateVerificationFailed
       }
       var authenticationTranscript = transcript.clone()
       try authenticationTranscript.append(message)
@@ -1505,7 +1516,10 @@ public struct TLS13ClientHandshakeCore:
           lifetime: ticket.lifetime,
           ageAdd: ticket.ageAdd,
           maximumEarlyDataByteCount: ticket.maximumEarlyDataByteCount ?? 0,
-          applicationProtocol: selectedApplicationProtocol
+          applicationProtocol: selectedApplicationProtocol,
+          authenticatedPeerRole: (resumedHandshake
+            ? resumptionPeerCertificateAuthenticated
+            : sawCertificateVerify) ? .server : nil
         )
       }
       applicationSecrets = consume secrets
@@ -1680,17 +1694,19 @@ public struct TLS13ClientHandshakeCore:
         }
       }
       negotiatedServerCertificateType = selectedServerCertificateType
-      let selectedClientCertificateType =
-        encryptedExtensions.clientCertificateType ?? .x509
-      guard selectedClientCertificateType == configuredClientCertificateType else {
-        throw .certificateVerificationFailed
-      }
-      if configuredClientCertificateType != .x509 {
-        guard encryptedExtensions.clientCertificateType != nil else {
+      if let selectedClientCertificateType =
+        encryptedExtensions.clientCertificateType
+      {
+        guard selectedClientCertificateType == configuredClientCertificateType else {
           throw .certificateVerificationFailed
         }
+        negotiatedClientCertificateType = selectedClientCertificateType
+      } else {
+        // RFC 7250 requires the server to omit client_certificate_type when it
+        // does not request client authentication. Defer a configured non-X.509
+        // mismatch until an actual CertificateRequest is received.
+        negotiatedClientCertificateType = .x509
       }
-      negotiatedClientCertificateType = selectedClientCertificateType
       try validateDTLSSRTP(selection: encryptedExtensions.useSRTP)
       let retryConfigurations = encryptedExtensions.echRetryConfigurations
       if echInnerClientHello != nil {
@@ -1758,6 +1774,10 @@ public struct TLS13ClientHandshakeCore:
       }
       guard request.requestContext.isEmpty else {
         throw .malformedInput
+      }
+      guard negotiatedClientCertificateType == configuredClientCertificateType
+      else {
+        throw .certificateVerificationFailed
       }
       try appendTranscript(message)
       certificateRequest = request

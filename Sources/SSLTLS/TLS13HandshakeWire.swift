@@ -8,6 +8,37 @@ enum TLS13HandshakeWire {
     TLS13ContentType.changeCipherSpec.rawValue
   static let maximumInputByteCount = 4 * 16_384
 
+  /// Borrows protocol-control plaintext for synchronous processing and erases
+  /// it before the caller-owned unpublished destination is returned.
+  static func consumeUnpublishedPlaintext<Result: ~Copyable, Failure: Error>(
+    _ output: inout MutableSpan<UInt8>,
+    byteCount: Int,
+    _ body: (Span<UInt8>) throws(Failure) -> Result
+  ) throws(Failure) -> Result {
+    precondition(byteCount >= 0 && byteCount <= output.count)
+    // Unsafe boundary invariants:
+    // - `output` owns initialized UInt8 storage for the checked byteCount.
+    // - UInt8 binding preserves alignment, stride, and initialized state.
+    // - The span is borrowed synchronously, never escapes the closure, and no
+    //   pointer or owner crosses a Sendable boundary.
+    // - The exact plaintext range is erased after success or failure.
+    return try output.withUnsafeMutableBytes { rawBytes throws(Failure) -> Result in
+      let bytes = rawBytes.bindMemory(to: UInt8.self)
+      let plaintext = Span(
+        _unsafeElements: UnsafeBufferPointer(
+          start: bytes.baseAddress,
+          count: byteCount
+        )
+      )
+      defer {
+        if let baseAddress = bytes.baseAddress {
+          SecureWipe.erase(baseAddress, byteCount: byteCount)
+        }
+      }
+      return try body(plaintext)
+    }
+  }
+
   static func recordRanges(
     _ input: Span<UInt8>
   ) throws(TLS13HandshakeEngineError) -> ContiguousArray<ByteRange> {
@@ -194,6 +225,31 @@ enum TLS13HandshakeWire {
     return OwnedBytes(consuming: output)
   }
 
+  static func seal(
+    content: Span<UInt8>,
+    contentType: TLS13ContentType,
+    with protector: inout TLS13RecordProtector,
+    into output: inout MutableSpan<UInt8>
+  ) throws(TLS13HandshakeEngineError) -> Int {
+    let recordByteCount = TLS13RecordProtector.recordHeaderByteCount
+      + content.count + 1 + TLS13RecordProtector.tagByteCount
+    guard output.count >= recordByteCount else {
+      throw .record(
+        .outputTooSmall(required: recordByteCount, actual: output.count)
+      )
+    }
+    do {
+      try protector.seal(
+        content: content,
+        contentType: contentType,
+        into: &output
+      )
+    } catch let error {
+      throw .record(error)
+    }
+    return recordByteCount
+  }
+
   static func closeNotify(
     with protector: inout TLS13RecordProtector
   ) throws(TLS13HandshakeEngineError) -> OwnedBytes {
@@ -207,15 +263,37 @@ enum TLS13HandshakeWire {
     )
   }
 
+  static func closeNotify(
+    with protector: inout TLS13RecordProtector,
+    into output: inout MutableSpan<UInt8>
+  ) throws(TLS13HandshakeEngineError) -> Int {
+    let alert: [UInt8] = [
+      1,
+      TLSAlert.closeNotify.rawValue,
+    ]
+    return try seal(
+      content: alert.span,
+      contentType: .alert,
+      with: &protector,
+      into: &output
+    )
+  }
+
   static func parseAlert(
     _ plaintext: borrowing OwnedBytes
   ) throws(TLS13HandshakeEngineError) -> TLSAlert {
+    try parseAlert(plaintext.span)
+  }
+
+  static func parseAlert(
+    _ plaintext: Span<UInt8>
+  ) throws(TLS13HandshakeEngineError) -> TLSAlert {
     guard plaintext.count == 2,
-      let alert = TLSAlert(rawValue: plaintext.span[1])
+      let alert = TLSAlert(rawValue: plaintext[1])
     else {
       throw .malformedInput
     }
-    let level = plaintext.span[0]
+    let level = plaintext[0]
     let isValidLevel = alert == .closeNotify
       ? level == 1
       : level == 2
@@ -345,6 +423,17 @@ func mapHandshakeEngineError(_ error: any Error) -> TLS13HandshakeEngineError {
   if let error = error as? ECHError { return .ech(error) }
   if let error = error as? ByteError { return .output(error) }
   return .malformedInput
+}
+
+func isRecoverableRecordDestinationError(
+  _ error: TLS13HandshakeEngineError
+) -> Bool {
+  switch error {
+  case .record(.outputTooSmall), .record(.overlappingInputAndOutput):
+    return true
+  default:
+    return false
+  }
 }
 
 func expectedObfuscatedTicketAge(

@@ -148,7 +148,8 @@ Hot paths define a budget before optimization.
 | X25519MLKEM768 full round trip | 45 balanced allocations requesting 40,032 bytes; role-specific received shares remain borrowed; 0 dynamic bulk-copy bytes |
 | HMAC-DRBG generate | Caller-owned output; K/V remain in one `SecretBytes` owner; temporary HMAC messages and digests are wiped before return; entropy input is copied only into bounded seed material |
 | DER field access | 0 field copies after certificate parse; ranges borrow the certificate owner |
-| TLS complete inbound record | 0 record copies; plaintext written once into the action batch |
+| TLS outbound application record | 0 intermediate payload owners; segmented AEAD writes the header, ciphertext, content type, padding, and tag into the final caller destination |
+| TLS complete inbound record | 0 record copies and 0 intermediate plaintext owners; authenticated plaintext is written into the final caller destination |
 | TLS incomplete record | At most one bounded copy of the unconsumed fragment |
 | TLS outbound action batch | One backing allocation, range-only actions |
 | QUIC handshake input | 0 copy for a complete contiguous CRYPTO fragment; bounded copy only for state that must survive the call |

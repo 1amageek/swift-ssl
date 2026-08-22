@@ -280,6 +280,58 @@ final class AESGCMTests: XCTestCase {
     XCTAssertEqual(storage, original)
   }
 
+  func testAppendingByteAndZeroPaddingMatchesContiguousSealAcrossBoundaries() throws {
+    let key = deterministicBytes(count: 16, seed: 0x11)
+    let nonce = deterministicBytes(count: 12, seed: 0x22)
+    let authenticatedData = deterministicBytes(count: 23, seed: 0x33)
+    let prefixByteCounts = [0, 1, 15, 16, 17, 63, 64, 65, 255, 256, 257, 16_384]
+    let paddingByteCounts = [0, 1, 15, 16, 17, 255]
+    let cipher = try AESGCM(key: key.span)
+
+    for prefixByteCount in prefixByteCounts {
+      let prefix = deterministicBytes(count: prefixByteCount, seed: 0x44)
+      for paddingByteCount in paddingByteCounts {
+        let trailingByte: UInt8 = 0x17
+        var contiguous = prefix
+        contiguous.append(trailingByte)
+        contiguous.append(contentsOf: repeatElement(0, count: paddingByteCount))
+
+        var expected = ContiguousArray<UInt8>(
+          repeating: 0,
+          count: contiguous.count + AESGCM.tagByteCount
+        )
+        try expected.withUnsafeMutableBufferPointer { buffer in
+          var output = MutableSpan(_unsafeElements: buffer)
+          try cipher.seal(
+            plaintext: contiguous.span,
+            authenticatedData: authenticatedData.span,
+            nonce: nonce.span,
+            into: &output
+          )
+        }
+
+        var actual = ContiguousArray<UInt8>(repeating: 0, count: expected.count)
+        try actual.withUnsafeMutableBufferPointer { buffer in
+          var output = MutableSpan(_unsafeElements: buffer)
+          try cipher.sealAppendingByteAndZeroPadding(
+            plaintextPrefix: prefix.span,
+            trailingByte: trailingByte,
+            zeroPaddingByteCount: paddingByteCount,
+            authenticatedData: authenticatedData.span,
+            nonce: nonce.span,
+            into: &output
+          )
+        }
+
+        XCTAssertEqual(
+          actual,
+          expected,
+          "prefix: \(prefixByteCount), padding: \(paddingByteCount)"
+        )
+      }
+    }
+  }
+
   func testSupportedKeyLengths() throws {
     for count in AESGCM.supportedKeyByteCounts {
       let key = ContiguousArray<UInt8>(repeating: 0, count: count)
@@ -456,5 +508,16 @@ final class AESGCMTests: XCTestCase {
 
   private func hex(_ value: ContiguousArray<UInt8>) -> String {
     value.map { String(format: "%02x", $0) }.joined()
+  }
+
+  private func deterministicBytes(count: Int, seed: UInt8) -> ContiguousArray<UInt8> {
+    var result = ContiguousArray<UInt8>()
+    result.reserveCapacity(count)
+    var value = UInt64(seed) | 1
+    for _ in 0..<count {
+      value = value &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+      result.append(UInt8(truncatingIfNeeded: value >> 32))
+    }
+    return result
   }
 }

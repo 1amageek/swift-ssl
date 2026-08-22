@@ -146,6 +146,76 @@ public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher, Sendable {
     }
   }
 
+  /// Seals a borrowed prefix followed by one byte and zero padding directly
+  /// into caller-owned ciphertext storage.
+  ///
+  /// This package-level framing primitive avoids materializing or copying a
+  /// concatenated plaintext while preserving the same AEAD result as sealing
+  /// `plaintextPrefix + [trailingByte] + zeroPadding`.
+  package func sealAppendingByteAndZeroPadding(
+    plaintextPrefix: Span<UInt8>,
+    trailingByte: UInt8,
+    zeroPaddingByteCount: Int,
+    authenticatedData: Span<UInt8>,
+    nonce: Span<UInt8>,
+    into output: inout MutableSpan<UInt8>
+  ) throws(AEADError) {
+    guard zeroPaddingByteCount >= 0 else {
+      throw .messageLimitReached
+    }
+    let (prefixAndByteCount, prefixOverflow) = plaintextPrefix.count.addingReportingOverflow(1)
+    let (plaintextByteCount, paddingOverflow) =
+      prefixAndByteCount.addingReportingOverflow(zeroPaddingByteCount)
+    guard !prefixOverflow, !paddingOverflow else {
+      throw .messageLimitReached
+    }
+    try validate(
+      messageByteCount: plaintextByteCount,
+      authenticatedDataByteCount: authenticatedData.count,
+      nonce: nonce,
+      outputByteCount: output.count,
+      includesTag: true
+    )
+    guard !Self.overlaps(plaintextPrefix, output, allowSameStart: false),
+      !Self.overlaps(authenticatedData, output, allowSameStart: false)
+    else {
+      throw .overlappingInputAndOutput
+    }
+
+    cryptAppendingByteAndZeroPadding(
+      plaintextPrefix,
+      trailingByte: trailingByte,
+      zeroPaddingByteCount: zeroPaddingByteCount,
+      nonce: nonce,
+      initialCounter: 1,
+      into: &output
+    )
+    // Unsafe boundary invariants:
+    // - Validation proves that output owns at least plaintextByteCount fully
+    //   initialized UInt8 elements produced by the encryption step above.
+    // - UInt8 has stride and alignment one; the immutable byte view is exact.
+    // - The pointer and ciphertext span are borrowed only while computing the
+    //   tag and cannot escape or cross a Sendable boundary.
+    var tag = output.withUnsafeBytes { rawBytes in
+      let baseAddress = rawBytes.baseAddress.unsafelyUnwrapped
+      let pointer = UnsafeBufferPointer(
+        start: baseAddress.assumingMemoryBound(to: UInt8.self),
+        count: plaintextByteCount
+      )
+      return authenticationTag(
+        authenticatedData: authenticatedData,
+        ciphertext: Span(_unsafeElements: pointer),
+        nonce: nonce
+      )
+    }
+    defer { Self.wipe(&tag) }
+    var index = 0
+    while index < Self.tagByteCount {
+      output[plaintextByteCount + index] = tag[index]
+      index += 1
+    }
+  }
+
   public func open(
     ciphertextAndTag: Span<UInt8>,
     authenticatedData: Span<UInt8>,
@@ -273,6 +343,59 @@ public struct ChaCha20Poly1305: ~Copyable, AuthenticatedCipher, Sendable {
         let word = block[index >> 2]
         let keyByte = UInt8(truncatingIfNeeded: word >> UInt32((index & 3) * 8))
         output[offset + index] = input[offset + index] ^ keyByte
+        index += 1
+      }
+      Self.wipeValue(&block)
+      offset += count
+      counter &+= 1
+    }
+  }
+
+  private func cryptAppendingByteAndZeroPadding(
+    _ plaintextPrefix: Span<UInt8>,
+    trailingByte: UInt8,
+    zeroPaddingByteCount: Int,
+    nonce: Span<UInt8>,
+    initialCounter: UInt32,
+    into output: inout MutableSpan<UInt8>
+  ) {
+    let plaintextByteCount = plaintextPrefix.count + 1 + zeroPaddingByteCount
+    var counter = initialCounter
+    var offset = 0
+    let nonce0 = SIMD4<UInt32>(repeating: Self.readUInt32LittleEndian(nonce, offset: 0))
+    let nonce1 = SIMD4<UInt32>(repeating: Self.readUInt32LittleEndian(nonce, offset: 4))
+    let nonce2 = SIMD4<UInt32>(repeating: Self.readUInt32LittleEndian(nonce, offset: 8))
+    while offset + 256 <= plaintextPrefix.count {
+      Self.cryptFourBlocks(
+        plaintextPrefix,
+        inputOffset: offset,
+        counter: counter,
+        nonce0: nonce0,
+        nonce1: nonce1,
+        nonce2: nonce2,
+        keyWords: keyWords,
+        into: &output
+      )
+      offset += 256
+      counter &+= 4
+    }
+    while offset < plaintextByteCount {
+      var block = Self.chachaBlock(counter: counter, nonce: nonce, keyWords: keyWords)
+      let count = min(64, plaintextByteCount - offset)
+      var index = 0
+      while index < count {
+        let sourceIndex = offset + index
+        let plaintextByte: UInt8
+        if sourceIndex < plaintextPrefix.count {
+          plaintextByte = plaintextPrefix[sourceIndex]
+        } else if sourceIndex == plaintextPrefix.count {
+          plaintextByte = trailingByte
+        } else {
+          plaintextByte = 0
+        }
+        let word = block[index >> 2]
+        let keyByte = UInt8(truncatingIfNeeded: word >> UInt32((index & 3) * 8))
+        output[sourceIndex] = plaintextByte ^ keyByte
         index += 1
       }
       Self.wipeValue(&block)

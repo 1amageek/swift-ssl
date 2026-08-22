@@ -146,6 +146,58 @@ final class ChaCha20Poly1305Tests: XCTestCase {
     XCTAssertEqual(storage, original)
   }
 
+  func testAppendingByteAndZeroPaddingMatchesContiguousSealAcrossBoundaries() throws {
+    let key = deterministicBytes(count: 32, seed: 0x11)
+    let nonce = deterministicBytes(count: 12, seed: 0x22)
+    let authenticatedData = deterministicBytes(count: 23, seed: 0x33)
+    let prefixByteCounts = [0, 1, 63, 64, 65, 255, 256, 257, 16_384]
+    let paddingByteCounts = [0, 1, 63, 64, 65, 255]
+    let cipher = try ChaCha20Poly1305(key: key.span)
+
+    for prefixByteCount in prefixByteCounts {
+      let prefix = deterministicBytes(count: prefixByteCount, seed: 0x44)
+      for paddingByteCount in paddingByteCounts {
+        let trailingByte: UInt8 = 0x17
+        var contiguous = prefix
+        contiguous.append(trailingByte)
+        contiguous.append(contentsOf: repeatElement(0, count: paddingByteCount))
+
+        var expected = ContiguousArray<UInt8>(
+          repeating: 0,
+          count: contiguous.count + ChaCha20Poly1305.tagByteCount
+        )
+        try expected.withUnsafeMutableBufferPointer { buffer in
+          var output = MutableSpan(_unsafeElements: buffer)
+          try cipher.seal(
+            plaintext: contiguous.span,
+            authenticatedData: authenticatedData.span,
+            nonce: nonce.span,
+            into: &output
+          )
+        }
+
+        var actual = ContiguousArray<UInt8>(repeating: 0, count: expected.count)
+        try actual.withUnsafeMutableBufferPointer { buffer in
+          var output = MutableSpan(_unsafeElements: buffer)
+          try cipher.sealAppendingByteAndZeroPadding(
+            plaintextPrefix: prefix.span,
+            trailingByte: trailingByte,
+            zeroPaddingByteCount: paddingByteCount,
+            authenticatedData: authenticatedData.span,
+            nonce: nonce.span,
+            into: &output
+          )
+        }
+
+        XCTAssertEqual(
+          actual,
+          expected,
+          "prefix: \(prefixByteCount), padding: \(paddingByteCount)"
+        )
+      }
+    }
+  }
+
   #if canImport(CryptoKit)
     func testDifferentialAgainstCryptoKitAcrossBlockBoundaries() throws {
       let key = deterministicBytes(count: 32, seed: 0x11)

@@ -22,10 +22,18 @@ public protocol TLS13ClientHandshaking: ~Copyable, Sendable {
         throws(TLS13HandshakeEngineError) -> TLS13HandshakeOutput
     mutating func sendApplicationData(_ content: Span<UInt8>)
         throws(TLS13HandshakeEngineError) -> TLS13HandshakeOutput
+    mutating func sendApplicationData(
+        _ content: Span<UInt8>,
+        into output: inout MutableSpan<UInt8>
+    ) throws(TLS13HandshakeEngineError) -> Int
     mutating func receiveApplicationRecord(_ input: Span<UInt8>)
         throws(TLS13HandshakeEngineError) -> OwnedBytes
     mutating func receiveApplicationRecordStep(_ input: Span<UInt8>)
         throws(TLS13HandshakeEngineError) -> TLS13StreamRecordTransition
+    mutating func receiveApplicationRecordStep(
+        _ input: Span<UInt8>,
+        into output: inout MutableSpan<UInt8>
+    ) throws(TLS13HandshakeEngineError) -> TLS13StreamRecordDestinationTransition
     mutating func receiveNewSessionTicket(
         _ input: Span<UInt8>,
         receivedAt: VerificationInstant

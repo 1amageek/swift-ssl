@@ -6,11 +6,11 @@
 
 | Component | Identifier |
 |---|---|
-| Swift snapshot | `swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a` |
-| macOS toolchain | `org.swift.64202607231a` |
-| Swift compiler commit | `ef761e567dc94ee` |
-| WASI Swift SDK | `swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm` |
-| Embedded WASI Swift SDK | `swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded` |
+| Swift snapshot | `swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a` |
+| macOS toolchain | `org.swift.64202608141a` |
+| Swift compiler commit | `424cae54c1a10da` |
+| WASI Swift SDK | `swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a_wasm` |
+| Embedded WASI Swift SDK | `swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a_wasm-embedded` |
 
 ## Build and execution checks
 
@@ -26,11 +26,11 @@ bounded wrapper with `--skip-build`; a compile timeout is never reported as a
 runtime failure.
 
 ```sh
-TOOLCHAINS=org.swift.64202607231a xcrun swift --version
-TOOLCHAINS=org.swift.64202607231a xcrun swift sdk list
+TOOLCHAINS=org.swift.64202608141a xcrun swift --version
+TOOLCHAINS=org.swift.64202608141a xcrun swift sdk list
 
 scripts/swift-test-timeout.sh 120 \
-  env TOOLCHAINS=org.swift.64202607231a \
+  env TOOLCHAINS=org.swift.64202608141a \
   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild build-for-testing \
   -scheme swift-ssl-Package \
@@ -40,7 +40,7 @@ scripts/swift-test-timeout.sh 120 \
   CODE_SIGNING_ALLOWED=NO
 
 scripts/swift-test-timeout.sh 120 \
-  env TOOLCHAINS=org.swift.64202607231a \
+  env TOOLCHAINS=org.swift.64202608141a \
   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcrun xctest \
   .build/xcode-derived-data/Build/Products/Debug/SSLCoreTests.xctest
@@ -49,57 +49,57 @@ scripts/swift-test-timeout.sh 120 \
 # SSLX509Tests, SSLCryptoTests, and SSLTLSModelTests.
 
 scripts/swift-test-timeout.sh 120 \
-  env TOOLCHAINS=org.swift.64202607231a \
+  env TOOLCHAINS=org.swift.64202608141a \
   swift run \
-  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a_wasm \
   --scratch-path .build/target-validation-wasi \
   swift-ssl-target-validation
 
 scripts/swift-test-timeout.sh 120 \
-  env TOOLCHAINS=org.swift.64202607231a \
+  env TOOLCHAINS=org.swift.64202608141a \
   swift run -c release \
   --scratch-path .build/target-validation-hybrid-native \
   swift-ssl-hybrid-target-validation
 
 scripts/swift-test-timeout.sh 120 \
-  env TOOLCHAINS=org.swift.64202607231a \
+  env TOOLCHAINS=org.swift.64202608141a \
   swift run -c release \
-  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a_wasm \
   --scratch-path .build/target-validation-hybrid-wasi \
   swift-ssl-hybrid-target-validation
 
 EMBEDDED_SWIFT_RESOURCES="$( \
-  xcrun --toolchain org.swift.64202607231a swift sdk configure \
+  xcrun --toolchain org.swift.64202608141a swift sdk configure \
   --show-configuration \
-  swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
+  swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a_wasm-embedded \
   | awk -F': ' '$1 == "swiftResourcesPath" { print $2 }' \
 )"
 EMBEDDED_UNICODE_TABLES="${EMBEDDED_SWIFT_RESOURCES}/embedded/wasm32-unknown-wasip1/libswiftUnicodeDataTables.a"
 test -f "${EMBEDDED_UNICODE_TABLES}"
 
 scripts/swift-test-timeout.sh 120 \
-  env TOOLCHAINS=org.swift.64202607231a \
+  env TOOLCHAINS=org.swift.64202608141a \
   swift run -c release \
-  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a_wasm-embedded \
   --scratch-path .build/target-validation-hybrid-wasi-embedded \
   -Xlinker "${EMBEDDED_UNICODE_TABLES}" \
   swift-ssl-hybrid-target-validation
 
 scripts/swift-test-timeout.sh 120 \
-  env TOOLCHAINS=org.swift.64202607231a \
+  env TOOLCHAINS=org.swift.64202608141a \
   swift run -c release \
-  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a_wasm-embedded \
   --scratch-path .build/target-validation-wasi-embedded \
   -Xlinker "${EMBEDDED_UNICODE_TABLES}" \
   swift-ssl-target-validation
 
 swift build -c release \
-  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a_wasm \
   --product swift-ssl-facade-validation
 
 scripts/swift-test-timeout.sh 120 \
   swift run --skip-build -c release \
-  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a_wasm \
   swift-ssl-facade-validation
 
 The long-running NIST verification program is separate from normal tests and
@@ -108,14 +108,14 @@ selects one bounded success or mutation case at manifest-evaluation time:
 ```sh
 SWIFT_SSL_NIST_VALIDATION_CASE=p384-valid \
   swift build -c release \
-  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a_wasm-embedded \
   -Xlinker "${EMBEDDED_UNICODE_TABLES}" \
   --product swift-ssl-nist-verification-validation
 
 SWIFT_SSL_NIST_VALIDATION_CASE=p384-valid \
   scripts/swift-test-timeout.sh 120 \
   swift run --skip-build -c release \
-  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a_wasm-embedded \
+  --swift-sdk swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a_wasm-embedded \
   swift-ssl-nist-verification-validation
 ```
 

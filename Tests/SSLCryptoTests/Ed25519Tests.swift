@@ -1,9 +1,49 @@
 import SSLCore
 import XCTest
+#if canImport(CryptoKit)
+import CryptoKit
+import Foundation
+#endif
 
 @_spi(PureSwiftCrypto) @testable import SSLCrypto
 
 final class Ed25519Tests: XCTestCase {
+#if canImport(CryptoKit)
+  func testCryptoKitInteroperabilityForMultiBlockMessage() throws {
+    let seed = bytes(
+      "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
+    )
+    let publicKeyBytes = bytes(
+      "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+    )
+    let message = ContiguousArray<UInt8>((0..<160).map(UInt8.init))
+    let swiftSSLPrivateKey = try Ed25519PrivateKey(seed: seed.span)
+    let swiftSSLPublicKey = try Ed25519PublicKey(bytes: publicKeyBytes.span)
+    let cryptoKitPrivateKey = try Curve25519.Signing.PrivateKey(
+      rawRepresentation: Data(seed)
+    )
+
+    let swiftSSLSignature = try swiftSSLPrivateKey.sign(message: message.span)
+    XCTAssertTrue(
+      cryptoKitPrivateKey.publicKey.isValidSignature(
+        Data(swiftSSLSignature),
+        for: Data(message)
+      )
+    )
+
+    let cryptoKitSignature = try cryptoKitPrivateKey.signature(
+      for: Data(message)
+    )
+    XCTAssertTrue(
+      try Ed25519.verify(
+        signature: ContiguousArray(cryptoKitSignature).span,
+        message: message.span,
+        using: swiftSSLPublicKey
+      )
+    )
+  }
+#endif
+
   func testRFC8032SigningVector() throws {
     let seed = bytes(
       "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"

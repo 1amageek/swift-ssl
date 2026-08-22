@@ -153,7 +153,7 @@ Select only the products required by the consuming target:
 ## Toolchain
 
 Development is pinned to Swift
-`swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-07-23-a` with the matching WASI and
+`swift-6.4.x-DEVELOPMENT-SNAPSHOT-2026-08-14-a` with the matching WASI and
 Embedded WASI SDKs. See [TOOLCHAIN.md](TOOLCHAIN.md) for exact identifiers and
 commands.
 

@@ -137,6 +137,71 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
     }
   }
 
+  /// Seals a borrowed prefix followed by one byte and zero padding directly
+  /// into caller-owned ciphertext storage.
+  ///
+  /// This package-level framing primitive avoids materializing or copying a
+  /// concatenated plaintext while preserving the same AEAD result as sealing
+  /// `plaintextPrefix + [trailingByte] + zeroPadding`.
+  package func sealAppendingByteAndZeroPadding(
+    plaintextPrefix: Span<UInt8>,
+    trailingByte: UInt8,
+    zeroPaddingByteCount: Int,
+    authenticatedData: Span<UInt8>,
+    nonce: Span<UInt8>,
+    into output: inout MutableSpan<UInt8>
+  ) throws(AEADError) {
+    guard Self.validNonceLength(nonce.count) else {
+      throw .invalidNonceLength(expected: Self.nonceByteCount, actual: nonce.count)
+    }
+    guard zeroPaddingByteCount >= 0 else {
+      throw .messageLimitReached
+    }
+    let (prefixAndByteCount, prefixOverflow) = plaintextPrefix.count.addingReportingOverflow(1)
+    let (plaintextByteCount, paddingOverflow) =
+      prefixAndByteCount.addingReportingOverflow(zeroPaddingByteCount)
+    guard !prefixOverflow, !paddingOverflow,
+      Self.validMessageLength(plaintextByteCount),
+      Self.validMessageLength(authenticatedData.count)
+    else {
+      throw .messageLimitReached
+    }
+    let (required, outputOverflow) = plaintextByteCount.addingReportingOverflow(Self.tagByteCount)
+    guard !outputOverflow else {
+      throw .messageLimitReached
+    }
+    guard output.count >= required else {
+      throw .outputTooSmall(required: required, actual: output.count)
+    }
+    guard !Self.overlaps(plaintextPrefix, output, allowSameStart: false),
+      !Self.overlaps(authenticatedData, output, allowSameStart: false)
+    else {
+      throw .overlappingInputAndOutput
+    }
+
+    let initialCounter = initialCounter(for: nonce)
+    var counter = initialCounter
+    Self.incrementCounter(&counter)
+    gctrAppendingByteAndZeroPadding(
+      plaintextPrefix,
+      trailingByte: trailingByte,
+      zeroPaddingByteCount: zeroPaddingByteCount,
+      counter: counter,
+      into: &output
+    )
+
+    let tag = authenticationTag(
+      authenticatedData: authenticatedData,
+      ciphertext: output.span.extracting(0..<plaintextByteCount),
+      initialCounter: initialCounter
+    )
+    var index = 0
+    while index < Self.tagByteCount {
+      output[plaintextByteCount + index] = tag[index]
+      index += 1
+    }
+  }
+
   public func open(
     ciphertextAndTag: Span<UInt8>,
     authenticatedData: Span<UInt8>,
@@ -222,6 +287,67 @@ public struct AESGCM: ~Copyable, AuthenticatedCipher, Sendable {
       var index = 0
       while index < remaining {
         output[offset + index] = input[offset + index] ^ encryptedCounter[index]
+        index += 1
+      }
+      offset += remaining
+      Self.incrementCounter(&counter)
+    }
+  }
+
+  private func gctrAppendingByteAndZeroPadding(
+    _ plaintextPrefix: Span<UInt8>,
+    trailingByte: UInt8,
+    zeroPaddingByteCount: Int,
+    counter: SIMD16<UInt8>,
+    into output: inout MutableSpan<UInt8>
+  ) {
+    let plaintextByteCount = plaintextPrefix.count + 1 + zeroPaddingByteCount
+    var counter = counter
+    var offset = 0
+    #if canImport(Darwin) && arch(arm64) && canImport(simd)
+      while offset + 64 <= plaintextPrefix.count {
+        blockCipher.xorFourCounters(
+          plaintextPrefix,
+          at: offset,
+          startingAt: counter,
+          into: &output
+        )
+        offset += 64
+        AESARM64Kernel.advanceCounterByFour(&counter)
+      }
+    #endif
+    var encryptedCounter = SIMD16<UInt8>(repeating: 0)
+    while offset < plaintextByteCount {
+      // Unsafe boundary invariants:
+      // - `counter` and `encryptedCounter` are fully initialized inline SIMD
+      //   owners whose byte views remain valid for these nested closures.
+      // - Binding to UInt8 is alignment-safe and covers exactly 16 bytes.
+      // - The derived spans are consumed synchronously by the block cipher and
+      //   neither pointer nor span escapes or crosses a Sendable boundary.
+      withUnsafeBytes(of: &counter) { counterBuffer in
+        withUnsafeMutableBytes(of: &encryptedCounter) { outputBuffer in
+          let counterSpan = Span(
+            _unsafeElements: counterBuffer.bindMemory(to: UInt8.self)
+          )
+          var encryptedSpan = MutableSpan(
+            _unsafeElements: outputBuffer.bindMemory(to: UInt8.self)
+          )
+          blockCipher.encrypt(counterSpan, into: &encryptedSpan)
+        }
+      }
+      let remaining = min(16, plaintextByteCount - offset)
+      var index = 0
+      while index < remaining {
+        let sourceIndex = offset + index
+        let plaintextByte: UInt8
+        if sourceIndex < plaintextPrefix.count {
+          plaintextByte = plaintextPrefix[sourceIndex]
+        } else if sourceIndex == plaintextPrefix.count {
+          plaintextByte = trailingByte
+        } else {
+          plaintextByte = 0
+        }
+        output[sourceIndex] = plaintextByte ^ encryptedCounter[index]
         index += 1
       }
       offset += remaining

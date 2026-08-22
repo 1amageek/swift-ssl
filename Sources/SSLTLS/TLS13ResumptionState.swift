@@ -1,7 +1,7 @@
 import SSLCore
 import SSLCrypto
 
-/// Single-use client resumption state derived from a TLS 1.3 ticket.
+/// Single-use resumption state derived from a TLS 1.3 ticket.
 ///
 /// The ticket bytes are an opaque server-selected identity. The state owns the
 /// resumption master secret and ticket nonce, validates lifetime and clock
@@ -18,6 +18,14 @@ public struct TLS13ResumptionState: ~Copyable, Sendable {
     public let ageAdd: UInt32
     public let maximumEarlyDataByteCount: UInt32
     public let applicationProtocol: TLS13ApplicationProtocol?
+    package let authenticatedPeerRole: TLSRole?
+    package let authenticatedClientCertificate: TLS13ValidatedClientCertificate?
+
+    /// Whether the ticket-issuing endpoint authenticated its peer's
+    /// certificate and CertificateVerify proof before issuing this state.
+    public var peerCertificateAuthenticated: Bool {
+        authenticatedPeerRole != nil
+    }
 
     private let ticket: OwnedBytes
     private let ticketNonce: OwnedBytes
@@ -34,6 +42,33 @@ public struct TLS13ResumptionState: ~Copyable, Sendable {
         ageAdd: UInt32,
         maximumEarlyDataByteCount: UInt32 = 0,
         applicationProtocol: TLS13ApplicationProtocol? = nil
+    ) throws(TLS13ResumptionError) {
+        try self.init(
+            ticket: ticket,
+            ticketNonce: ticketNonce,
+            resumptionMasterSecret: resumptionMasterSecret,
+            cipherSuite: cipherSuite,
+            issuedAt: issuedAt,
+            lifetime: lifetime,
+            ageAdd: ageAdd,
+            maximumEarlyDataByteCount: maximumEarlyDataByteCount,
+            applicationProtocol: applicationProtocol,
+            authenticatedPeerRole: nil
+        )
+    }
+
+    package init(
+        ticket: Span<UInt8>,
+        ticketNonce: Span<UInt8>,
+        resumptionMasterSecret: Span<UInt8>,
+        cipherSuite: TLSCipherSuite,
+        issuedAt: VerificationInstant,
+        lifetime: UInt32,
+        ageAdd: UInt32,
+        maximumEarlyDataByteCount: UInt32,
+        applicationProtocol: TLS13ApplicationProtocol?,
+        authenticatedPeerRole: TLSRole?,
+        authenticatedClientCertificate: TLS13ValidatedClientCertificate? = nil
     ) throws(TLS13ResumptionError) {
         guard !ticket.isEmpty, ticket.count <= Self.maximumTicketByteCount else {
             throw .invalidTicketLength(actual: ticket.count)
@@ -64,6 +99,8 @@ public struct TLS13ResumptionState: ~Copyable, Sendable {
         self.ageAdd = ageAdd
         self.maximumEarlyDataByteCount = maximumEarlyDataByteCount
         self.applicationProtocol = applicationProtocol
+        self.authenticatedPeerRole = authenticatedPeerRole
+        self.authenticatedClientCertificate = authenticatedClientCertificate
         consumed = false
     }
 
@@ -116,4 +153,5 @@ public struct TLS13ResumptionState: ~Copyable, Sendable {
             throw .cryptographicFailure
         }
     }
+
 }

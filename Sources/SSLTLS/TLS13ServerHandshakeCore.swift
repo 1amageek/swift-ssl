@@ -39,14 +39,19 @@ public struct TLS13ServerHandshakeCore:
     (any TLS13ApplicationProtocolSelecting)?
   private let clientAuthentication: TLS13ClientAuthenticationConfiguration?
   private var localTransportParameters: OwnedBytes?
+  private var resumptionState: TLS13ResumptionState?
+  private let resumptionCipherSuite: TLSCipherSuite?
   private let resumptionIdentity: OwnedBytes?
-  private let resumptionPSK: SecretBytes?
+  private var resumptionPSK: SecretBytes?
   private let resumptionIssuedAt: VerificationInstant?
   private let resumptionLifetime: UInt32?
   private let resumptionAgeAdd: UInt32?
   private let resumptionAgeToleranceMilliseconds: UInt32
   private let resumptionMaximumEarlyDataByteCount: UInt32
   private let resumptionApplicationProtocol: TLS13ApplicationProtocol?
+  private let resumptionPeerCertificateAuthenticated: Bool
+  private let resumptionAuthenticatedClientCertificate:
+    TLS13ValidatedClientCertificate?
   private let earlyDataConfiguration: TLS13EarlyDataServerConfiguration?
   private var echOpener: RFC9849ECHClientHelloOpener?
   private let echRetryConfigurations: ECHConfigList?
@@ -150,6 +155,44 @@ public struct TLS13ServerHandshakeCore:
       resumptionAgeToleranceMilliseconds: resumptionAgeToleranceMilliseconds,
       resumptionMaximumEarlyDataByteCount: resumptionMaximumEarlyDataByteCount,
       resumptionApplicationProtocol: resumptionApplicationProtocol,
+      earlyDataConfiguration: earlyDataConfiguration,
+      echConfigurations: echConfigurations,
+      handshakeEncoding: handshakeEncoding
+    )
+  }
+
+  public init(
+    random: Span<UInt8>,
+    ephemeralKey: consuming X25519PrivateKey,
+    certificateEntries: consuming ContiguousArray<TLS13CertificateEntry>,
+    signingKey: consuming TLS13SigningKey,
+    verificationInstant: VerificationInstant,
+    applicationProtocolSelector:
+      (any TLS13ApplicationProtocolSelecting)? = nil,
+    clientAuthentication: TLS13ClientAuthenticationConfiguration? = nil,
+    transportParameters: Span<UInt8>? = nil,
+    resumptionState: consuming TLS13ResumptionState?,
+    resumptionAgeToleranceMilliseconds: UInt32 = 10_000,
+    earlyDataConfiguration: TLS13EarlyDataServerConfiguration? = nil,
+    echConfigurations: ECHServerConfigurationSet? = nil,
+    handshakeEncoding: TLS13HandshakeEncoding = .tls13
+  ) throws(TLS13HandshakeEngineError) {
+    try self.init(
+      random: random,
+      keyExchange: TLS13ServerKeyExchangeState(
+        x25519: TLS13X25519ServerKeyExchange(privateKey: ephemeralKey)
+      ),
+      keyExchangeEntropy: SystemEntropySource(),
+      credential: .local(
+        certificateEntries: certificateEntries,
+        signingKey: signingKey
+      ),
+      verificationInstant: verificationInstant,
+      applicationProtocolSelector: applicationProtocolSelector,
+      clientAuthentication: clientAuthentication,
+      transportParameters: transportParameters,
+      resumptionState: consume resumptionState,
+      resumptionAgeToleranceMilliseconds: resumptionAgeToleranceMilliseconds,
       earlyDataConfiguration: earlyDataConfiguration,
       echConfigurations: echConfigurations,
       handshakeEncoding: handshakeEncoding
@@ -516,14 +559,16 @@ public struct TLS13ServerHandshakeCore:
       (any TLS13ApplicationProtocolSelecting)?,
     clientAuthentication: TLS13ClientAuthenticationConfiguration?,
     transportParameters: Span<UInt8>?,
-    resumptionIdentity: Span<UInt8>?,
-    resumptionPSK: Span<UInt8>?,
-    resumptionIssuedAt: VerificationInstant?,
-    resumptionLifetime: UInt32?,
-    resumptionAgeAdd: UInt32?,
+    resumptionState: consuming TLS13ResumptionState? = nil,
+    resumptionIdentity: Span<UInt8>? = nil,
+    resumptionPSK: Span<UInt8>? = nil,
+    resumptionIssuedAt: VerificationInstant? = nil,
+    resumptionLifetime: UInt32? = nil,
+    resumptionAgeAdd: UInt32? = nil,
     resumptionAgeToleranceMilliseconds: UInt32,
-    resumptionMaximumEarlyDataByteCount: UInt32,
-    resumptionApplicationProtocol: TLS13ApplicationProtocol?,
+    resumptionMaximumEarlyDataByteCount: UInt32 = 0,
+    resumptionApplicationProtocol: TLS13ApplicationProtocol? = nil,
+    resumptionPeerCertificateAuthenticated: Bool = false,
     earlyDataConfiguration: TLS13EarlyDataServerConfiguration?,
     echConfigurations: ECHServerConfigurationSet?,
     handshakeEncoding: TLS13HandshakeEncoding,
@@ -561,29 +606,57 @@ public struct TLS13ServerHandshakeCore:
     guard (resumptionIdentity == nil) == (resumptionPSK == nil) else {
       throw .invalidConfiguration
     }
-    let hasAgeMetadata =
-      resumptionIssuedAt != nil
-      && resumptionLifetime != nil
-      && resumptionAgeAdd != nil
-    guard (resumptionIdentity == nil) == !hasAgeMetadata else {
-      throw .invalidConfiguration
-    }
-    if let lifetime = resumptionLifetime {
-      guard lifetime > 0 else { throw .invalidConfiguration }
-    }
     guard resumptionAgeToleranceMilliseconds <= 60_000 else {
       throw .invalidConfiguration
     }
     guard earlyDataConfiguration == nil || handshakeEncoding != .dtls13 else {
       throw .invalidConfiguration
     }
-    guard resumptionMaximumEarlyDataByteCount == 0 || resumptionIdentity != nil else {
+    let hasTypedResumptionState = resumptionState != nil
+    if hasTypedResumptionState {
+      guard
+        resumptionIdentity == nil,
+        resumptionPSK == nil,
+        resumptionIssuedAt == nil,
+        resumptionLifetime == nil,
+        resumptionAgeAdd == nil,
+        resumptionMaximumEarlyDataByteCount == 0,
+        resumptionApplicationProtocol == nil,
+        !resumptionPeerCertificateAuthenticated
+      else {
+        throw .invalidConfiguration
+      }
+    }
+    let hasAgeMetadata =
+      resumptionIssuedAt != nil
+      && resumptionLifetime != nil
+      && resumptionAgeAdd != nil
+    guard hasTypedResumptionState || (resumptionIdentity == nil) == !hasAgeMetadata else {
+      throw .invalidConfiguration
+    }
+    if let lifetime = resumptionLifetime {
+      guard lifetime > 0 else { throw .invalidConfiguration }
+    }
+    guard
+      hasTypedResumptionState
+        || resumptionMaximumEarlyDataByteCount == 0
+        || resumptionIdentity != nil
+    else {
+      throw .invalidConfiguration
+    }
+    guard
+      hasTypedResumptionState
+        || !resumptionPeerCertificateAuthenticated
+        || resumptionIdentity != nil
+    else {
       throw .invalidConfiguration
     }
     let configuredIdentity: OwnedBytes?
     let configuredPSK: SecretBytes?
     if let identity = resumptionIdentity, let psk = resumptionPSK {
-      guard !identity.isEmpty, psk.count <= 64 else { throw .invalidConfiguration }
+      guard !identity.isEmpty, psk.count <= 64 else {
+        throw .invalidConfiguration
+      }
       configuredIdentity = OwnedBytes(copying: identity)
       do {
         configuredPSK = try SecretBytes(copying: psk)
@@ -623,14 +696,24 @@ public struct TLS13ServerHandshakeCore:
     } else {
       localTransportParameters = nil
     }
+    self.resumptionState = consume resumptionState
+    resumptionCipherSuite = self.resumptionState?.cipherSuite
     self.resumptionIdentity = configuredIdentity
     self.resumptionPSK = configuredPSK
-    self.resumptionIssuedAt = resumptionIssuedAt
-    self.resumptionLifetime = resumptionLifetime
-    self.resumptionAgeAdd = resumptionAgeAdd
+    self.resumptionIssuedAt = self.resumptionState?.issuedAt ?? resumptionIssuedAt
+    self.resumptionLifetime = self.resumptionState?.lifetime ?? resumptionLifetime
+    self.resumptionAgeAdd = self.resumptionState?.ageAdd ?? resumptionAgeAdd
     self.resumptionAgeToleranceMilliseconds = resumptionAgeToleranceMilliseconds
-    self.resumptionMaximumEarlyDataByteCount = resumptionMaximumEarlyDataByteCount
-    self.resumptionApplicationProtocol = resumptionApplicationProtocol
+    self.resumptionMaximumEarlyDataByteCount =
+      self.resumptionState?.maximumEarlyDataByteCount
+      ?? resumptionMaximumEarlyDataByteCount
+    self.resumptionApplicationProtocol =
+      self.resumptionState?.applicationProtocol ?? resumptionApplicationProtocol
+    self.resumptionPeerCertificateAuthenticated =
+      self.resumptionState?.authenticatedPeerRole == .client
+      || resumptionPeerCertificateAuthenticated
+    resumptionAuthenticatedClientCertificate =
+      self.resumptionState?.authenticatedClientCertificate
     self.earlyDataConfiguration = earlyDataConfiguration
     echRetryConfigurations = echConfigurations?.retryConfigurations
     echOpener = nil
@@ -689,6 +772,42 @@ public struct TLS13ServerHandshakeCore:
         configurations: echConfigurations
       )
     }
+  }
+
+  public init(
+    random: Span<UInt8>,
+    ephemeralKey: consuming X25519PrivateKey,
+    externalServerCredential: TLS13ExternalServerCredential,
+    verificationInstant: VerificationInstant,
+    applicationProtocolSelector:
+      (any TLS13ApplicationProtocolSelecting)? = nil,
+    clientAuthentication: TLS13ClientAuthenticationConfiguration? = nil,
+    transportParameters: Span<UInt8>? = nil,
+    resumptionState: consuming TLS13ResumptionState?,
+    resumptionAgeToleranceMilliseconds: UInt32 = 10_000,
+    earlyDataConfiguration: TLS13EarlyDataServerConfiguration? = nil,
+    echConfigurations: ECHServerConfigurationSet? = nil,
+    handshakeEncoding: TLS13HandshakeEncoding = .tls13
+  ) throws(TLS13HandshakeEngineError) {
+    try self.init(
+      random: random,
+      keyExchange: TLS13ServerKeyExchangeState(
+        x25519: TLS13X25519ServerKeyExchange(privateKey: ephemeralKey)
+      ),
+      keyExchangeEntropy: SystemEntropySource(),
+      credential: .external,
+      verificationInstant: verificationInstant,
+      applicationProtocolSelector: applicationProtocolSelector,
+      clientAuthentication: clientAuthentication,
+      transportParameters: transportParameters,
+      resumptionState: consume resumptionState,
+      resumptionAgeToleranceMilliseconds: resumptionAgeToleranceMilliseconds,
+      earlyDataConfiguration: earlyDataConfiguration,
+      echConfigurations: echConfigurations,
+      handshakeEncoding: handshakeEncoding,
+      usesExternalServerCredential: true,
+      supportedServerCertificateTypes: externalServerCredential.certificateTypes
+    )
   }
 
   public init(
@@ -885,6 +1004,10 @@ public struct TLS13ServerHandshakeCore:
     return false
   }
 
+  public var isResumedSession: Bool {
+    isEstablished && resumedHandshake
+  }
+
   public var negotiatedApplicationProtocol: TLS13ApplicationProtocol? {
     selectedApplicationProtocol
   }
@@ -923,6 +1046,9 @@ public struct TLS13ServerHandshakeCore:
   }
 
   public var authenticatedClientIdentity: TLS13ValidatedClientCertificate? {
+    if case .established = phase, resumedHandshake {
+      return resumptionAuthenticatedClientCertificate
+    }
     guard case .established = phase, sawClientCertificateVerify else {
       return nil
     }
@@ -1167,7 +1293,7 @@ public struct TLS13ServerHandshakeCore:
         default:
           throw TLS13HandshakeEngineError.invalidState
         }
-        return try suspendForServerCredentialSelection(
+        return try receiveAuthenticatedClientHello(
           processed,
           binderTranscriptIncludesRetry: includesRetry
         )
@@ -1348,6 +1474,7 @@ public struct TLS13ServerHandshakeCore:
 
   private mutating func suspendForServerCredentialSelection(
     _ processed: ECHProcessedClientHello,
+    clientHello: TLS13ClientHello,
     binderTranscriptIncludesRetry: Bool
   ) throws(TLS13HandshakeEngineError) -> TLS13HandshakeCoreTransition {
     guard usesExternalServerCredential,
@@ -1355,31 +1482,6 @@ public struct TLS13ServerHandshakeCore:
       pendingServerCredentialSelection == nil
     else {
       throw .invalidState
-    }
-    let clientHello = try engineTry {
-      try TLS13HandshakeCodec.parseClientHello(
-        processed.encoded.span,
-        encoding: handshakeEncoding
-      )
-    }
-    peerCertificateCompressionAlgorithms =
-      clientHello.certificateCompressionAlgorithms
-    peerDelegatedCredentialAlgorithms =
-      clientHello.delegatedCredentialAlgorithms
-    peerOfferedPostHandshakeAuthentication =
-      clientHello.offersPostHandshakeAuthentication
-    cipherSuite = try selectCipherSuite(from: clientHello)
-    let resumes = try acceptResumption(
-      clientHello: clientHello,
-      cipherSuite: cipherSuite,
-      encodedClientHello: processed.encoded.span,
-      binderTranscriptIncludesRetry: binderTranscriptIncludesRetry
-    )
-    if resumes {
-      return try receiveAuthenticatedClientHello(
-        processed,
-        binderTranscriptIncludesRetry: binderTranscriptIncludesRetry
-      )
     }
     let availableCertificateTypes = availableServerCertificateTypes(
       for: clientHello
@@ -1705,7 +1807,13 @@ public struct TLS13ServerHandshakeCore:
           lifetime: lifetime,
           ageAdd: ageAdd,
           maximumEarlyDataByteCount: maximumEarlyDataByteCount,
-          applicationProtocol: selectedApplicationProtocol
+          applicationProtocol: selectedApplicationProtocol,
+          authenticatedPeerRole: (resumedHandshake
+            ? resumptionPeerCertificateAuthenticated
+            : sawClientCertificateVerify) ? .client : nil,
+          authenticatedClientCertificate: resumedHandshake
+            ? resumptionAuthenticatedClientCertificate
+            : validatedClientCertificate
         )
       }
       resumptionMasterSecret = consume masterSecret
@@ -1894,6 +2002,23 @@ public struct TLS13ServerHandshakeCore:
       clientHello.certificateCompressionAlgorithms
     peerDelegatedCredentialAlgorithms =
       clientHello.delegatedCredentialAlgorithms
+    cipherSuite = try selectCipherSuite(from: clientHello)
+    resumedHandshake = try acceptResumption(
+      clientHello: clientHello,
+      cipherSuite: cipherSuite,
+      encodedClientHello: authenticatedClientHello.span,
+      binderTranscriptIncludesRetry: binderTranscriptIncludesRetry
+    )
+    if usesExternalServerCredential,
+      externalServerCredential == nil,
+      !resumedHandshake
+    {
+      return try suspendForServerCredentialSelection(
+        processed,
+        clientHello: clientHello,
+        binderTranscriptIncludesRetry: binderTranscriptIncludesRetry
+      )
+    }
     if let expectedPeerConnectionID {
       guard clientHello.connectionID == expectedPeerConnectionID else {
         throw .invalidConfiguration
@@ -1929,13 +2054,6 @@ public struct TLS13ServerHandshakeCore:
       throw .unexpectedTransportParameters
     }
     try negotiateDTLSSRTP(offer: clientHello.useSRTP)
-    cipherSuite = try selectCipherSuite(from: clientHello)
-    resumedHandshake = try acceptResumption(
-      clientHello: clientHello,
-      cipherSuite: cipherSuite,
-      encodedClientHello: authenticatedClientHello.span,
-      binderTranscriptIncludesRetry: binderTranscriptIncludesRetry
-    )
     try negotiateCertificateTypes(
       clientHello: clientHello,
       requiresServerCredential: !resumedHandshake
@@ -2485,7 +2603,9 @@ public struct TLS13ServerHandshakeCore:
       return try makeOutput(bytes: OwnedBytes(), actions: [])
 
     case TLS13HandshakeCodec.finishedType:
-      if let clientAuthentication = mainHandshakeClientAuthentication {
+      if !resumedHandshake,
+        let clientAuthentication = mainHandshakeClientAuthentication
+      {
         guard sawClientCertificate else {
           if clientAuthentication.requirement == .required {
             throw .clientCertificateRequired
@@ -2841,17 +2961,54 @@ public struct TLS13ServerHandshakeCore:
     pendingPostHandshakeClientTrust = nil
   }
 
-  private func acceptResumption(
+  private mutating func acceptResumption(
     clientHello: TLS13ClientHello,
     cipherSuite: TLSCipherSuite,
     encodedClientHello: Span<UInt8>,
     binderTranscriptIncludesRetry: Bool
   ) throws(TLS13HandshakeEngineError) -> Bool {
-    guard let configuredIdentity = resumptionIdentity,
-      resumptionPSK != nil,
-      let issuedAt = resumptionIssuedAt,
+    guard let issuedAt = resumptionIssuedAt,
       let lifetime = resumptionLifetime,
       let ageAdd = resumptionAgeAdd
+    else {
+      return false
+    }
+    if mainHandshakeClientAuthentication?.requirement == .required,
+      !resumptionPeerCertificateAuthenticated
+    {
+      return false
+    }
+    let offerMatches: Bool
+    if let typedOfferMatches = resumptionState?.withTicketBytes({
+      configuredIdentity in
+        coreResumptionOfferMatches(
+          clientHello: clientHello,
+          configuredIdentity: configuredIdentity,
+          verificationInstant: verificationInstant,
+          issuedAt: issuedAt,
+          lifetime: lifetime,
+          ageAdd: ageAdd,
+          toleranceMilliseconds: resumptionAgeToleranceMilliseconds
+        )
+      })
+    {
+      guard resumptionCipherSuite == cipherSuite else { return false }
+      offerMatches = typedOfferMatches
+    } else if let configuredIdentity = resumptionIdentity {
+      offerMatches = coreResumptionOfferMatches(
+        clientHello: clientHello,
+        configuredIdentity: configuredIdentity.span,
+        verificationInstant: verificationInstant,
+        issuedAt: issuedAt,
+        lifetime: lifetime,
+        ageAdd: ageAdd,
+        toleranceMilliseconds: resumptionAgeToleranceMilliseconds
+      )
+    } else {
+      return false
+    }
+    guard offerMatches,
+      let offeredBinder = clientHello.preSharedKey?.binders.first?.value
     else {
       return false
     }
@@ -2875,17 +3032,27 @@ public struct TLS13ServerHandshakeCore:
     } catch let error {
       throw .handshake(error)
     }
-    return try verifyCoreResumption(
-      clientHello: clientHello,
+    if var state = resumptionState.take() {
+      let psk: SecretBytes
+      do {
+        psk = try state.consumePSK()
+      } catch let error {
+        throw .resumption(error)
+      }
+      resumptionPSK = consume psk
+      return try verifyCoreResumptionBinder(
+        cipherSuite: cipherSuite,
+        binderTranscriptHash: binderHash,
+        offeredBinder: offeredBinder,
+        preSharedKey: resumptionPSK!
+      )
+    }
+    guard resumptionPSK != nil else { return false }
+    return try verifyCoreResumptionBinder(
       cipherSuite: cipherSuite,
       binderTranscriptHash: binderHash,
-      configuredIdentity: configuredIdentity,
-      preSharedKey: resumptionPSK!,
-      verificationInstant: verificationInstant,
-      issuedAt: issuedAt,
-      lifetime: lifetime,
-      ageAdd: ageAdd,
-      toleranceMilliseconds: resumptionAgeToleranceMilliseconds
+      offeredBinder: offeredBinder,
+      preSharedKey: resumptionPSK!
     )
   }
 
@@ -3584,18 +3751,15 @@ private struct ECHProcessedClientHello: Sendable {
   let echRejected: Bool
 }
 
-private func verifyCoreResumption(
+private func coreResumptionOfferMatches(
   clientHello: TLS13ClientHello,
-  cipherSuite: TLSCipherSuite,
-  binderTranscriptHash: OwnedBytes,
-  configuredIdentity: OwnedBytes,
-  preSharedKey: borrowing SecretBytes,
+  configuredIdentity: Span<UInt8>,
   verificationInstant: VerificationInstant,
   issuedAt: VerificationInstant,
   lifetime: UInt32,
   ageAdd: UInt32,
   toleranceMilliseconds: UInt32
-) throws(TLS13HandshakeEngineError) -> Bool {
+) -> Bool {
   guard let offered = clientHello.preSharedKey,
     offered.identities.count == 1,
     offered.binders.count == 1
@@ -3603,8 +3767,7 @@ private func verifyCoreResumption(
     return false
   }
   let identity = offered.identities[0]
-  let offeredBinder = offered.binders[0].value
-  guard ConstantTime.equal(identity.identity.span, configuredIdentity.span),
+  guard ConstantTime.equal(identity.identity.span, configuredIdentity),
     let expectedAge = expectedObfuscatedTicketAge(
       at: verificationInstant,
       issuedAt: issuedAt,
@@ -3619,6 +3782,15 @@ private func verifyCoreResumption(
   else {
     return false
   }
+  return true
+}
+
+private func verifyCoreResumptionBinder(
+  cipherSuite: TLSCipherSuite,
+  binderTranscriptHash: OwnedBytes,
+  offeredBinder: OwnedBytes,
+  preSharedKey: borrowing SecretBytes
+) throws(TLS13HandshakeEngineError) -> Bool {
   do {
     return try TLS13PSKBinder.verify(
       preSharedKey: preSharedKey,
